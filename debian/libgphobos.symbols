@@ -1,0 +1,2 @@
+libgdruntime.so.3 #PACKAGE# #MINVER#
+libgphobos.so.3 #PACKAGE# #MINVER#

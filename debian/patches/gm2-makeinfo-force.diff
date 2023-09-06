@@ -1,0 +1,11 @@
+--- a/src/gcc/m2/Make-lang.in
++++ b/src/gcc/m2/Make-lang.in
+@@ -183,7 +183,7 @@
+ doc/m2.info: $(TEXISRC)
+ 	if test "x$(BUILD_INFO)" = xinfo; then \
+ 	  rm -f doc/m2.info*; \
+-          $(MAKEINFO) -I$(objdir)/m2 -I$(srcdir)/doc/include \
++          $(MAKEINFO) --force -I$(objdir)/m2 -I$(srcdir)/doc/include \
+                       -o $@ $(srcdir)/doc/gm2.texi ; \
+ 	else true; fi
+ 

@@ -1,0 +1,6 @@
+#! /bin/sh -e
+
+find /usr/lib/gcc-snapshot/share/gcc/python -name '*.py[co]' | xargs -r rm -f
+find /usr/lib/gcc-snapshot/share/gcc/python -name __pycache__ -type d | xargs -r rm -rf
+
+#DEBHELPER#

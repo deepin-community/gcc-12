@@ -1,0 +1,71 @@
+# DP: Document distro specific compiler flags turned on by default
+
+--- a/src/gcc/doc/invoke.texi
++++ b/src/gcc/doc/invoke.texi
+@@ -9952,6 +9952,12 @@ also turns on the following optimization
+ Please note the warning under @option{-fgcse} about
+ invoking @option{-O2} on programs that use computed gotos.
+ 
++NOTE: In Ubuntu 8.10 and later versions, @option{-D_FORTIFY_SOURCE=2} is
++set by default, and is activated when @option{-O} is set to 2 or higher.
++This enables additional compile-time and run-time checks for several libc
++functions.  To disable, specify either @option{-U_FORTIFY_SOURCE} or
++@option{-D_FORTIFY_SOURCE=0}.
++
+ @item -O3
+ @opindex O3
+ Optimize yet more.  @option{-O3} turns on all optimizations specified
+@@ -12692,6 +12698,11 @@ instructions.
+ Optimize the prologue of variadic argument functions with respect to usage of
+ those arguments.
+ 
++NOTE: In Ubuntu 14.10 and later versions,
++@option{-fstack-protector-strong} is enabled by default for C,
++C++, ObjC, ObjC++, if none of @option{-fno-stack-protector},
++@option{-nostdlib}, nor @option{-ffreestanding} are found.
++
+ @item -fsection-anchors
+ @opindex fsection-anchors
+ Try to reduce the number of symbolic address calculations by using
+@@ -13378,6 +13389,9 @@ value of a shared integer constant.
+ The minimum size of buffers (i.e.@: arrays) that receive stack smashing
+ protection when @option{-fstack-protection} is used.
+ 
++This default before Ubuntu 10.10 was "8". Currently it is "4", to increase
++the number of functions protected by the stack protector.
++
+ @item min-size-for-stack-sharing
+ The minimum size of variables taking part in stack slot sharing when not
+ optimizing.
+@@ -14659,6 +14673,10 @@ which functions and calls should be skip
+ Currently the x86 GNU/Linux target provides an implementation based
+ on Intel Control-flow Enforcement Technology (CET).
+ 
++NOTE: In Ubuntu 19.10 and later versions, @option{-fcf-protection}
++is enabled by default for C, C++, ObjC, ObjC++, if none of
++@option{-fno-cf-protection} nor @option{-fcf-protection=*} are found.
++
+ @item -fstack-protector
+ @opindex fstack-protector
+ Emit extra code to check for buffer overflows, such as stack smashing
+@@ -14746,6 +14764,10 @@ allocations.  @option{-fstack-clash-prot
+ protection for static stack allocations if the target supports
+ @option{-fstack-check=specific}.
+ 
++NOTE: In Ubuntu 19.10 and later versions,
++@option{-fstack-clash-protection} is enabled by default for C,
++C++, ObjC, ObjC++, unless @option{-fno-stack-clash-protection} is found.
++
+ @item -fstack-limit-register=@var{reg}
+ @itemx -fstack-limit-symbol=@var{sym}
+ @itemx -fno-stack-limit
+@@ -15443,6 +15465,9 @@ For example, @option{-Wl,-Map,output.map
+ linker.  When using the GNU linker, you can also get the same effect with
+ @option{-Wl,-Map=output.map}.
+ 
++NOTE: In Ubuntu 8.10 and later versions, for LDFLAGS, the option
++@option{-Wl,-z,relro} is used.  To disable, use @option{-Wl,-z,norelro}.
++
+ @item -u @var{symbol}
+ @opindex u
+ Pretend the symbol @var{symbol} is undefined, to force linking of

@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -e
+
+if [ "$1" = "upgrade" ] || [ "$1" = "install" ]; then
+    # remove bad symlink introduced in 12.3.0-4
+    if [ -h /usr/libexec/gcc/@TARGET@/12 ]; then
+	rm -f /usr/libexec/gcc/@TARGET@/12
+    fi
+fi
+
+#DEBHELPER#
+
+exit 0

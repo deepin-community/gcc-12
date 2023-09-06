@@ -1,0 +1,33 @@
+#!/bin/sh
+# autopkgtest check: Build and run a simple program against libgphobos,
+# to verify basic compile-time and run-time linking functionality.
+
+set -e
+
+GDC=gdc-12
+
+if ! dpkg -l libgphobos-12-dev >/dev/null 2>&1; then
+    echo "skip test on architecture without libgphobos-dev"
+    exit 0
+fi
+
+WORKDIR=$(mktemp -d)
+trap "rm -rf $WORKDIR" 0 INT QUIT ABRT PIPE TERM
+cd $WORKDIR
+cat <<EOF > libgphobos.d
+immutable str = "Hello, World!";
+
+void main()
+{
+    // Scoped and selective imports can be used.
+    import std.stdio : writeln;
+    writeln(str);
+}
+EOF
+
+$GDC -o dtest libgphobos.d
+echo "build: OK"
+ldd dtest
+[ -x dtest ]
+./dtest
+echo "run: OK"

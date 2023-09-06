@@ -1,0 +1,13 @@
+gcc-snapshot binary: bad-permissions-for-ali-file
+
+# libphobos non-multilib builds
+gcc-snapshot binary: embedded-library
+
+gcc-snapshot binary: binary-from-other-architecture
+gcc-snapshot binary: extra-license-file
+gcc-snapshot binary: triplet-dir-and-architecture-mismatch
+gcc-snapshot binary: unstripped-binary-or-object
+gcc-snapshot binary: missing-prerequisite-for-gfortran-module
+
+# intended
+gcc-snapshot binary: hardening-no-pie

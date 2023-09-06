@@ -1,0 +1,29 @@
+Patches applied to the Debian version of GCC
+--------------------------------------------
+
+Debian specific patches can be found in the debian/patches directory.
+Quilt is used as the patch system.  See /usr/share/doc/quilt/README.source
+for details about quilt.
+
+Patches are applied by calling `debian/rules patch'.  The `series'
+file is constructed on the fly based on the files found in the to
+debian/rules.patch "debian_patches" variable, configure scripts are
+regenerated in the `patch' target. The gcc source is unpacked under
+src/ this needs to be reflected in the patch header.
+
+Running a single dejagnu test
+-----------------------------
+
+ - Find out the test suite containing the test, and the associated
+   target (e.g. check-gcc in <build>/gcc, or check in <buildlibdir>/<lib>.
+
+ - Find out the dejagnu test suite, e.g. guality.exp
+   - If you have a log of the original testsuite run, search back for the
+     .exp file before the fail.
+   - Find the directory with the test and then the .exp in the nearest
+     enclosing directory.
+
+ - Set RUNTESTFLAGS to the testsuite name and the test name to run, e.g
+     RUNTESTFLAGS="guality.exp=pr54519-2.c" make -e check-gcc
+   The test name is just the base name, but might be the path relative
+   from gcc/testsuite for C++ tests.

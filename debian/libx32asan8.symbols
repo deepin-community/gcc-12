@@ -1,0 +1,6 @@
+libasan.so.8 libx32asan8 #MINVER#
+#include "libasan.symbols.common"
+#include "libasan.symbols.32"
+#include "libasan.symbols.16"
+ (arch=amd64 i386)__interceptor___tls_get_addr@Base 12
+ (arch=amd64 i386)__tls_get_addr@Base 12
