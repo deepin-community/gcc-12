@@ -1,0 +1,57 @@
+libstdc++.so.6 #PACKAGE# #MINVER#
+ (symver)CXXABI_1.3 4.1.1
+ (symver)CXXABI_1.3.1 4.1.1
+ (symver)CXXABI_1.3.2 4.3
+ (symver)CXXABI_1.3.3 4.3
+ (symver)CXXABI_1.3.4 4.3
+ (symver)CXXABI_1.3.5 4.3
+ (symver)CXXABI_1.3.6 4.3
+ (symver)CXXABI_1.3.7 4.3
+ (symver)CXXABI_1.3.8 4.3
+ (symver)CXXABI_1.3.9 5
+ (symver)CXXABI_1.3.10 6
+ (symver)CXXABI_1.3.11 7
+ (symver)CXXABI_1.3.12 9
+ (symver)CXXABI_1.3.13 11
+ (symver|arch=armel armhf)CXXABI_ARM_1.3.3 4.4
+ (symver|arch=amd64 i386 x32)CXXABI_FLOAT128 5
+ (symver|arch=ppc64 ppc64el s390x sparc64)CXXABI_LDBL_1.3 4.2.1
+ (symver|arch=ppc64 ppc64el)CXXABI_IEEE128_1.3.13 11
+ (symver)CXXABI_TM_1 4.7
+ (symver)GLIBCXX_3.4 4.1.1
+ (symver)GLIBCXX_3.4.1 4.1.1
+ (symver)GLIBCXX_3.4.2 4.1.1
+ (symver)GLIBCXX_3.4.3 4.1.1
+ (symver)GLIBCXX_3.4.4 4.1.1
+ (symver)GLIBCXX_3.4.5 4.1.1
+ (symver)GLIBCXX_3.4.6 4.1.1
+ (symver)GLIBCXX_3.4.7 4.1.1
+ (symver)GLIBCXX_3.4.8 4.1.1
+ (symver)GLIBCXX_3.4.9 4.2.1
+ (symver)GLIBCXX_3.4.10 4.3
+ (symver)GLIBCXX_3.4.11 4.4
+ (symver)GLIBCXX_3.4.12 4.4
+ (symver)GLIBCXX_3.4.13 4.4.2
+ (symver)GLIBCXX_3.4.14 4.5
+ (symver)GLIBCXX_3.4.15 4.6
+ (symver)GLIBCXX_3.4.16 4.6
+ (symver)GLIBCXX_3.4.17 4.7
+ (symver)GLIBCXX_3.4.18 4.8
+ (symver)GLIBCXX_3.4.19 4.8
+ (symver)GLIBCXX_3.4.20 4.9
+ (symver)GLIBCXX_3.4.21 5.2
+ (symver)GLIBCXX_3.4.22 6
+ (symver)GLIBCXX_3.4.23 7
+ (symver)GLIBCXX_3.4.24 7
+ (symver)GLIBCXX_3.4.25 8
+ (symver)GLIBCXX_3.4.26 9
+ (symver)GLIBCXX_3.4.27 9.1
+ (symver)GLIBCXX_3.4.28 10.2
+ (symver)GLIBCXX_3.4.29 11
+ (symver)GLIBCXX_3.4.30 12
+ (symver|arch=ppc64 ppc64el s390x sparc64)GLIBCXX_LDBL_3.4 4.2.1
+ (symver|arch=ppc64 ppc64el s390x sparc64)GLIBCXX_LDBL_3.4.7 4.2.1
+ (symver|arch=ppc64 ppc64el s390x sparc64)GLIBCXX_LDBL_3.4.10 4.3
+ (symver|arch=ppc64 ppc64el s390x sparc64)GLIBCXX_LDBL_3.4.21 5
+ (symver|arch=ppc64 ppc64el s390x sparc64)GLIBCXX_LDBL_3.4.29 11
+ (symver|arch=ppc64 ppc64el)GLIBCXX_IEEE128_3.4.29 11

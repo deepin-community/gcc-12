@@ -1,0 +1,46 @@
+# Mask __float128 types from CUDA compilers (LP: #1717257)
+
+--- a/src/libstdc++-v3/include/std/type_traits
++++ b/src/libstdc++-v3/include/std/type_traits
+@@ -431,7 +431,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
+     struct __is_floating_point_helper<long double>
+     : public true_type { };
+ 
+-#if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128)
++#if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128) && !defined(__CUDACC__)
+   template<>
+     struct __is_floating_point_helper<__float128>
+     : public true_type { };
+--- a/src/libstdc++-v3/include/bits/std_abs.h
++++ b/src/libstdc++-v3/include/bits/std_abs.h
+@@ -97,7 +97,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
+   abs(__GLIBCXX_TYPE_INT_N_3 __x) { return __x >= 0 ? __x : -__x; }
+ #endif
+ 
+-#if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128)
++#if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128) && !defined(__CUDACC__)
+   __extension__ inline _GLIBCXX_CONSTEXPR
+   __float128
+   abs(__float128 __x)
+--- a/src/libstdc++-v3/include/bits/stl_algobase.h
++++ b/src/libstdc++-v3/include/bits/stl_algobase.h
+@@ -1043,7 +1043,7 @@ _GLIBCXX_END_NAMESPACE_CONTAINER
+   __size_to_integer(double __n) { return (long long)__n; }
+   inline _GLIBCXX_CONSTEXPR long long
+   __size_to_integer(long double __n) { return (long long)__n; }
+-#if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128)
++#if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128) && !defined(__CUDACC__)
+   __extension__ inline _GLIBCXX_CONSTEXPR long long
+   __size_to_integer(__float128 __n) { return (long long)__n; }
+ #endif
+--- a/src/libstdc++-v3/include/std/numbers
++++ b/src/libstdc++-v3/include/std/numbers
+@@ -133,7 +133,7 @@ namespace numbers
+   inline constexpr double egamma = egamma_v<double>;
+   inline constexpr double phi = phi_v<double>;
+ 
+-#if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128)
++#if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128) && !defined(__CUDACC__)
+   template<>
+     inline constexpr __float128 e_v<__float128>
+       = 2.718281828459045235360287471352662498Q;

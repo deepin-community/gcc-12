@@ -1,0 +1,4 @@
+# DP: gm2 updates up to 20191107
+
+git diff de2034bc023a89e45bec67e54d2a63982080c316 674c0c7b7453b4998ac25ae57698be2818ec7352 | filterdiff --strip=2 --addoldprefix=a/src/ --addnewprefix=b/src/ --remove-timestamp | egrep -v '^(diff|index)'
+
