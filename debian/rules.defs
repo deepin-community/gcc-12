@@ -1450,6 +1450,10 @@ else ifeq ($(distribution),Ubuntu)
     pie_archs += armhf arm64 i386
   endif
   pie_archs += riscv64
+else ifeq ($(distribution),Deepin)
+  pie_archs = amd64 arm64 i386 riscv64
+else ifeq ($(distribution),Uos)
+  pie_archs = amd64 arm64 i386 loongarch64 mips64el riscv64
 endif
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(pie_archs)))
   with_pie := yes
