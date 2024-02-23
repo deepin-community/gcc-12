@@ -1,6 +1,6 @@
 --- a/src/libgo/Makefile.am
 +++ b/src/libgo/Makefile.am
-@@ -1360,7 +1360,9 @@ mostlyclean-local:
+@@ -1361,7 +1361,9 @@ mostlyclean-local:
  	find . -name '*-testsum' -print | xargs rm -f
  	find . -name '*-testlog' -print | xargs rm -f
  

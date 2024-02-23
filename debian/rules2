@@ -9,6 +9,10 @@
 include debian/rules.defs
 include debian/rules.parameters
 
+ifneq (,$(findstring gcc-toolchain, $(PKGSOURCE)))
+  -include $(binutils_srcdir)/debian/rules.defs
+endif
+
 dh_compat2 := $(shell dpkg --compare-versions "$$(dpkg-query -f '$${Version}' -W debhelper)" lt 9.20150811ubuntu2 \
 			&& echo DH_COMPAT=2)
 
@@ -125,7 +129,8 @@ ifneq (,$(filter $(build_type),cross-build-native cross-build-cross))
 	GFORTRAN_FOR_TARGET=$(DEB_TARGET_GNU_TYPE)-gfortran-$(BASE_VERSION) \
 	GOC_FOR_TARGET=$(DEB_TARGET_GNU_TYPE)-gccgo-$(BASE_VERSION) \
 	GNAT_FOR_TARGET=$(DEB_TARGET_GNU_TYPE)-gnat-$(BASE_VERSION) \
-	GDC_FOR_TARGET=$(DEB_TARGET_GNU_TYPE)-gdc-$(BASE_VERSION)
+	GDC_FOR_TARGET=$(DEB_TARGET_GNU_TYPE)-gdc-$(BASE_VERSION) \
+	GM2_FOR_TARGET=$(DEB_TARGET_GNU_TYPE)-gm2-$(BASE_VERSION)
 endif
 
 ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_TARGET_GNU_TYPE))
@@ -453,6 +458,10 @@ ifeq ($(with_multiarch_lib),yes)
   CONFARGS += --enable-multiarch
 endif
 
+ifneq (,$(findstring alpha,$(DEB_TARGET_GNU_CPU)))
+  CONFARGS += --with-cpu=ev56
+endif
+
 ifneq (,$(findstring aarch64,$(DEB_TARGET_GNU_CPU)))
   # requires binutils 2.25.90 or newer
   ifeq (,$(filter $(distrelease), precise trusty))
@@ -462,6 +471,10 @@ endif
 
 ifneq (,$(findstring softfloat,$(DEB_TARGET_GNU_CPU)))
   CONFARGS += --with-float=soft
+endif
+
+ifneq (,$(findstring arc-linux,$(DEB_TARGET_GNU_TYPE)))
+  CONFARGS += --disable-multilib
 endif
 
 ifneq (,$(findstring arm-vfp,$(DEB_TARGET_GNU_CPU)))
@@ -550,10 +563,6 @@ ifneq (,$(findstring m68k-linux,$(DEB_TARGET_GNU_TYPE)))
   CONFARGS += --disable-multilib
 endif
 
-ifneq (,$(filter tilegx,$(DEB_TARGET_GNU_CPU)))
-  CONFARGS += --disable-multilib
-endif
-
 ifneq (,$(findstring riscv64-linux,$(DEB_TARGET_GNU_TYPE)))
   CONFARGS += --disable-multilib
   CONFARGS += --with-arch=rv64gc --with-abi=lp64d
@@ -563,14 +572,19 @@ ifneq (,$(findstring s390x-linux,$(DEB_TARGET_GNU_TYPE)))
   ifeq ($(derivative),Ubuntu)
     ifneq (,$(filter $(distrelease),xenial bionic focal))
       CONFARGS += --with-arch=zEC12
-    else
+    else ifneq (,$(filter $(distrelease),jammy kinetic))
       CONFARGS += --with-arch=z13 --with-tune=z15
+    else
+      CONFARGS += --with-arch=z13 --with-tune=z16
     endif
   else # Debian
     CONFARGS += --with-arch=z196
   endif
-  # FIXME: configure with --disable-s390-excess-float-precision for default GCC
-  CONFARGS += --enable-s390-excess-float-precision
+  ifneq (,$(filter $(distrelease),stretch buster bullseye bookworm xenial bionic focal jammy lunar mantic))
+    CONFARGS += --enable-s390-excess-float-precision
+  else
+    CONFARGS += --disable-s390-excess-float-precision
+  endif
 endif
 
 ifeq ($(DEB_TARGET_ARCH_OS),linux)
@@ -581,7 +595,7 @@ endif
 
 ifneq (,$(filter $(derivative),Ubuntu))
   ifneq (,$(filter $(DEB_TARGET_ARCH), amd64 i386 x32))
-    ifneq (,$(filter $(distrelease),precise xenial bionic focal))
+    ifneq (,$(filter $(distrelease),precise xenial bionic))
       CONFARGS += --disable-cet
     else
       CONFARGS += --enable-cet
@@ -819,6 +833,10 @@ else
 endif
 CONFARGS += --enable-checking=$(enable_checking)
 
+ifneq (,$(findstring gcc-toolchain, $(PKGSOURCE)))
+  CONFARGS += $(BINUTILS_GCCCONF)
+endif
+
 CONFARGS += \
 	--build=$(DEB_BUILD_GNU_TYPE) \
 	--host=$(DEB_HOST_GNU_TYPE) \
@@ -936,8 +954,10 @@ endif
 # It's "usr" for gcc releases.
 ifneq (,$(PF))
   # use value set in the environment
-else ifeq ($(trunk_build),yes)
+else ifneq (,$(findstring gcc-snapshot, $(PKGSOURCE)))
   PF		= usr/lib/gcc-snapshot
+else ifneq (,$(findstring gcc-toolchain, $(PKGSOURCE)))
+  PF		= usr/lib/gcc-toolchain-$(BASE_VERSION)
 else
   PF		= usr
 endif
@@ -1190,6 +1210,11 @@ ifeq ($(with_m2),yes)
 else
 	@echo "Will not build the Modula-2 compiler: $(with_m2)"
 endif
+ifneq (,$(offload_targets))
+	@echo "Will build with offload compilers: $(offload_targets)."
+else
+	@echo "Will build without offload compilers: $(with_offload_nvptx) / $(with_offload_gcn)"
+endif
 ifeq ($(with_ssp),yes)
 	@echo "Will build with SSP support."
 else
@@ -1244,6 +1269,7 @@ endif
 		  CFLAGS_FOR_BUILD  CXXFLAGS_FOR_BUILD  LDFLAGS_FOR_BUILD \
 		  CFLAGS_FOR_TARGET CXXFLAGS_FOR_TARGET LDFLAGS_FOR_TARGET) \
 		$(SET_SHELL) $(SET_TARGET_TOOLS) \
+		$(call SET_BINUTILS_MULTIARCH_ENV,$(DEB_TARGET_ARCH)) $(BINUTILS_GCCENV) \
 		../src/configure $(subst ___, ,$(CONFARGS))
 
 	: # multilib builds without b-d on gcc-multilib (used in FLAGS_FOR_TARGET)
@@ -1291,6 +1317,7 @@ ifeq ($(build_type),build-native)
 	  $(SET_PATH) \
 	  $(SET_SHELL) \
 	  $(SET_LOCPATH) \
+	  $(call SET_BINUTILS_MULTIARCH_ENV,$(DEB_TARGET_ARCH)) $(BINUTILS_GCCENV) \
 	    $(time_command) $(MAKE) $(NJOBS) -C $(builddir) $(bootstrap_target) \
 		$(call pass_vars, CC $(flags_to_pass) \
 		  STAGE1_CFLAGS                         STAGE1_LDFLAGS \
@@ -1397,6 +1424,7 @@ $(configure_jit_stamp): $(build_stamp)
 	  $(SET_SHELL) \
 	  CC="$(BUILT_CC)" \
 	  CXX="$(BUILT_CXX)" \
+	  $(call SET_BINUTILS_MULTIARCH_ENV,$(DEB_TARGET_ARCH)) $(BINUTILS_GCCENV) \
 	     ../src/configure $(subst ___, ,$(CONFARGS_JIT))
 	touch $(configure_jit_stamp)
 
@@ -1408,6 +1436,7 @@ $(build_jit_stamp): $(configure_jit_stamp)
 	  $(SET_PATH) \
 	  $(SET_SHELL) \
 	  $(SET_LOCPATH) \
+	  $(call SET_BINUTILS_MULTIARCH_ENV,$(DEB_TARGET_ARCH)) $(BINUTILS_GCCENV) \
 	  LD_LIBRARY_PATH=$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}$(builddir)/gcc \
 	  biarch_multidir_names=none \
 		$(time_command) $(MAKE) $(NJOBS) -C $(builddir_jit) \
@@ -1598,15 +1627,18 @@ else
 	ln -sf /usr/lib/llvm-$(gcn_tools_llvm_version)/bin/llvm-nm bin-gcn/nm
 	ln -sf /usr/lib/llvm-$(gcn_tools_llvm_version)/bin/llvm-ranlib bin-gcn/ranlib
 endif
+	ls -l /
+	ls -l /usr
+	-ls -l /usr/$(gcn_target_name)
+	-ls -l /usr/$(gcn_target_name)/bin
+	ls -l bin-gcn
+	ls -lL bin-gcn
+	bin-gcn/as --version
+	bin-gcn/ld --version
+
 	rm -f $(configure_gcn_stamp) $(build_gcn_stamp)
 	rm -rf src-gcn $(builddir_gcn)
 	cp -al src src-gcn
-ifeq (0,1)
-	: # PR target/97827
-	rm -f src-gcn/gcc/varasm.c
-	cp -p src/gcc/varasm.c src-gcn/gcc/varasm.c
-	patch -p1 < debian/patches/llvm-as.diff
-endif
 	rm -rf src-gcn/newlib
 	cp -a $(newlib_srcdir)/newlib src-gcn/newlib
 	mkdir $(builddir_gcn)
@@ -1777,6 +1809,9 @@ endif
 	  echo "removed RPATH/RUNPATH: $$i"; \
 	done
 
+	: # fix permissions of liblto_plugin.so
+	chmod 644 $(d_hppa64)/$(PF)/lib/gcc/hppa64-linux-gnu/$(BASE_VERSION)/liblto_plugin.so
+
 	cd $(d_hppa64) && tar cvfJ ../../installed-hppa64.tar.xz usr
 	rm -rf $(d_hppa64)
 
@@ -1814,6 +1849,12 @@ endif
 ifeq ($(with_go),yes)
   MANUALS += $(srcdir)/gcc/go/gccgo.texi
 endif
+ifeq ($(with_d),yes)
+  MANUALS += $(srcdir)/gcc/d/gdc.texi
+endif
+ifeq ($(with_m2),yes)
+  MANUALS += $(srcdir)/gcc/doc/gm2.texi
+endif
 
 html-docs: $(build_html_stamp)
 #$(build_html_stamp): $(stampdir)/05-build-html-split
@@ -1833,6 +1874,7 @@ $(stampdir)/05-build-html-split: $(build_stamp)
 		-I $(srcdir)/gcc/p/doc \
 		-I $(srcdir)/gcc/p/doc/generated \
 		-I $(builddir)/gcc \
+		-I $(builddir)/gcc/m2 \
 		-I $(buildlibdir)/libquadmath \
 		-o $${outname} \
 		{}'
@@ -1851,6 +1893,7 @@ $(stampdir)/05-build-html-nosplit: $(build_stamp)
 		-I $(srcdir)/gcc/p/doc \
 		-I $(srcdir)/gcc/p/doc/generated \
 		-I $(builddir)/gcc \
+		-I $(builddir)/gcc/m2 \
 		-I $(buildlibdir)/libquadmath \
 		-o $(CURDIR)/html/$${outname} \
 		{}'
@@ -2271,8 +2314,10 @@ endif
 
 # ---------------------------------------------------------------------------
 
-ifeq ($(single_package),yes)
+ifneq (,$(findstring gcc-snapshot, $(PKGSOURCE)))
   include debian/rules.d/binary-snapshot.mk
+else ifneq (,$(findstring gcc-toolchain, $(PKGSOURCE)))
+  include debian/rules.d/binary-toolchain.mk
 else
 
 ifneq ($(with_base_only),yes)
@@ -2497,6 +2542,67 @@ endif
 	chmod 755 debian/dh_*
 	touch $(install_snap_stamp)
 
+
+$(install_tc_stamp): $(build_dependencies)
+	@echo === START $@ ===
+	dh_testdir
+	dh_testroot
+	dh_prep
+
+	: # Install directories
+	rm -rf $(d)
+	mkdir -p $(d)/$(PF)
+
+ifeq ($(with_hppa64),yes)
+	: # install files prepared in the hppa64 build target
+	cd $(d) && tar xvf ../../installed-hppa64.tar.xz
+endif
+
+	: # Install everything
+	$(SET_PATH) \
+	$(SET_SHELL) \
+	  $(MAKE) -C $(builddir) \
+	    $(call pass_vars, $(flags_to_pass)) \
+	    DESTDIR=$(CURDIR)/$(d) \
+	    infodir=/$(PF)/share/info \
+	    mandir=/$(PF)/share/man \
+		install
+
+	ls -l $(d)/$(PF)/bin
+
+	for i in ar nm ranlib; do \
+	  cp debian/gcc-$$i-$(BASE_VERSION).1 \
+	    $(d)/$(PF)/share/man/man1/$(cmd_prefix)gcc-$$i.1; \
+	done
+
+	if [ ! -x $(d)/$(PF)/bin/$(TARGET_ALIAS)-gcc ]; then \
+	  mv $(d)/$(PF)/bin/$(TARGET_ALIAS)-gcc-13* $(d)/$(PF)/bin/$(TARGET_ALIAS)-gcc; \
+	else \
+	  rm -f $(d)/$(PF)/bin/$(TARGET_ALIAS)-gcc-13*; \
+	fi
+	rm -rf $(d)/$(gcc_lib_dir)/include-fixed
+
+ifneq ($(configured_libdir),$(libdir))
+	for i in ada debug go pkgconfig '*.so' '*.so.*' '*.a' '*.la' '*.py' '*.spec'; do \
+	  mv $(d)/$(PF)/$(configured_libdir)/$$i \
+		$(d)/$(PF)/$(libdir)/. || true; \
+	done
+endif
+
+ifeq ($(with_jit),yes)
+	: # install files prepared in the jit build target
+	cd $(d) && tar xvf ../../installed-jit.tar.xz
+endif
+
+	-ls -l $(d)/usr
+	if [ -d $(d)/usr/man/man1 ]; then \
+	  mv $(d)/usr/man/man1/* $(d)/usr/share/man/man1/; \
+	fi
+
+	chmod 755 debian/dh_*
+	touch $(install_tc_stamp)
+
+
 $(install_stamp): $(build_stamp)
 	@echo === START $@ ===
 	dh_testdir
@@ -2609,6 +2715,9 @@ ifeq ($(with_libcxxdbg),yes)
 	  mv $$i $$d/$$t; \
 	done
 endif
+
+	: # fix permissions of liblto_plugin.so
+	chmod 644 $(d)/$(gcc_lexec_dir)/liblto_plugin.so
 
 	: # remove rpath settings from binaries and shared libs
 	for i in $$(chrpath -k $(d)/$(PF)/bin/* $(d)/$(PFL)/lib*/lib*.so.* \
@@ -2809,6 +2918,9 @@ endif
 	  $(d)-gcn/$(gcc_lexec_dir)/accel/$(gcn_target_name)/nm
 	ln -sf /usr/lib/llvm-$(gcn_tools_llvm_version)/bin/llvm-ranlib \
 	  $(d)-gcn/$(gcc_lexec_dir)/accel/$(gcn_target_name)/ranlib
+
+	: # fix permissions of liblto_plugin.so
+	chmod 644 $(d)-gcn/$(gcc_lexec_dir)/accel/$(gcn_target_name)/liblto_plugin.so
 
 	-find $(d)-gcn -type d -empty -delete
 	@echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX

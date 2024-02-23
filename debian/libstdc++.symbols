@@ -10,7 +10,7 @@ libstdc++.so.6 #PACKAGE# #MINVER#
  (symver)CXXABI_1.3.8 4.3
  (symver)CXXABI_1.3.9 5
  (symver)CXXABI_1.3.10 6
- (symver)CXXABI_1.3.11 7
+ (symver)CXXABI_1.3.11 10.2
  (symver)CXXABI_1.3.12 9
  (symver)CXXABI_1.3.13 11
  (symver|arch=armel armhf)CXXABI_ARM_1.3.3 4.4
@@ -41,7 +41,7 @@ libstdc++.so.6 #PACKAGE# #MINVER#
  (symver)GLIBCXX_3.4.20 4.9
  (symver)GLIBCXX_3.4.21 5.2
  (symver)GLIBCXX_3.4.22 6
- (symver)GLIBCXX_3.4.23 7
+ (symver)GLIBCXX_3.4.23 10.2
  (symver)GLIBCXX_3.4.24 7
  (symver)GLIBCXX_3.4.25 8
  (symver)GLIBCXX_3.4.26 9

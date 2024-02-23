@@ -1,0 +1,26 @@
+# DP: Build the gm2 info docs without the --no-headers option.
+
+--- a/src/gcc/m2/Make-lang.in
++++ b/src/gcc/m2/Make-lang.in
+@@ -183,7 +183,7 @@ m2.pod: doc/gm2.texi $(TEXISRC)
+ doc/m2.info: $(TEXISRC)
+ 	if test "x$(BUILD_INFO)" = xinfo; then \
+ 	  rm -f doc/m2.info*; \
+-          $(MAKEINFO) --no-headers -I$(objdir)/m2 -I$(srcdir)/doc/include \
++          $(MAKEINFO) -I$(objdir)/m2 -I$(srcdir)/doc/include \
+                       -o $@ $(srcdir)/doc/gm2.texi ; \
+ 	else true; fi
+ 
+--- a/src/gcc/doc/gm2.texi
++++ b/src/gcc/doc/gm2.texi
+@@ -65,10 +65,8 @@ Boston, MA 02110-1301, USA@*
+ 
+ @c `Top' Node and Master Menu
+ 
+-@ifinfo
+ @node Top, Overview, (dir), (dir)
+ @top Introduction
+-@end ifinfo
+ 
+ @menu
+ * Overview::         What is GNU Modula-2.

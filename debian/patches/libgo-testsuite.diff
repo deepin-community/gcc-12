@@ -2,7 +2,7 @@
 
 --- a/src/libgo/Makefile.am
 +++ b/src/libgo/Makefile.am
-@@ -918,7 +918,7 @@ BUILDGOX = \
+@@ -919,7 +919,7 @@ BUILDGOX = \
  	$(SHELL) $(srcdir)/mvifdiff.sh $@.tmp `echo $@ | sed -e 's/s-gox/gox/'`
  
  GOTESTFLAGS =
@@ -11,7 +11,7 @@
  
  # Check a package.
  CHECK = \
-@@ -939,6 +939,12 @@ CHECK = \
+@@ -940,6 +940,12 @@ CHECK = \
  	$(MKDIR_P) $(@D); \
  	rm -f $@-testsum $@-testlog; \
  	files=`$(SHELL) $(srcdir)/match.sh --goarch=$(GOARCH) --goos=$(GOOS) --srcdir=$(srcdir)/go/$(@D) --extrafiles="$(extra_go_files_$(subst .,_,$(subst /,_,$(@D))))" $(matchargs_$(subst /,_,$(@D)))`; \
@@ -24,7 +24,7 @@
  	if test "$(USE_DEJAGNU)" = "yes"; then \
  	  $(SHELL) $(srcdir)/testsuite/gotest --goarch=$(GOARCH) --goos=$(GOOS) --dejagnu=yes --basedir=$(srcdir) --srcdir=$(srcdir)/go/$(@D) --pkgpath="$(@D)" --pkgfiles="$$files" --testname="$(@D)" $(GOTESTFLAGS); \
  	elif test "$(GOBENCH)" != ""; then \
-@@ -954,6 +960,7 @@ CHECK = \
+@@ -955,6 +961,7 @@ CHECK = \
  	    echo "FAIL: $(@D)" > $@-testsum; \
  	    exit 1; \
  	  fi; \

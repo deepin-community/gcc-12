@@ -11,10 +11,10 @@
 +   gcc/config/<arch>/*.h instead?  */
 +#include "distro-defaults.h"
 +
+ #define INCLUDE_STRING
  #include "config.h"
  #include "system.h"
- #include "coretypes.h"
-@@ -984,6 +989,90 @@ proper position among the other output f
+@@ -986,6 +991,90 @@ proper position among the other output f
  #define LINK_GCC_C_SEQUENCE_SPEC "%G %{!nolibc:%L %G}"
  #endif
  
@@ -105,7 +105,7 @@
  #ifndef LINK_SSP_SPEC
  #ifdef TARGET_LIBC_PROVIDES_SSP
  #define LINK_SSP_SPEC "%{fstack-protector|fstack-protector-all" \
-@@ -1040,7 +1129,7 @@ proper position among the other output f
+@@ -1042,7 +1131,7 @@ proper position among the other output f
  #ifndef LINK_PIE_SPEC
  #ifdef HAVE_LD_PIE
  #ifndef LD_PIE_SPEC
@@ -114,7 +114,7 @@
  #endif
  #else
  #define LD_PIE_SPEC ""
-@@ -1157,6 +1246,7 @@ proper position among the other output f
+@@ -1159,6 +1248,7 @@ proper position among the other output f
     "%{flto|flto=*:%<fcompare-debug*} \
      %{flto} %{fno-lto} %{flto=*} %l " LINK_PIE_SPEC \
     "%{fuse-ld=*:-fuse-ld=%*} " LINK_COMPRESS_DEBUG_SPEC \
@@ -122,7 +122,7 @@
     "%X %{o*} %{e*} %{N} %{n} %{r}\
      %{s} %{t} %{u*} %{z} %{Z} %{!nostdlib:%{!r:%{!nostartfiles:%S}}} \
      %{static|no-pie|static-pie:} %@{L*} %(mfwrap) %(link_libgcc) " \
-@@ -1197,6 +1287,7 @@ static const char *cpp_spec = CPP_SPEC;
+@@ -1199,6 +1289,7 @@ static const char *cpp_spec = CPP_SPEC;
  static const char *cc1_spec = CC1_SPEC;
  static const char *cc1plus_spec = CC1PLUS_SPEC;
  static const char *link_gcc_c_sequence_spec = LINK_GCC_C_SEQUENCE_SPEC;
@@ -130,7 +130,7 @@
  static const char *link_ssp_spec = LINK_SSP_SPEC;
  static const char *asm_spec = ASM_SPEC;
  static const char *asm_final_spec = ASM_FINAL_SPEC;
-@@ -1255,7 +1346,7 @@ static const char *cpp_options =
+@@ -1257,7 +1348,7 @@ static const char *cpp_options =
  "%(cpp_unique_options) %1 %{m*} %{std*&ansi&trigraphs} %{W*&pedantic*} %{w}\
   %{f*} %{g*:%{%:debug-level-gt(0):%{g*}\
   %{!fno-working-directory:-fworking-directory}}} %{O*}\
@@ -139,7 +139,7 @@
  
  /* Pass -d* flags, possibly modifying -dumpdir, -dumpbase et al.
  
-@@ -1444,9 +1535,9 @@ static const struct compiler default_com
+@@ -1446,9 +1537,9 @@ static const struct compiler default_com
        %{save-temps*|traditional-cpp|no-integrated-cpp:%(trad_capable_cpp) \
  	  %(cpp_options) -o %{save-temps*:%b.i} %{!save-temps*:%g.i} \n\
  	    cc1 -fpreprocessed %{save-temps*:%b.i} %{!save-temps*:%g.i} \
@@ -151,7 +151,7 @@
        %{!fsyntax-only:%(invoke_as)}}}}", 0, 0, 1},
    {"-",
     "%{!E:%e-E or -x required when input is from standard input}\
-@@ -1460,18 +1551,18 @@ static const struct compiler default_com
+@@ -1462,18 +1553,18 @@ static const struct compiler default_com
  	  %{save-temps*|traditional-cpp|no-integrated-cpp:%(trad_capable_cpp) \
  		%(cpp_options) -o %{save-temps*:%b.i} %{!save-temps*:%g.i} \n\
  		    cc1 -fpreprocessed %{save-temps*:%b.i} %{!save-temps*:%g.i} \
@@ -173,7 +173,7 @@
    {".s", "@assembler", 0, 0, 0},
    {"@assembler",
     "%{!M:%{!MM:%{!E:%{!S:as %(asm_debug) %(asm_options) %i %A }}}}", 0, 0, 0},
-@@ -1703,6 +1794,7 @@ static struct spec_list static_specs[] =
+@@ -1705,6 +1796,7 @@ static struct spec_list static_specs[] =
    INIT_STATIC_SPEC ("cc1_options",		&cc1_options),
    INIT_STATIC_SPEC ("cc1plus",			&cc1plus_spec),
    INIT_STATIC_SPEC ("link_gcc_c_sequence",	&link_gcc_c_sequence_spec),
@@ -315,7 +315,7 @@
 +#ifdef DIST_DEFAULT_FORTIFY_SOURCE
 +  /* Fortify Source enabled by default for optimization levels > 0 */
 +  if (optimize)
-+    builtin_define_with_int_value ("_FORTIFY_SOURCE", 2);
++    builtin_define_with_int_value ("_FORTIFY_SOURCE", DIST_DEFAULT_FORTIFY_SOURCE);
 +#endif
 +
    /* Misc.  */

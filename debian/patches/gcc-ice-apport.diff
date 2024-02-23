@@ -3,7 +3,7 @@
 
 --- a/src/gcc/gcc.cc
 +++ b/src/gcc/gcc.cc
-@@ -8107,6 +8107,16 @@ do_report_bug (const char **new_argv, co
+@@ -8109,6 +8109,16 @@ do_report_bug (const char **new_argv, co
  	  fflush(stderr);
  	  free(cmd);
  	}

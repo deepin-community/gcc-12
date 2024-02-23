@@ -2,7 +2,7 @@
 
 --- a/src/gcc/gcc.cc
 +++ b/src/gcc/gcc.cc
-@@ -2902,6 +2902,7 @@ for_each_path (const struct path_prefix
+@@ -2904,6 +2904,7 @@ for_each_path (const struct path_prefix
  	{
  	  len = paths->max_len + extra_space + 1;
  	  len += MAX (MAX (suffix_len, multi_os_dir_len), multiarch_len);
@@ -10,7 +10,7 @@
  	  path = XNEWVEC (char, len);
  	}
  
-@@ -3115,6 +3116,24 @@ file_at_path (char *path, void *data)
+@@ -3117,6 +3118,24 @@ file_at_path (char *path, void *data)
    struct file_at_path_info *info = (struct file_at_path_info *) data;
    size_t len = strlen (path);
  

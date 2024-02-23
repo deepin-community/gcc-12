@@ -150,7 +150,7 @@ endif
 ifeq ($(with_check),yes)
 	dh_installdocs -p$(p_snap) test-summary
 	cd $(d_snap) && tar xvf ../../installed-testlogs.tar
-	mv $(d_snap)/usr/share/doc/gcc-base/* $(d_snap)/usr/share/doc/gcc-snapshot/.
+	mv $(d_snap)/usr/share/doc/gcc-base/* $(d_snap)/usr/share/doc/$(p_snap)/.
 	rm -rf $(d_snap)/usr/share/doc/gcc-base
 else
 	dh_installdocs -p$(p_snap)

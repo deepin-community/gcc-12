@@ -59,7 +59,7 @@ Uploaders: Iain Buclaw <ibuclaw@ubuntu.com>, Matthias Klose <doko@debian.org>
 ', `dnl
 Uploaders: Matthias Klose <doko@debian.org>
 ')dnl SRCNAME
-Standards-Version: 4.6.0
+Standards-Version: 4.6.2
 ifdef(`TARGET',`dnl cross
 Build-Depends: DEBHELPER_BUILD_DEP DPKG_BUILD_DEP
   LIBC_BUILD_DEP, LIBC_BIARCH_BUILD_DEP
@@ -79,7 +79,7 @@ Build-Depends: DEBHELPER_BUILD_DEP DPKG_BUILD_DEP GCC_MULTILIB_BUILD_DEP
   dwz, libunwind8-dev [ia64], libatomic-ops-dev [ia64],
   gawk, lzma, xz-utils, patchutils,
   libzstd-dev, zlib1g-dev, SDT_BUILD_DEP USAGE_BUILD_DEP
-  BINUTILS_BUILD_DEP,
+  BINUTILS_BUILD_DEP, BUILD_DEP_FOR_BINUTILS
   gperf (>= 3.0.1), bison (>= 1:2.3), flex, gettext,
   gdb`'NT [!riscv64 !mipsel !mips64el], OFFLOAD_BUILD_DEP
   texinfo (>= 4.3), LOCALES, sharutils,
@@ -97,8 +97,8 @@ Homepage: http://gdcproject.org/
 ', `dnl
 Homepage: http://gcc.gnu.org/
 ')dnl SRCNAME
-Vcs-Browser: https://salsa.debian.org/toolchain-team/gcc
-Vcs-Git: https://salsa.debian.org/toolchain-team/gcc.git
+Vcs-Browser: https://salsa.debian.org/toolchain-team/gcc/tree/gcc-12-debian
+Vcs-Git: https://salsa.debian.org/toolchain-team/gcc.git -b gcc-12-debian
 XS-Testsuite: autopkgtest
 
 ifelse(regexp(SRCNAME, `gcc-snapshot'),0,`dnl
@@ -110,7 +110,6 @@ Depends: binutils`'TS (>= ${binutils:Version}),
   ${dep:libcbiarchdev}, ${dep:libcdev}, ${dep:libunwinddev}, python3,
   ${snap:depends}, ${shlibs:Depends}, ${misc:Depends}
 Recommends: ${snap:recommends}
-Suggests: ${dep:gold}
 BUILT_USING`'dnl
 Description: SNAPSHOT of the GNU Compiler Collection
  This package contains a recent development SNAPSHOT of all files
@@ -123,8 +122,21 @@ Description: SNAPSHOT of the GNU Compiler Collection
  This package will NEVER hit the testing distribution. It is used for
  tracking gcc bugs submitted to the Debian BTS in recent development
  versions of gcc.
-',`dnl gcc-X.Y
-
+',`dnl regexp SRCNAME
+ifelse(regexp(SRCNAME, `gcc-toolchain'),0,`dnl
+Package: gcc-toolchain`'PV`'TS
+Architecture: any
+Section: devel
+Priority: optional
+Depends: 
+  ${dep:libcbiarchdev}, ${dep:libcdev}, ${dep:libunwinddev}, python3,
+  ${snap:depends}, ${shlibs:Depends}, ${misc:Depends}
+Recommends: ${snap:recommends}
+BUILT_USING`'dnl
+Description: Backport of the GNU Compiler Collection
+ This package contains the default GCC and binutils as found
+ in a newer Ubuntu LTS release.
+',`dnl regexp SRCNAME
 dnl default base package dependencies
 define(`BASEDEP', `gcc`'PV`'TS-base (= ${gcc:Version})')
 define(`SOFTBASEDEP', `gcc`'PV`'TS-base (>= ${gcc:SoftVersion})')
@@ -1109,7 +1121,7 @@ ifdef(`TARGET',`Multi-Arch: foreign
 Section: ifdef(`TARGET',`devel',`interpreters')
 Priority: optional
 Depends: BASEDEP, ${shlibs:Depends}, ${misc:Depends}
-Suggests: gcc`'PV-locales (>= ${gcc:SoftVersion})
+Suggests: gcc`'PV-locales (>= ${gcc:SoftVersion}), cpp`'PV-doc (>= ${gcc:SoftVersion})
 Breaks: libmagics++-dev (<< 2.28.0-4)ifdef(`TARGET',`',`, hardening-wrapper (<< 2.8+nmu3)')
 BUILT_USING`'dnl
 Description: GNU C preprocessor
@@ -3263,7 +3275,8 @@ ifdef(`MULTIARCH', `Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 ')`'dnl
 Priority: optional
-Depends: BASEDEP, libgcc`'PV-dev, binutils, ${shlibs:Depends}, ${misc:Depends}
+Depends: BASEDEP, libgcc`'PV-dev, binutils, ${dep:libcdev},
+  ${shlibs:Depends}, ${misc:Depends}
 Breaks: python-gccjit (<< 0.4-4), python3-gccjit (<< 0.4-4)
 BUILT_USING`'dnl
 Description: GCC just-in-time compilation (shared library)
@@ -3292,7 +3305,7 @@ Package: libgccjit`'PV-doc
 Section: doc
 Architecture: all
 Priority: optional
-Depends: BASEDEP, ${misc:Depends}
+Depends: gcc`'PV-base (>= ${gcc:SoftVersion}), ${misc:Depends}
 Conflicts: libgccjit-5-doc, libgccjit-6-doc, libgccjit-7-doc, libgccjit-8-doc,
   libgccjit-9-doc, libgccjit-10-doc, libgccjit-11-doc,
 Description: GCC just-in-time compilation (documentation)
@@ -3360,7 +3373,6 @@ Priority: optional
 Depends: BASEDEP, gcc`'PV`'TS (= ${gcc:Version}), ${dep:libcdev}, ${shlibs:Depends}, libidevdep(objc`'PV-dev,,=), ${misc:Depends}
 Suggests: ${gobjc:multilib}, gcc`'PV-doc (>= ${gcc:SoftVersion}), libdbgdep(objc`'OBJC_SO-dbg),
 Provides: objc-compiler`'TS
-ifdef(`__sparc__',`Conflicts: gcc`'PV-sparc64', `dnl')
 BUILT_USING`'dnl
 Description: GNU Objective-C compiler
  This is the GNU Objective-C compiler, which compiles
@@ -5613,6 +5625,16 @@ Description: GNU Modula-2 standard library (debug symbols)
 ')`'dnl armml
 ')`'dnl multigm2lib
 ')`'dnl libgm2
+
+Package: gm2`'PV-doc
+Architecture: all
+Section: doc
+Depends: gcc`'PV-base (>= ${gcc:SoftVersion}), ${misc:Depends}
+Suggests: gm2`'PV
+Conflicts: gm2-12 (<< 12.2.0-8)
+Replaces: gm2-12 (<< 12.2.0-8)
+Description: Documentation for the GNU Modula-2 compiler (gm2)
+ Documentation for the GNU Modula-2 compiler in HTML and info `format'.
 ')`'dnl m2
 
 ifdef(`TARGET',`',`dnl
@@ -5737,5 +5759,5 @@ Description: Source of the GNU Compiler Collection
  build the GNU Compiler Collection (GCC).
 ')`'dnl source
 dnl
-')`'dnl gcc-X.Y
+')')`'dnl regexp SRCNAME
 dnl last line in file

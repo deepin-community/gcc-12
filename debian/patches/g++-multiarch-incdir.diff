@@ -3,7 +3,7 @@
 
 --- a/src/libstdc++-v3/include/Makefile.am
 +++ b/src/libstdc++-v3/include/Makefile.am
-@@ -977,7 +977,7 @@ endif
+@@ -979,7 +979,7 @@ endif
  
  host_srcdir = ${glibcxx_srcdir}/$(OS_INC_SRCDIR)
  host_builddir = ./${host_alias}/bits
@@ -14,7 +14,7 @@
  	${host_srcdir}/ctype_inline.h \
 --- a/src/libstdc++-v3/include/Makefile.in
 +++ b/src/libstdc++-v3/include/Makefile.in
-@@ -1326,7 +1326,7 @@ parallel_headers = \
+@@ -1328,7 +1328,7 @@ parallel_headers = \
  @GLIBCXX_C_HEADERS_COMPATIBILITY_TRUE@c_compatibility_headers_extra = ${c_compatibility_headers}
  host_srcdir = ${glibcxx_srcdir}/$(OS_INC_SRCDIR)
  host_builddir = ./${host_alias}/bits

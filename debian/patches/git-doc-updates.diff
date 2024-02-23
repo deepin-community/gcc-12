@@ -1,87 +1,214 @@
-# DP: updates from the 12 branch upto 20220808 (documentation).
+# DP: updates from the 12 branch upto 20240119 (documentation).
 
 LANG=C git diff --no-renames --src-prefix=a/src/ --dst-prefix=b/src/ \
-	1ea978e3066ac565a1ec28a96a4d61eaf38e2726 556e5a3b1e4f2cfe53ae2f4c4d106965807ea723 \
+	8fc1a49c9312b05d925b7d21f1d2145d70818151 a7f6fe38d5421e5426da2b3ec34278b9e4146eb2 \
 	| awk '/^diff .*\.texi/ {skip=0; print; next} /^diff / {skip=1; next} skip==0' \
         | grep -v -E '^(diff|index)'
 
+--- a/src/gcc/doc/extend.texi
++++ b/src/gcc/doc/extend.texi
+@@ -14618,6 +14618,7 @@ instructions, but allow the compiler to schedule those calls.
+ * Blackfin Built-in Functions::
+ * BPF Built-in Functions::
+ * FR-V Built-in Functions::
++* LoongArch Base Built-in Functions::
+ * MIPS DSP Built-in Functions::
+ * MIPS Paired-Single Support::
+ * MIPS Loongson Built-in Functions::
+@@ -16068,6 +16069,139 @@ Use the @code{nldub} instruction to load the contents of address @var{x}
+ into the data cache.  The instruction is issued in slot I1@.
+ @end table
+ 
++@node LoongArch Base Built-in Functions
++@subsection LoongArch Base Built-in Functions
++
++These built-in functions are available for LoongArch.
++
++Data Type Description:
++@itemize
++@item @code{imm0_31}, a compile-time constant in range 0 to 31;
++@item @code{imm0_16383}, a compile-time constant in range 0 to 16383;
++@item @code{imm0_32767}, a compile-time constant in range 0 to 32767;
++@item @code{imm_n2048_2047}, a compile-time constant in range -2048 to 2047;
++@end itemize
++
++The intrinsics provided are listed below:
++@smallexample
++    unsigned int __builtin_loongarch_movfcsr2gr (imm0_31)
++    void __builtin_loongarch_movgr2fcsr (imm0_31, unsigned int)
++    void __builtin_loongarch_cacop_d (imm0_31, unsigned long int, imm_n2048_2047)
++    unsigned int __builtin_loongarch_cpucfg (unsigned int)
++    void __builtin_loongarch_asrtle_d (long int, long int)
++    void __builtin_loongarch_asrtgt_d (long int, long int)
++    long int __builtin_loongarch_lddir_d (long int, imm0_31)
++    void __builtin_loongarch_ldpte_d (long int, imm0_31)
++
++    int __builtin_loongarch_crc_w_b_w (char, int)
++    int __builtin_loongarch_crc_w_h_w (short, int)
++    int __builtin_loongarch_crc_w_w_w (int, int)
++    int __builtin_loongarch_crc_w_d_w (long int, int)
++    int __builtin_loongarch_crcc_w_b_w (char, int)
++    int __builtin_loongarch_crcc_w_h_w (short, int)
++    int __builtin_loongarch_crcc_w_w_w (int, int)
++    int __builtin_loongarch_crcc_w_d_w (long int, int)
++
++    unsigned int __builtin_loongarch_csrrd_w (imm0_16383)
++    unsigned int __builtin_loongarch_csrwr_w (unsigned int, imm0_16383)
++    unsigned int __builtin_loongarch_csrxchg_w (unsigned int, unsigned int, imm0_16383)
++    unsigned long int __builtin_loongarch_csrrd_d (imm0_16383)
++    unsigned long int __builtin_loongarch_csrwr_d (unsigned long int, imm0_16383)
++    unsigned long int __builtin_loongarch_csrxchg_d (unsigned long int, unsigned long int, imm0_16383)
++
++    unsigned char __builtin_loongarch_iocsrrd_b (unsigned int)
++    unsigned short __builtin_loongarch_iocsrrd_h (unsigned int)
++    unsigned int __builtin_loongarch_iocsrrd_w (unsigned int)
++    unsigned long int __builtin_loongarch_iocsrrd_d (unsigned int)
++    void __builtin_loongarch_iocsrwr_b (unsigned char, unsigned int)
++    void __builtin_loongarch_iocsrwr_h (unsigned short, unsigned int)
++    void __builtin_loongarch_iocsrwr_w (unsigned int, unsigned int)
++    void __builtin_loongarch_iocsrwr_d (unsigned long int, unsigned int)
++
++    void __builtin_loongarch_dbar (imm0_32767)
++    void __builtin_loongarch_ibar (imm0_32767)
++
++    void __builtin_loongarch_syscall (imm0_32767)
++    void __builtin_loongarch_break (imm0_32767)
++@end smallexample
++
++@emph{Note:}Since the control register is divided into 32-bit and 64-bit,
++but the access instruction is not distinguished. So GCC renames the control
++instructions when implementing intrinsics.
++
++Take the csrrd instruction as an example, built-in functions are implemented as follows:
++@smallexample
++  __builtin_loongarch_csrrd_w  // When reading the 32-bit control register use.
++  __builtin_loongarch_csrrd_d  // When reading the 64-bit control register use.
++@end smallexample
++
++For the convenience of use, the built-in functions are encapsulated,
++the encapsulated functions and @code{__drdtime_t, __rdtime_t} are
++defined in the @code{larchintrin.h}. So if you call the following
++function you need to include @code{larchintrin.h}.
++
++@smallexample
++     typedef struct drdtime@{
++            unsigned long dvalue;
++            unsigned long dtimeid;
++     @} __drdtime_t;
++
++     typedef struct rdtime@{
++            unsigned int value;
++            unsigned int timeid;
++     @} __rdtime_t;
++@end smallexample
++
++@smallexample
++    __drdtime_t __rdtime_d (void)
++    __rdtime_t  __rdtimel_w (void)
++    __rdtime_t  __rdtimeh_w (void)
++    unsigned int  __movfcsr2gr (imm0_31)
++    void __movgr2fcsr (imm0_31, unsigned int)
++    void __cacop_d (imm0_31, unsigned long, imm_n2048_2047)
++    unsigned int  __cpucfg (unsigned int)
++    void __asrtle_d (long int, long int)
++    void __asrtgt_d (long int, long int)
++    long int  __lddir_d (long int, imm0_31)
++    void __ldpte_d (long int, imm0_31)
++
++    int  __crc_w_b_w (char, int)
++    int  __crc_w_h_w (short, int)
++    int  __crc_w_w_w (int, int)
++    int  __crc_w_d_w (long int, int)
++    int  __crcc_w_b_w (char, int)
++    int  __crcc_w_h_w (short, int)
++    int  __crcc_w_w_w (int, int)
++    int  __crcc_w_d_w (long int, int)
++
++    unsigned int  __csrrd_w (imm0_16383)
++    unsigned int  __csrwr_w (unsigned int, imm0_16383)
++    unsigned int  __csrxchg_w (unsigned int, unsigned int, imm0_16383)
++    unsigned long  __csrrd_d (imm0_16383)
++    unsigned long  __csrwr_d (unsigned long, imm0_16383)
++    unsigned long  __csrxchg_d (unsigned long, unsigned long, imm0_16383)
++
++    unsigned char   __iocsrrd_b (unsigned int)
++    unsigned short  __iocsrrd_h (unsigned int)
++    unsigned int  __iocsrrd_w (unsigned int)
++    unsigned long  __iocsrrd_d (unsigned int)
++    void __iocsrwr_b (unsigned char, unsigned int)
++    void __iocsrwr_h (unsigned short, unsigned int)
++    void __iocsrwr_w (unsigned int, unsigned int)
++    void __iocsrwr_d (unsigned long, unsigned int)
++
++    void __dbar (imm0_32767)
++    void __ibar (imm0_32767)
++
++    void __syscall (imm0_32767)
++    void __break (imm0_32767)
++@end smallexample
++
++Returns the value that is currently set in the @samp{tp} register.
++@smallexample
++    void * __builtin_thread_pointer (void)
++@end smallexample
++
+ @node MIPS DSP Built-in Functions
+ @subsection MIPS DSP Built-in Functions
+ 
 --- a/src/gcc/doc/install.texi
 +++ b/src/gcc/doc/install.texi
-@@ -2371,6 +2371,21 @@ For a native build and cross compiles that have target headers, the option's
- default is derived from glibc's behavior. When glibc clamps float_t to double,
- GCC follows and enables the option. For other cross compiles, the default is
- disabled.
+@@ -375,6 +375,9 @@ tables.
+ 
+ Used by @command{automake}.
+ 
++If available, enables parallel testing of @samp{libgomp} in case that
++@command{flock} is not available.
 +
-+@item --with-zstd=@var{pathname}
-+@itemx --with-zstd-include=@var{pathname}
-+@itemx --with-zstd-lib=@var{pathname}
-+If you do not have the @code{zstd} library installed in a standard
-+location and you want to build GCC, you can explicitly specify the
-+directory where it is installed (@samp{--with-zstd=@/@var{zstdinstalldir}}).
-+The @option{--with-zstd=@/@var{zstdinstalldir}} option is shorthand for
-+@option{--with-zstd-lib=@/@var{zstdinstalldir}/lib} and
-+@option{--with-zstd-include=@/@var{zstdinstalldir}/include}. If this
-+shorthand assumption is not correct, you can use the explicit
-+include and lib options directly.
-+
-+These flags are applicable to the host platform only.  When building
-+a cross compiler, they will not be used to configure target libraries.
  @end table
  
- @subheading Cross-Compiler-Specific Options
+ Several support libraries are necessary to build GCC, some are required,
 --- a/src/gcc/doc/invoke.texi
 +++ b/src/gcc/doc/invoke.texi
-@@ -10198,8 +10198,8 @@ diagnostic to @file{@var{file}.@var{idx}.@var{kind}.epath.txt}.
- @opindex dump-analyzer-feasibility
- Dump internal details about the analyzer's search for feasible paths.
- The details are written in a form suitable for viewing with GraphViz
--to filenames of the form @file{@var{file}.*.fg.dot} and
--@file{@var{file}.*.tg.dot}.
-+to filenames of the form @file{@var{file}.*.fg.dot},
-+@file{@var{file}.*.tg.dot}, and @file{@var{file}.*.fpath.txt}.
+@@ -1434,7 +1434,7 @@ See RS/6000 and PowerPC Options.
+ -m96bit-long-double  -mlong-double-64  -mlong-double-80  -mlong-double-128 @gol
+ -mregparm=@var{num}  -msseregparm @gol
+ -mveclibabi=@var{type}  -mvect8-ret-in-mem @gol
+--mpc32  -mpc64  -mpc80  -mstackrealign @gol
++-mpc32  -mpc64  -mpc80 -mdaz-ftz -mstackrealign @gol
+ -momit-leaf-frame-pointer  -mno-red-zone  -mno-tls-direct-seg-refs @gol
+ -mcmodel=@var{code-model}  -mabi=@var{name}  -maddress-mode=@var{mode} @gol
+ -m32  -m64  -mx32  -m16  -miamcu  -mlarge-data-threshold=@var{num} @gol
+@@ -6647,7 +6647,7 @@ This warning is enabled by @option{-Wall}.
+ @item -Wmissing-include-dirs @r{(C, C++, Objective-C, Objective-C++ and Fortran only)}
+ @opindex Wmissing-include-dirs
+ @opindex Wno-missing-include-dirs
+-Warn if a user-supplied include directory does not exist. This opions is disabled
++Warn if a user-supplied include directory does not exist. This option is disabled
+ by default for C, C++, Objective-C and Objective-C++. For Fortran, it is partially
+ enabled by default by warning for -I and -J, only.
  
- @item -fdump-analyzer-json
- @opindex fdump-analyzer-json
-@@ -24527,7 +24527,8 @@ Set the cost of branches to roughly @var{n} instructions.
- @itemx -mno-check-zero-divison
- @opindex -mcheck-zero-division
- Trap (do not trap) on integer division by zero.  The default is
--@option{-mcheck-zero-division}.
-+@option{-mcheck-zero-division} for @option{-O0} or @option{-Og}, and
-+@option{-mno-check-zero-division} for other optimization levels.
+@@ -32078,6 +32078,15 @@ are enabled by default; routines in such libraries could suffer significant
+ loss of accuracy, typically through so-called ``catastrophic cancellation'',
+ when this option is used to set the precision to less than extended precision.
  
- @item -mcond-move-int
- @itemx -mno-cond-move-int
---- a/src/gcc/doc/sourcebuild.texi
-+++ b/src/gcc/doc/sourcebuild.texi
-@@ -2420,6 +2420,18 @@ PowerPC target pre-defines macro _ARCH_PWR9 which means the @code{-mcpu}
- setting is Power9 or later.
- @end table
++@item -mdaz-ftz
++@opindex mdaz-ftz
++
++The flush-to-zero (FTZ) and denormals-are-zero (DAZ) flags in the MXCSR register
++are used to control floating-point calculations.SSE and AVX instructions
++including scalar and vector instructions could benefit from enabling the FTZ
++and DAZ flags when @option{-mdaz-ftz} is specified. Don't set FTZ/DAZ flags
++when @option{-mno-daz-ftz} is specified.
++
+ @item -mstackrealign
+ @opindex mstackrealign
+ Realign the stack at entry.  On the x86, the @option{-mstackrealign}
+@@ -33092,7 +33101,7 @@ on x86-64 processors in 64-bit environments.
+ Generate code for a 16-bit, 32-bit or 64-bit environment.
+ The @option{-m32} option sets @code{int}, @code{long}, and pointer types
+ to 32 bits, and
+-generates code that runs on any i386 system.
++generates code that runs in 32-bit mode.
  
-+@subsection RISC-V specific attributes
-+
-+@table @code
-+
-+@item rv32
-+Test system has an integer register width of 32 bits.
-+
-+@item rv64
-+Test system has an integer register width of 64 bits.
-+
-+@end table
-+
- @subsubsection Other hardware attributes
- 
- @c Please keep this table sorted alphabetically.
---- a/src/libgomp/libgomp.texi
-+++ b/src/libgomp/libgomp.texi
-@@ -319,8 +319,7 @@ The OpenMP 4.5 specification is fully supported.
-       @code{omp_aligned_calloc} runtime routines @tab Y @tab
- @item @code{omp_alloctrait_key_t} enum: @code{omp_atv_serialized} added,
-       @code{omp_atv_default} changed @tab Y @tab
--@item @code{omp_display_env} runtime routine @tab Y
--      @tab Not inside @code{target} regions
-+@item @code{omp_display_env} runtime routine @tab Y @tab
- @item @code{ompt_scope_endpoint_t} enum: @code{ompt_scope_beginend} @tab N @tab
- @item @code{ompt_sync_region_t} enum additions @tab N @tab
- @item @code{ompt_state_t} enum: @code{ompt_state_wait_barrier_implementation}
+ The @option{-m64} option sets @code{int} to 32 bits and @code{long} and pointer
+ types to 64 bits, and generates code for the x86-64 architecture.

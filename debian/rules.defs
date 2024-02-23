@@ -114,6 +114,9 @@ endif
 ifneq (,$(findstring gcc-snapshot, $(PKGSOURCE)))
   single_package = yes
   trunk_build = yes
+else ifneq (,$(findstring gcc-toolchain, $(PKGSOURCE)))
+  single_package = yes
+  with_binutils = yes
 else
   # --program-suffix=-$(BASE_VERSION)
   versioned_packages := yes
@@ -350,7 +353,7 @@ ifneq ($(trunk_build),yes)
   endif
 
   # FIXME: newer binutils needed?
-  ifneq (,$(filter $(distrelease),stretch precise trusty xenial bionic))
+  ifneq (,$(filter $(distrelease),stretch precise trusty xenial bionic focal))
     with_bootstrap :=
     with_lto_build :=
   endif
@@ -518,16 +521,16 @@ endif
 
 # allows to wrote backtraces for ICEs
 #unstripped_exe = yes
-ifneq (,$(filter $(DEB_TARGET_ARCH), amd64 armel armhf arm64 mipsel mips64el ppc64el s390x))
-  unstripped_exe = yes
-endif
+#ifneq (,$(filter $(DEB_TARGET_ARCH), amd64 armel armhf arm64 mipsel mips64el ppc64el s390x))
+#  unstripped_exe = yes
+#endif
 
 # common things ---------------
 # build common packages, where package names don't differ in different
 # gcc versions (fixincludes, ...)
-with_common_pkgs := no
+with_common_pkgs := yes
 # ... and some libraries, which do not change (libgcc1, libssp0).
-with_common_libs := no
+#with_common_libs := yes
 # XXX: should with_common_libs be "yes" only if this is the default compiler
 # version on the targeted arch?
 
@@ -749,6 +752,10 @@ ifeq (,$(findstring gcc-,$(PKGSOURCE)))
   with_jit :=
 endif
 
+ifneq (,$(findstring gcc-toolchain,$(PKGSOURCE)))
+  with_jit := disabled for $(PKGSOURCE) builds
+endif
+
 ifneq (,$(findstring build-cross, $(build_type)))
   with_jit := disabled for cross builds
 endif
@@ -770,15 +777,18 @@ ifneq (,$(filter $(distrelease), precise))
   with_offload_nvptx :=
 endif
 ifneq (,$(findstring build-cross, $(build_type)))
+  offload_targets :=
   with_offload_nvptx := disabled for cross builds
 endif
 
 ifeq ($(single_package),yes)
   ifneq ($(trunk_build),yes)
+    offload_targets :=
     with_offload_nvptx := disabled for $(PKGSOURCE) builds
   endif
 endif
 ifneq ($(findstring nonvptx, $(DEB_BUILD_OPTIONS)),)
+  offload_targets :=
   with_offload_nvptx := disabled by DEB_BUILD_OPTIONS
 endif
 with_offload_nvptx := $(call envfilt, nvptx, , , $(with_offload_nvptx))
@@ -800,19 +810,22 @@ ifneq (,$(filter $(DEB_TARGET_ARCH),$(gcn_archs)))
   with_offload_gcn := yes
 endif
 ifneq (,$(filter $(distrelease), precise))
-  offload_targets :=
+  offload_targets := $(filter-out $(gcn_target_name), $(offload_targets))
   with_offload_gcn :=
 endif
 ifneq (,$(findstring build-cross, $(build_type)))
+  offload_targets := $(filter-out $(gcn_target_name), $(offload_targets))
   with_offload_gcn := disabled for cross builds
 endif
 
 ifeq ($(single_package),yes)
   ifneq ($(trunk_build),yes)
+    offload_targets := $(filter-out $(gcn_target_name), $(offload_targets))
     with_offload_gcn := disabled for $(PKGSOURCE) builds
   endif
 endif
 ifneq ($(findstring nogcn, $(DEB_BUILD_OPTIONS)),)
+  offload_targets := $(filter-out $(gcn_target_name), $(offload_targets))
   with_offload_gcn := disabled by DEB_BUILD_OPTIONS
 endif
 with_offload_gcn := $(call envfilt, gcn, , , $(with_offload_gcn))
@@ -847,8 +860,7 @@ endif
 
 ifeq (,$(filter $(DEB_STAGE),stage1 stage2))
 # Ada --------------------
-ada_no_cpus	:= m32r sh3 sh3eb sh4eb
-ada_no_cpus	+= ia64
+ada_no_cpus	:= arc ia64 loong64 sh3 sh3eb sh4eb
 ada_no_systems	:= 
 ada_no_cross	:= no
 ada_no_snap	:= no
@@ -873,12 +885,6 @@ ifneq (,$(filter $(DEB_TARGET_ARCH_CPU),$(ada_no_cpus)))
 endif
 ifneq (,$(findstring $(DEB_TARGET_GNU_SYSTEM),$(ada_no_systems)))
   with_ada := disabled for system $(DEB_TARGET_GNU_SYSTEM)
-endif
-ifneq (,$(filter $(DEB_TARGET_ARCH),x32))
-  # link error with glibc << 2.35, dladdr not found
-  ifneq (,$(filter $(distrelease), buster bullseye bookworm sid precise trusty xenial bionic focal impish))
-    #with_ada := disabled for architecture $(DEB_TARGET_ARCH)
-  endif
 endif
 ifeq ($(ada_no_cross)-$(DEB_CROSS),yes-yes)
   with_ada := disabled for cross compiler package
@@ -1011,7 +1017,7 @@ ifneq (,$(findstring gccgo, $(PKGSOURCE)))
   with_libcc1 :=
 endif
 
-go_no_cpus := avr hppa
+go_no_cpus := arc avr hppa loong64
 go_no_cpus += m68k # See PR 79281 / PR 83314
 go_no_systems := kfreebsd
 ifneq (,$(filter $(distrelease),precise))
@@ -1069,7 +1075,7 @@ endif
 # D ---------------------------
 d_no_cross := yes
 d_no_snap :=
-d_no_cpus := alpha ia64 m68k sh4 s390 sparc64
+d_no_cpus := alpha arc ia64 loong64 m68k sh4 s390 sparc64
 d_no_systems := gnu kfreebsd-gnu
 
 ifneq ($(single_package),yes)
@@ -1266,7 +1272,7 @@ ifneq ($(with_base_only),yes)
     with_m2 := yes
   endif
 endif
-m2_no_archs = powerpc ppc64 sh4 kfreebsd-amd64 kfreebsd-i386 hurd-i386
+m2_no_archs = loong64 powerpc ppc64 sh4 kfreebsd-amd64 kfreebsd-i386 hurd-i386
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(m2_no_archs)))
     with_m2 := disabled for cpu $(DEB_TARGET_ARCH)
 endif
@@ -1288,9 +1294,9 @@ ifeq ($(with_m2),yes)
   ifeq ($(with_dev),yes)
     with_m2dev := yes
   endif
-  ifeq ($(with_common_libs),yes)
+  #ifeq ($(with_common_libs),yes)
     with_libgm2 := yes
-  endif
+  #endif
   enabled_languages += m2
 endif
 
@@ -1450,10 +1456,6 @@ else ifeq ($(distribution),Ubuntu)
     pie_archs += armhf arm64 i386
   endif
   pie_archs += riscv64
-else ifeq ($(distribution),Deepin)
-  pie_archs = amd64 arm64 i386 riscv64
-else ifeq ($(distribution),Uos)
-  pie_archs = amd64 arm64 i386 loongarch64 mips64el riscv64
 endif
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(pie_archs)))
   with_pie := yes
@@ -1625,6 +1627,9 @@ else
       with_hppa64 := yes
     endif
   endif
+  ifneq (,$(findstring gcc-toolchain, $(PKGSOURCE)))
+    with_hppa64 := disabled for backports/toolchain builds
+  endif
   ifeq ($(hppa64_no_snap)-$(trunk_build),yes-yes)
     with_hppa64 := disabled for snapshot build
   endif
@@ -1634,7 +1639,6 @@ else
   with_hppa64 := $(call envfilt, hppa64, , , $(with_hppa64))
 
   ifeq ($(DEB_STAGE),rtlibs)
-    with_libatomic := disabled for rtlibs stage
     with_libasan := disabled for rtlibs stage
     with_liblsan := disabled for rtlibs stage
     with_libtsan := disabled for rtlibs stage
@@ -2075,6 +2079,9 @@ gcc_tarpath		:= $(firstword $(wildcard gcc-*.tar.* /usr/src/gcc-12/gcc-*.tar.*))
 gcc_tarball		:= $(notdir $(gcc_tarpath))
 gcc_srcdir		:= $(subst -dfsg,,$(patsubst %.tar.xz,%,$(patsubst %.tar.lzma,%,$(patsubst %.tar.gz,%,$(gcc_tarball:.tar.bz2=)))))
 
+binutils_dsc		:= $(notdir $(firstword $(wildcard binutils_*.dsc)))
+binutils_srcdir		:= $(shell echo $(binutils_dsc) | sed 's/-.*//;s/_/-/')
+
 ifneq (,$(filter yes, $(with_offload_nvptx) $(with_offload_gcn)))
   newlib_tarpath	:= $(firstword $(wildcard newlib-*.tar.* /usr/src/gcc-$(BASE_VERSION)/newlib-*.tar.*))
   newlib_tarball	:= $(notdir $(newlib_tarpath))
@@ -2117,6 +2124,7 @@ check_stamp		:= $(stampdir)/06-check-stamp
 check_inst_stamp	:= $(stampdir)/06-check-inst-stamp
 install_stamp		:= $(stampdir)/07-install-stamp
 install_snap_stamp	:= $(stampdir)/07-install-snap-stamp
+install_tc_stamp	:= $(stampdir)/07-install-tc-stamp
 binary_stamp		:= $(stampdir)/08-binary-stamp
 
 configure_dummy_stamp	:= $(stampdir)/04-configure-dummy-stamp
@@ -2144,12 +2152,23 @@ install_hppa64_stamp	:= $(stampdir)/07-install-hppa64-stamp
 control_dependencies	:= $(patch_stamp)
 
 ifeq ($(single_package),yes)
+  ifneq (,$(findstring gcc-snapshot, $(PKGSOURCE)))
     configure_dependencies = $(configure_stamp)
     build_dependencies = $(build_stamp)
     install_dependencies = $(install_snap_stamp)
     ifeq ($(with_check),yes)
       check_dependencies += $(check_stamp)
     endif
+  else ifneq (,$(findstring gcc-toolchain, $(PKGSOURCE)))
+    configure_dependencies = $(configure_stamp)
+    build_dependencies = $(build_stamp)
+    install_dependencies = $(install_tc_stamp)
+    ifeq ($(with_check),yes)
+      check_dependencies += $(check_stamp)
+    endif
+  else
+    $(error Unknown single-package $(PKGSOURCE))
+  endif
 else
   ifeq ($(with_base_only),yes)
     configure_dependencies = $(configure_dummy_stamp)

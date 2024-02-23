@@ -36,10 +36,6 @@ $(binary_stamp)-objc: $(install_stamp)
 	mkdir -p $(d_objc)/usr/share/lintian/overrides
 	echo '$(p_objc) binary: hardening-no-pie' \
 	  > $(d_objc)/usr/share/lintian/overrides/$(p_objc)
-ifeq ($(GFDL_INVARIANT_FREE),yes)
-	echo '$(p_objc) binary: binary-without-manpage' \
-	  >> $(d_objc)/usr/share/lintian/overrides/$(p_objc)
-endif
 
 	debian/dh_doclink -p$(p_objc) $(p_xbase)
 

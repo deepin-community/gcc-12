@@ -13657,7 +13657,7 @@
 +}
 --- a/src/gcc/gcc.cc
 +++ b/src/gcc/gcc.cc
-@@ -339,6 +339,10 @@ static const char *cross_compile = "1";
+@@ -341,6 +341,10 @@ static const char *cross_compile = "1";
  static const char *cross_compile = "0";
  #endif
  
@@ -13668,7 +13668,7 @@
  /* Greatest exit code of sub-processes that has been encountered up to
     now.  */
  static int greatest_status = 1;
-@@ -1881,6 +1885,10 @@ static const struct spec_function static
+@@ -1883,6 +1887,10 @@ static const struct spec_function static
    { 0, 0 }
  };
  
@@ -13679,7 +13679,7 @@
  static int processing_spec_function;
  
  /* Add appropriate libgcc specs to OBSTACK, taking into account
-@@ -3050,6 +3058,30 @@ xputenv (const char *string)
+@@ -3052,6 +3060,30 @@ xputenv (const char *string)
    env.xput (string);
  }
  
@@ -13710,7 +13710,7 @@
  /* Build a list of search directories from PATHS.
     PREFIX is a string to prepend to the list.
     If CHECK_DIR_P is true we ensure the directory exists.
-@@ -4034,6 +4066,15 @@ save_switch (const char *opt, size_t n_a
+@@ -4036,6 +4068,15 @@ save_switch (const char *opt, size_t n_a
    n_switches++;
  }
  
@@ -13726,7 +13726,7 @@
  /* Set the SOURCE_DATE_EPOCH environment variable to the current time if it is
     not set already.  */
  
-@@ -4057,6 +4098,76 @@ set_source_date_epoch_envvar ()
+@@ -4059,6 +4100,76 @@ set_source_date_epoch_envvar ()
    setenv ("SOURCE_DATE_EPOCH", source_date_epoch, 0);
  }
  
@@ -13803,7 +13803,7 @@
  /* Handle an option DECODED that is unknown to the option-processing
     machinery.  */
  
-@@ -4636,33 +4747,7 @@ driver_handle_option (struct gcc_options
+@@ -4638,33 +4749,7 @@ driver_handle_option (struct gcc_options
        break;
  
      case OPT_B:
@@ -13838,7 +13838,7 @@
        validated = true;
        break;
  
-@@ -4795,6 +4880,69 @@ single_input_file_index ()
+@@ -4797,6 +4882,69 @@ single_input_file_index ()
    return ret;
  }
  
@@ -13908,7 +13908,7 @@
  /* Create the vector `switches' and its contents.
     Store its length in `n_switches'.  */
  
-@@ -6960,6 +7108,35 @@ do_spec_1 (const char *spec, int inswitc
+@@ -6962,6 +7110,35 @@ do_spec_1 (const char *spec, int inswitc
    return 0;
  }
  
@@ -13944,7 +13944,7 @@
  /* Look up a spec function.  */
  
  static const struct spec_function *
-@@ -6971,6 +7148,11 @@ lookup_spec_function (const char *name)
+@@ -6973,6 +7150,11 @@ lookup_spec_function (const char *name)
      if (strcmp (sf->name, name) == 0)
        return sf;
  
@@ -13956,7 +13956,7 @@
    return NULL;
  }
  
-@@ -8457,6 +8639,8 @@ driver::set_up_specs () const
+@@ -8459,6 +8641,8 @@ driver::set_up_specs () const
  			   accel_dir_suffix, dir_separator_str, NULL);
    just_machine_suffix = concat (spec_machine, dir_separator_str, NULL);
  
@@ -13965,7 +13965,7 @@
    specs_file = find_a_file (&startfile_prefixes, "specs", R_OK, true);
    /* Read the specs file unless it is a default one.  */
    if (specs_file != 0 && strcmp (specs_file, "specs"))
-@@ -9188,7 +9372,8 @@ driver::maybe_run_linker (const char *ar
+@@ -9190,7 +9374,8 @@ driver::maybe_run_linker (const char *ar
  
    /* Run ld to link all the compiler output files.  */
  
@@ -13975,7 +13975,7 @@
      {
        int tmp = execution_count;
  
-@@ -9257,7 +9442,7 @@ driver::maybe_run_linker (const char *ar
+@@ -9259,7 +9444,7 @@ driver::maybe_run_linker (const char *ar
    /* If options said don't run linker,
       complain about input files to be given to the linker.  */
  

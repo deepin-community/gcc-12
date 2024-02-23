@@ -7,8 +7,8 @@
  config.gcc |    2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
---- a/src/gcc/config.gcc	(révision 182461)
-+++ b/src/gcc/config.gcc	(copie de travail)
+--- a/src/gcc/config.gcc
++++ b/src/gcc/config.gcc
 @@ -583,7 +583,7 @@
      *-*-linux* | frv-*-*linux* | *-*-kfreebsd*-gnu | *-*-knetbsd*-gnu | *-*-kopensolaris*-gnu)
        :;;

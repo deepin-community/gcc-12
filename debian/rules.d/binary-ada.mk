@@ -237,8 +237,10 @@ endif
 	find $(d_gnat) -name '*.ali' | xargs chmod 444
 	dh_shlibdeps -p$(p_gnat)
 	mkdir -p $(d_gnat)/usr/share/lintian/overrides
-	echo '$(p_gnat) binary: hardening-no-pie' \
-	  > $(d_gnat)/usr/share/lintian/overrides/$(p_gnat)
+	( \
+	  echo '$(p_gnat) binary: hardening-no-pie'; \
+	  echo '$(p_gnat) binary: non-standard-file-perm' \
+	) > $(d_gnat)/usr/share/lintian/overrides/$(p_gnat)
 ifeq ($(GFDL_INVARIANT_FREE),yes)
 	echo '$(p_gnat) binary: binary-without-manpage' \
 	  >> $(d_gnat)/usr/share/lintian/overrides/$(p_gnat)

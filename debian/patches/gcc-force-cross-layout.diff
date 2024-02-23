@@ -13,7 +13,7 @@
  
 --- a/src/gcc/configure.ac
 +++ b/src/gcc/configure.ac
-@@ -2436,14 +2436,14 @@ SYSTEM_HEADER_DIR='$(NATIVE_SYSTEM_HEADE
+@@ -2431,14 +2431,14 @@ SYSTEM_HEADER_DIR='$(NATIVE_SYSTEM_HEADE
  BUILD_SYSTEM_HEADER_DIR=$SYSTEM_HEADER_DIR	AC_SUBST(BUILD_SYSTEM_HEADER_DIR)
  
  if test x$host != x$target || test "x$TARGET_SYSTEM_ROOT" != x ||
@@ -30,7 +30,7 @@
    then
      CROSS="-DCROSS_DIRECTORY_STRUCTURE"
      ALL=all.cross
-@@ -7493,14 +7493,14 @@ AC_SUBST_FILE(language_hooks)
+@@ -7488,14 +7488,14 @@ AC_SUBST_FILE(language_hooks)
  
  # Echo link setup.
  if test x${build} = x${host} ; then

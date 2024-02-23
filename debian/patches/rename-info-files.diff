@@ -247,7 +247,7 @@ gcc/fortran/ChangeLog:
  @dircategory GNU Ada Tools 
  @direntry
 -* gnat_rm: (gnat_rm.info). gnat_rm
-+* GNAT Reference Manual: (gnat_rm-10).  Reference Manual for GNU Ada tools.
++* GNAT Reference Manual: (gnat_rm-12).  Reference Manual for GNU Ada tools.
  @end direntry
  
  @definfoenclose strong,`,'
@@ -443,7 +443,7 @@ gcc/fortran/ChangeLog:
  
 -libgomp.info: $(STAMP_BUILD_INFO)
 +libgomp.info: $(INFO_LIBGOMP_NAME).info
-+	cp $(INFO_LIBGOMP_NAME).info libgomp.info
++	[ "$(INFO_LIBGOMP_NAME).info = libgomp.info ] || cp $(INFO_LIBGOMP_NAME).info libgomp.info
 +$(INFO_LIBGOMP_NAME).info: $(STAMP_BUILD_INFO)
  
  stamp-build-info: libgomp.texi
@@ -478,7 +478,7 @@ gcc/fortran/ChangeLog:
  
 -libitm.info: $(STAMP_BUILD_INFO)
 +libitm.info: $(INFO_LIBITM_NAME).info
-+       cp $(INFO_LIBITM_NAME).info libitm.info
++	[ $(INFO_LIBITM_NAME).info = libitm.info ] || cp $(INFO_LIBITM_NAME).info libitm.info
 +$(INFO_LIBITM_NAME).info: $(STAMP_BUILD_INFO)
  
  stamp-build-info: libitm.texi
@@ -502,7 +502,7 @@ gcc/fortran/ChangeLog:
  
 -libitm.info: $(STAMP_BUILD_INFO)
 +libitm.info: $(INFO_LIBITM_NAME).info
-+	cp $(INFO_LIBITM_NAME).info libitm.info
++	[ $(INFO_LIBITM_NAME).info = libitm.info ] || cp $(INFO_LIBITM_NAME).info libitm.info
 +$(INFO_LIBITM_NAME).info: $(STAMP_BUILD_INFO)
  
  stamp-build-info: libitm.texi

@@ -34,10 +34,6 @@ $(binary_stamp)-objcxx: $(install_stamp)
 	mkdir -p $(d_objcx)/usr/share/lintian/overrides
 	echo '$(p_objcx) binary: hardening-no-pie' \
 	  > $(d_objcx)/usr/share/lintian/overrides/$(p_objcx)
-ifeq ($(GFDL_INVARIANT_FREE),yes)
-	echo '$(p_objcx) binary: binary-without-manpage' \
-	  >> $(d_objcx)/usr/share/lintian/overrides/$(p_objcx)
-endif
 
 	debian/dh_rmemptydirs -p$(p_objcx)
 

@@ -3,7 +3,7 @@
 
 --- a/src/gcc/testsuite/gcc.dg/guality/guality.exp
 +++ b/src/gcc/testsuite/gcc.dg/guality/guality.exp
-@@ -89,7 +89,37 @@ if {[check_guality "
+@@ -93,7 +93,37 @@ if {[check_guality "
  	}
      }
  

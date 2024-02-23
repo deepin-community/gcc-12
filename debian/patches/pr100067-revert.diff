@@ -1,7 +1,7 @@
 # DP: Revert the fix for PR target/100067, breaking the ARM multilib build
 
---- a/src/gcc/config/arm/arm.c
-+++ b/src/gcc/config/arm/arm.c
+--- a/src/gcc/config/arm/arm.cc
++++ b/src/gcc/config/arm/arm.cc
 @@ -3230,22 +3230,21 @@ arm_configure_build_target (struct arm_b
  	  bitmap_xor (isa_delta, cpu_isa, target->isa);
  	  /* Ignore any bits that are quirk bits.  */

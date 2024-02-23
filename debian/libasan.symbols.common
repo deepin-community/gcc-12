@@ -183,6 +183,17 @@
  __asan_stack_malloc_7@Base 4.9
  __asan_stack_malloc_8@Base 4.9
  __asan_stack_malloc_9@Base 4.9
+ __asan_stack_malloc_always_0@Base 12
+ __asan_stack_malloc_always_10@Base 12
+ __asan_stack_malloc_always_1@Base 12
+ __asan_stack_malloc_always_2@Base 12
+ __asan_stack_malloc_always_3@Base 12
+ __asan_stack_malloc_always_4@Base 12
+ __asan_stack_malloc_always_5@Base 12
+ __asan_stack_malloc_always_6@Base 12
+ __asan_stack_malloc_always_7@Base 12
+ __asan_stack_malloc_always_8@Base 12
+ __asan_stack_malloc_always_9@Base 12
  __asan_store16@Base 5
  __asan_store16_noabort@Base 6.2
  __asan_store1@Base 5
@@ -206,7 +217,6 @@
  __asan_version_mismatch_check_v8@Base 7
  __bzero@Base 10
  __cxa_atexit@Base 4.9
-#MISSING: 10# __cxa_rethrow_primary_exception@Base 9
  __cxa_throw@Base 4.8
  __fprintf_chk@Base 9
  __getdelim@Base 5
@@ -270,6 +280,7 @@
  __interceptor_backtrace@Base 4.9
  __interceptor_backtrace_symbols@Base 4.9
  __interceptor_bcmp@Base 10
+ __interceptor_bsearch@Base 12
  __interceptor_bzero@Base 10
  __interceptor_calloc@Base 4.8
  __interceptor_canonicalize_file_name@Base 4.9
@@ -314,7 +325,6 @@
  __interceptor_fopen64@Base 5
  __interceptor_fopen@Base 5
  __interceptor_fopencookie@Base 6.2
-#MISSING: 9# __interceptor_fork@Base 5
  __interceptor_fprintf@Base 5
  __interceptor_fputs@Base 9
  __interceptor_fread@Base 8
@@ -341,6 +351,7 @@
  __interceptor_getgrgid_r@Base 4.9
  __interceptor_getgrnam@Base 4.9
  __interceptor_getgrnam_r@Base 4.9
+ __interceptor_getgrouplist@Base 12
  __interceptor_getgroups@Base 4.9
  __interceptor_gethostbyaddr@Base 4.9
  __interceptor_gethostbyaddr_r@Base 4.9
@@ -357,6 +368,9 @@
  __interceptor_getmntent@Base 4.9
  __interceptor_getmntent_r@Base 4.9
  __interceptor_getnameinfo@Base 4.9
+ __interceptor_getnetbyaddr@Base 12
+ __interceptor_getnetbyname@Base 12
+ __interceptor_getnetent@Base 12
  __interceptor_getpass@Base 5
  __interceptor_getpeername@Base 4.9
  __interceptor_getprotobyname@Base 11
@@ -410,6 +424,7 @@
  __interceptor_localtime_r@Base 4.8
  __interceptor_longjmp@Base 4.8
  __interceptor_lrand48_r@Base 4.9
+ __interceptor_lstat@Base 12
  __interceptor_mallinfo@Base 4.8
  __interceptor_malloc@Base 4.8
  __interceptor_malloc_stats@Base 4.8
@@ -452,6 +467,8 @@
  __interceptor_poll@Base 4.9
  __interceptor_popen@Base 10
  __interceptor_posix_memalign@Base 4.8
+ __interceptor_posix_spawn@Base 12
+ __interceptor_posix_spawnp@Base 12
  __interceptor_ppoll@Base 4.9
  __interceptor_prctl@Base 4.8
  __interceptor_pread64@Base 4.8
@@ -474,6 +491,7 @@
  __interceptor_pthread_condattr_getclock@Base 5
  __interceptor_pthread_condattr_getpshared@Base 5
  __interceptor_pthread_create@Base 4.8
+ __interceptor_pthread_getcpuclockid@Base 12
  __interceptor_pthread_getname_np@Base 9
  __interceptor_pthread_getschedparam@Base 4.9
  __interceptor_pthread_join@Base 6.2
@@ -534,9 +552,11 @@
  __interceptor_sem_destroy@Base 6.2
  __interceptor_sem_getvalue@Base 6.2
  __interceptor_sem_init@Base 6.2
+ __interceptor_sem_open@Base 12
  __interceptor_sem_post@Base 6.2
  __interceptor_sem_timedwait@Base 6.2
  __interceptor_sem_trywait@Base 6.2
+ __interceptor_sem_unlink@Base 12
  __interceptor_sem_wait@Base 6.2
  __interceptor_send@Base 7
  __interceptor_sendmmsg@Base 9
@@ -569,6 +589,7 @@
  __interceptor_snprintf@Base 5
  __interceptor_sprintf@Base 5
  __interceptor_sscanf@Base 4.8
+ __interceptor_stat@Base 12
  __interceptor_statfs64@Base 4.9
  __interceptor_statfs@Base 4.9
  __interceptor_statvfs64@Base 4.9
@@ -745,6 +766,7 @@
  __sanitizer_get_heap_size@Base 5
  __sanitizer_get_module_and_offset_for_pc@Base 8
  __sanitizer_get_ownership@Base 5
+ __sanitizer_get_report_path@Base 12
  __sanitizer_get_unmapped_bytes@Base 5
  __sanitizer_install_malloc_and_free_hooks@Base 7
  __sanitizer_on_print@Base 10
@@ -792,6 +814,7 @@
  __sanitizer_syscall_post_impl_epoll_create1@Base 4.9
  __sanitizer_syscall_post_impl_epoll_create@Base 4.9
  __sanitizer_syscall_post_impl_epoll_ctl@Base 4.9
+ __sanitizer_syscall_post_impl_epoll_pwait2@Base 12
  __sanitizer_syscall_post_impl_epoll_pwait@Base 4.9
  __sanitizer_syscall_post_impl_epoll_wait@Base 4.9
  __sanitizer_syscall_post_impl_eventfd2@Base 4.9
@@ -1116,6 +1139,7 @@
  __sanitizer_syscall_pre_impl_epoll_create1@Base 4.9
  __sanitizer_syscall_pre_impl_epoll_create@Base 4.9
  __sanitizer_syscall_pre_impl_epoll_ctl@Base 4.9
+ __sanitizer_syscall_pre_impl_epoll_pwait2@Base 12
  __sanitizer_syscall_pre_impl_epoll_pwait@Base 4.9
  __sanitizer_syscall_pre_impl_epoll_wait@Base 4.9
  __sanitizer_syscall_pre_impl_eventfd2@Base 4.9
@@ -1457,6 +1481,7 @@
  backtrace@Base 4.9
  backtrace_symbols@Base 4.9
  bcmp@Base 10
+ bsearch@Base 12
  bzero@Base 10
  calloc@Base 4.8
  canonicalize_file_name@Base 4.9
@@ -1501,7 +1526,6 @@
  fopen64@Base 5
  fopen@Base 5
  fopencookie@Base 6.2
-#MISSING: 9# fork@Base 5
  fprintf@Base 5
  fputs@Base 9
  fread@Base 8
@@ -1528,6 +1552,7 @@
  getgrgid_r@Base 4.9
  getgrnam@Base 4.9
  getgrnam_r@Base 4.9
+ getgrouplist@Base 12
  getgroups@Base 4.9
  gethostbyaddr@Base 4.9
  gethostbyaddr_r@Base 4.9
@@ -1544,6 +1569,9 @@
  getmntent@Base 4.9
  getmntent_r@Base 4.9
  getnameinfo@Base 4.9
+ getnetbyaddr@Base 12
+ getnetbyname@Base 12
+ getnetent@Base 12
  getpass@Base 5
  getpeername@Base 4.9
  getprotobyname@Base 11
@@ -1597,6 +1625,7 @@
  localtime_r@Base 4.8
  longjmp@Base 4.8
  lrand48_r@Base 4.9
+ lstat@Base 12
  mallinfo@Base 4.8
  malloc@Base 4.8
  malloc_stats@Base 4.8
@@ -1639,6 +1668,8 @@
  poll@Base 4.9
  popen@Base 10
  posix_memalign@Base 4.8
+ posix_spawn@Base 12
+ posix_spawnp@Base 12
  ppoll@Base 4.9
  prctl@Base 4.8
  pread64@Base 4.8
@@ -1661,6 +1692,7 @@
  pthread_condattr_getclock@Base 5
  pthread_condattr_getpshared@Base 5
  pthread_create@Base 4.8
+ pthread_getcpuclockid@Base 12
  pthread_getname_np@Base 9
  pthread_getschedparam@Base 4.9
  pthread_join@Base 6.2
@@ -1721,9 +1753,11 @@
  sem_destroy@Base 6.2
  sem_getvalue@Base 6.2
  sem_init@Base 6.2
+ sem_open@Base 12
  sem_post@Base 6.2
  sem_timedwait@Base 6.2
  sem_trywait@Base 6.2
+ sem_unlink@Base 12
  sem_wait@Base 6.2
  send@Base 7
  sendmmsg@Base 9
@@ -1756,6 +1790,7 @@
  snprintf@Base 5
  sprintf@Base 5
  sscanf@Base 4.8
+ stat@Base 12
  statfs64@Base 4.9
  statfs@Base 4.9
  statvfs64@Base 4.9

@@ -81,12 +81,12 @@ $(binary_stamp)-libgccjitdoc: $(install_jit_stamp)
 
 	rm -rf $(d_jitdoc)
 	dh_installdirs -p$(p_jitdoc) \
-		$(PF)/share/info
+		$(PF)/share/info/libgccjit-figures
 
 	$(dh_compat2) dh_movefiles -p$(p_jitdoc) \
 		$(PF)/share/info/libgccjit*
 	cp -p $(srcdir)/gcc/jit/docs/_build/texinfo/libgccjit-figures/*.png \
-		$(d_jitdoc)/$(PF)/share/info/.
+		$(d_jitdoc)/$(PF)/share/info/libgccjit-figures/.
 
 	debian/dh_doclink -p$(p_jitdoc) $(p_base)
 	echo $(p_jitdoc) >> debian/indep_binaries

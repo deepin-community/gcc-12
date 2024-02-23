@@ -1,3 +1,0 @@
-libasan.so.5 lib64asan5 #MINVER#
-#include "libasan.symbols.common"
-#include "libasan.symbols.64"

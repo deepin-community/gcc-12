@@ -2,7 +2,7 @@
 
 --- a/src/gcc/testsuite/go.test/go-test.exp
 +++ b/src/gcc/testsuite/go.test/go-test.exp
-@@ -457,6 +457,14 @@ proc go-gc-tests { } {
+@@ -460,6 +460,14 @@ proc go-gc-tests { } {
  	    continue
  	}
  

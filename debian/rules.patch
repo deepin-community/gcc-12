@@ -63,6 +63,10 @@ debian_patches += \
 	musl-ssp \
 	pr79724-revert \
 	pr104290-followup \
+	arc-stddef \
+	libstdc++-hurd \
+	pr107475 \
+	pr93371 \
 
 ifneq (,$(filter $(distrelease),precise xenial bionic focal groovy hirsute))
   debian_patches += pr100067-revert
@@ -83,7 +87,7 @@ endif
 
 hardening_patches =
 ifneq (,$(filter $(derivative),Ubuntu))
-  ifneq (,$(findstring gcc-11, $(PKGSOURCE)))
+  ifneq (,$(findstring gcc-12, $(PKGSOURCE)))
     hardening_patches += \
 	gcc-distro-specs-ubuntu-doc \
 	testsuite-hardening-format \
@@ -92,7 +96,7 @@ ifneq (,$(filter $(derivative),Ubuntu))
 	testsuite-glibc-warnings
   endif
 else ifneq (,$(filter $(derivative),Debian))
-  ifneq (,$(findstring gcc-11, $(PKGSOURCE)))
+  ifneq (,$(findstring gcc-12, $(PKGSOURCE)))
 #    ifneq ($(with_pie),yes)
 #      hardening_patches += \
 #        ignore-pie-specs-when-not-enabled
@@ -107,11 +111,12 @@ endif
 
 # Patches for non-core languages.
 
-debian_patches += gm2
+debian_patches += gm2 gm2-info-no-headers
 ifeq ($(GFDL_INVARIANT_FREE),yes)
   debian_patches += gm2-texinfo
 else
   debian_patches += gm2-doc
+  debian_patches += gm2-makeinfo-force
 endif
 
 # Most of the time, it would be safe to apply them whether the
@@ -151,7 +156,7 @@ endif
 
 # all patches below this line are applied for gcc-snapshot builds as well
 
-ifeq ($(single_package),yes)
+ifneq (,$(findstring gcc-snapshot, $(PKGSOURCE)))
   debian_patches =
 endif
 
@@ -324,13 +329,18 @@ ifeq ($(with_ssp)-$(with_ssp_default),yes-yes)
 	     >> $(srcdir)/gcc/distro-defaults.h
 endif
 ifneq (,$(filter $(derivative),Ubuntu))
-	echo '#define DIST_DEFAULT_FORTIFY_SOURCE 1' \
+  ifneq (,$(filter $(distrelease),lucid precise trusty xenial bionic focal jammy kinetic lunar mantic))
+	echo '#define DIST_DEFAULT_FORTIFY_SOURCE 2' \
 	     >> $(srcdir)/gcc/distro-defaults.h
+  else
+	echo '#define DIST_DEFAULT_FORTIFY_SOURCE 3' \
+	     >> $(srcdir)/gcc/distro-defaults.h
+  endif
 	echo '#define DIST_DEFAULT_RELRO 1' \
 	     >> $(srcdir)/gcc/distro-defaults.h
 	echo '#define DIST_DEFAULT_BIND_NOW 1' \
 	     >> $(srcdir)/gcc/distro-defaults.h
-  ifneq (,$(findstring gcc-11, $(PKGSOURCE)))
+  ifneq (,$(findstring gcc-12, $(PKGSOURCE)))
 # FIXME: this is directly patched
 #	echo '#define DIST_DEFAULT_FORTIFY_SOURCE 1' \
 #	     >> $(srcdir)/gcc/distro-defaults.h
@@ -344,7 +354,7 @@ ifneq (,$(filter $(derivative),Ubuntu))
 	     >> $(srcdir)/gcc/distro-defaults.h
   endif
 else ifneq (,$(filter $(derivative),Debian))
-  ifneq (,$(findstring gcc-11, $(PKGSOURCE)))
+  ifneq (,$(findstring gcc-12, $(PKGSOURCE)))
   endif
 endif
 	  echo '#endif' \

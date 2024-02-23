@@ -114,6 +114,11 @@ ifeq ($(with_cc1),yes)
 endif
 
 	$(dh_compat2) dh_movefiles -p$(p_gcc) $(files_gcc)
+	: # provide the lto_plugin.so link in the new place
+	dh_link -p$(p_gcc) \
+		/$(gcc_lib_dir)/liblto_plugin.so \
+		/$(PF)/libexec/$(gcc_subdir_name)/$(TARGET_ALIAS)/$(versiondir)/liblto_plugin.so
+
 
 ifeq ($(unprefixed_names),yes)
 	for i in gcc gcov gcov-dump gcov-tool gcc-ar gcc-nm gcc-ranlib lto-dump; do \
@@ -138,6 +143,7 @@ endif
 	cp -p debian/README.ssp $(d_gcc)/$(docdir)/$(p_xbase)/
 	cp -p debian/NEWS.gcc $(d_gcc)/$(docdir)/$(p_xbase)/NEWS
 	cp -p debian/NEWS.html $(d_gcc)/$(docdir)/$(p_xbase)/NEWS.html
+	cp -p debian/gcc.css $(d_gcc)/$(docdir)/$(p_xbase)/gcc.css
 	cp -p $(srcdir)/ChangeLog $(d_gcc)/$(docdir)/$(p_xbase)/changelog
 	cp -p $(srcdir)/gcc/ChangeLog \
 		$(d_gcc)/$(docdir)/$(p_xbase)/gcc/changelog
@@ -292,9 +298,9 @@ ifeq ($(with_gomp),yes)
 endif
 ifeq ($(with_itm),yes)
 	-$(MAKE) -C $(buildlibdir)/libitm stamp-build-info
-	if [ -f $(buildlibdir)/libitm/libitm$(pkg_ver).info ]; then \
+	if [ -f $(buildlibdir)/libitm/$(cmd_prefix)libitm$(pkg_ver).info ]; then \
 	  cp -p $(buildlibdir)/libitm/$(cmd_prefix)libitm$(pkg_ver).info \
-		$(d_doc)/$(PF)/share/info/; \
+		$(d_doc)/$(PF)/share/info/libitm$(pkg_ver).info; \
 	fi
 endif
 

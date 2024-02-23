@@ -34,6 +34,10 @@ define __do_asan
 		mkdir -p debian/$(p_l)/usr/share/lintian/overrides; \
 		cp debian/$(p_l).overrides debian/$(p_l)/usr/share/lintian/overrides/$(p_l); \
 	fi
+	mkdir -p debian/$(p_l)/usr/share/lintian/overrides
+	echo "$(p_l): unstripped-binary-or-object" \
+	    >> debian/$(p_l)/usr/share/lintian/overrides/$(p_l)
+
 	$(if $(2), \
 	  mkdir -p debian/$(p_l)/usr/share/lintian/overrides; \
 	  echo "$(p_l): symbols-file-contains-current-version-with-debian-revision" \

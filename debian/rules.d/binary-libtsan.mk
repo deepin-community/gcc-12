@@ -37,6 +37,9 @@ define __do_tsan
 		mkdir -p debian/$(p_l)/usr/share/lintian/overrides; \
 		cp debian/$(p_l).overrides debian/$(p_l)/usr/share/lintian/overrides/$(p_l); \
 	fi
+	mkdir -p debian/$(p_l)/usr/share/lintian/overrides
+	echo "$(p_l): unstripped-binary-or-object" \
+	    >> debian/$(p_l)/usr/share/lintian/overrides/$(p_l)
 
 	$(if $(strip_sanitizer), $(call do_strip_lib_dbg, $(p_l), $(p_d), $(v_dbg),,))
 	$(cross_makeshlibs) dh_makeshlibs $(ldconfig_arg) -p$(p_l)

@@ -13,6 +13,10 @@ ifneq ($(DEB_STAGE),rtlibs)
     $(lib_binaries) += libgm2
   endif
 
+  ifneq ($(DEB_CROSS),yes)
+    indep_binaries := $(indep_binaries) gm2-doc
+  endif
+
   ifeq (0,1)
   ifeq ($(with_lib64gm2dev),yes)
     $(lib_binaries)	+= lib64gm2-dev
@@ -58,11 +62,13 @@ p_gm2           = gm2$(pkg_ver)$(cross_bin_arch)
 p_gm2_m		= gm2$(pkg_ver)-multilib$(cross_bin_arch)
 p_libgm2	= libgm2-$(GM2_SONAME)
 p_libgm2dev	= libgm2$(pkg_ver)-dev
+p_gm2d		= gm2$(pkg_ver)-doc
 
 d_gm2           = debian/$(p_gm2)
 d_gm2_m		= debian/$(p_gm2_m)
 d_libgm2	= debian/$(p_libgm2)
 d_libgm2dev	= debian/$(p_libgm2dev)
+d_gm2d		= debian/$(p_gm2d)
 
 dirs_gm2 = \
 	$(PF)/bin \
@@ -109,9 +115,9 @@ ifeq ($(unprefixed_names),yes)
 	    $(d_gm2)/$(PF)/share/man/man1/gm2$(pkg_ver).1
   endif
 endif
-
+	dh_installdirs -p$(p_gm2)
 	dh_link -p$(p_gm2) \
-		/$(docdir)/$(p_gcc)/README.Bugs \
+		/$(docdir)/$(p_xbase)/README.Bugs \
 		/$(docdir)/$(p_gm2)/README.Bugs
 
 ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTONS)))
@@ -242,6 +248,30 @@ endef
 
 do_libgm2 = $(call __do_libgm2,lib$(1)gm2-$(GM2_SONAME),$(1))
 do_libgm2_dev = $(call __do_libgm2_dev,lib$(1)gm2-$(BASE_VERSION)-dev,$(1))
+
+# ----------------------------------------------------------------------
+$(binary_stamp)-gm2-doc: $(build_html_stamp) $(install_stamp)
+	dh_testdir
+	dh_testroot
+	mv $(install_stamp) $(install_stamp)-tmp
+
+	rm -rf $(d_gm2d)
+	dh_installdirs -p$(p_gm2d) \
+		$(docdir)/$(p_gm2) \
+		$(docdir)/$(p_xbase)/m2 \
+		$(PF)/share/info
+	cp -p $(builddir)/gcc/doc/m2.info $(d_gm2d)/$(PF)/share/info/gm2-$(BASE_VERSION).info
+	cp -p html/gm2.html $(d_gm2d)/$(docdir)/$(p_xbase)/m2/gm2-$(BASE_VERSION).html
+	ln -sf ../$(p_xbase)/m2/gm2-$(BASE_VERSION).html $(d_gm2d)/$(docdir)/$(p_gm2)/gm2-$(BASE_VERSION).html
+
+	debian/dh_doclink -p$(p_gm2d) $(p_xbase)
+	dh_installdocs -p$(p_gm2d)
+	rm -f $(d_gm2d)/$(docdir)/$(p_xbase)/copyright
+
+	echo $(p_gm2d) >> debian/indep_binaries
+
+	trap '' 1 2 3 15; touch $@; mv $(install_stamp)-tmp $(install_stamp)
+
 
 $(binary_stamp)-libgm2: $(install_stamp)
 	$(call do_libgm2,)

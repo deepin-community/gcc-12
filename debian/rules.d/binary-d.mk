@@ -128,7 +128,7 @@ endif
 #endif
 
 	dh_link -p$(p_gdc) \
-		/$(docdir)/$(p_gcc)/README.Bugs \
+		/$(docdir)/$(p_xbase)/README.Bugs \
 		/$(docdir)/$(p_gdc)/README.Bugs
 
 ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTONS)))
@@ -194,8 +194,15 @@ define __do_libphobos
 	$(call cross_mangle_substvars,$(p_l))
 
 	mkdir -p $(d_l)/usr/share/lintian/overrides; \
-	echo "$(p_l) binary: symbols-file-contains-debian-revision" \
+	$(if $(filter $(DEB_TARGET_ARCH), amd64),
+	  $(if $(2),
+	    echo "$(p_l) binary: symbols-file-contains-current-version-with-debian-revision" \
 		>> $(d_l)/usr/share/lintian/overrides/$(p_l)
+	  )
+	,
+	  echo "$(p_l) binary: symbols-file-contains-current-version-with-debian-revision" \
+		>> $(d_l)/usr/share/lintian/overrides/$(p_l)
+	)
 	$(if $(2),
 	  echo "$(p_l) binary: embedded-library" \
 		>> $(d_l)/usr/share/lintian/overrides/$(p_l)

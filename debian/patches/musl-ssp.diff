@@ -3,7 +3,7 @@ and https://www.openwall.com/lists/musl/2014/11/05/3
 
 --- a/src/gcc/gcc.cc
 +++ b/src/gcc/gcc.cc
-@@ -1075,8 +1075,15 @@ proper position among the other output f
+@@ -1077,8 +1077,15 @@ proper position among the other output f
  
  #ifndef LINK_SSP_SPEC
  #ifdef TARGET_LIBC_PROVIDES_SSP

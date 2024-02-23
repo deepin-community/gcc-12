@@ -49,8 +49,10 @@ $(binary_stamp)-nvptx: $(install_stamp)
 	  /usr/bin/nvptx-none-ranlib /$(gcc_lexec_dir)/accel/nvptx-none/ranlib
 
 	mkdir -p $(d_nvptx)/usr/share/lintian/overrides
-	echo '$(p_nvptx) binary: hardening-no-pie' \
-	  > $(d_nvptx)/usr/share/lintian/overrides/$(p_nvptx)
+	( \
+	  echo '$(p_nvptx) binary: hardening-no-pie'; \
+	  echo '$(p_nvptx) binary: no-code-sections' \
+	) > $(d_nvptx)/usr/share/lintian/overrides/$(p_nvptx)
 ifeq ($(GFDL_INVARIANT_FREE),yes)
 	echo '$(p_nvptx) binary: binary-without-manpage' \
 	  >> $(d_nvptx)/usr/share/lintian/overrides/$(p_nvptx)

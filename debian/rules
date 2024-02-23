@@ -62,10 +62,10 @@ $(check_stamp): $(build_stamp)
 clean:
 	rm -rf $(stampdir)
 # remove temporary dirs used for unpacking
-	rm -rf $(gcc_srcdir) $(gdc_srcdir) $(newlib_srcdir)
+	rm -rf $(gcc_srcdir) $(gdc_srcdir) $(newlib_srcdir) $(binutils_srcdir)
 	-$(MAKE) -f debian/rules2 $@
 	rm -rf $(srcdir)* $(builddir)* debian/tmp* html
-	rm -f bootstrap-* first-move-stamp
+	rm -f bootstrap-* test-protocol* first-move-stamp
 	rm -f debian/*.tmp
 	rm -f debian/soname-cache
 	find debian -name '.#*' | xargs -r rm -f

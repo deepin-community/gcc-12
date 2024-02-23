@@ -30,7 +30,7 @@ Date:   Sun Mar 22 18:51:48 2020 +0000
 
 --- a/src/gcc/config/rs6000/rs6000.cc
 +++ b/src/gcc/config/rs6000/rs6000.cc
-@@ -13311,6 +13311,15 @@ rs6000_can_change_mode_class (machine_mo
+@@ -13276,6 +13276,15 @@ rs6000_can_change_mode_class (machine_mo
  	      || (to == SDmode && from == DDmode))
  	    return true;
  

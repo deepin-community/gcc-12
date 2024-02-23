@@ -1,0 +1,14 @@
+# DP: The fix for PR ada/103538 leads to a build failure on x32
+# DP: not having the dladdr linked in on x32 with older glibc version
+# DP: where this symbol is still in libdl.so. Just link with -ldl.
+
+--- a/src/gcc/ada/Makefile.rtl
++++ b/src/gcc/ada/Makefile.rtl
+@@ -2666,6 +2666,7 @@ ifeq ($(strip $(filter-out %x32 linux%,$
+   EXTRA_GNATRTL_TASKING_OBJS=s-linux.o a-exetim.o
+   EH_MECHANISM=-gcc
+   THREADSLIB=-lpthread -lrt
++  MISCLIB = -ldl
+   GNATLIB_SHARED=gnatlib-shared-dual
+   GMEM_LIB = gmemlib
+   LIBRARY_VERSION := $(LIB_VERSION)

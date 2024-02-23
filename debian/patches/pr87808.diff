@@ -14,15 +14,15 @@
  
 --- a/src/gcc/jit/jit-playback.cc
 +++ b/src/gcc/jit/jit-playback.cc
-@@ -40,6 +40,7 @@ along with GCC; see the file COPYING3.
+@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.
  #include "gcc.h"
  #include "diagnostic.h"
  #include "stmt.h"
 +#include "file-find.h"
  
- #include <pthread.h>
- 
-@@ -3035,7 +3036,31 @@ void
+ #include "jit-playback.h"
+ #include "jit-result.h"
+@@ -3034,7 +3035,31 @@ void
  playback::context::
  invoke_embedded_driver (const vec <char *> *argvec)
  {

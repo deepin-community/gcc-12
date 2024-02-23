@@ -17,9 +17,9 @@
 
 --- a/src/gcc/config/sh/t-linux
 +++ b/src/gcc/config/sh/t-linux
-@@ -1,2 +1,10 @@
- MULTILIB_DIRNAMES= 
- MULTILIB_MATCHES = 
+@@ -1,3 +1,11 @@
+ MULTILIB_DIRNAMES=
+ MULTILIB_MATCHES=
 +
 +ifneq (,$(findstring sh4,$(target)))
 +MULTILIB_OSDIRNAMES = .:sh4-linux-gnu sh4_nofpu-linux-gnu:sh4-linux-gnu
@@ -28,6 +28,7 @@
 +MULTILIB_OSDIRNAMES = .:sh3-linux-gnu sh3_nofpu-linux-gnu:sh3-linux-gnu
 +MULTIARCH_DIRNAME = $(call if_multiarch,sh3-linux-gnu)
 +endif
+ MULTILIB_EXCEPTIONS=m1 mb/m1 m2a
 --- a/src/gcc/config/sparc/t-linux64
 +++ b/src/gcc/config/sparc/t-linux64
 @@ -27,3 +27,5 @@ MULTILIB_OPTIONS = m64/m32
@@ -111,7 +112,7 @@
 +endif
 --- a/src/gcc/config.gcc
 +++ b/src/gcc/config.gcc
-@@ -2549,6 +2549,11 @@ mips*-*-linux*)				# Linux MIPS, either
+@@ -2574,6 +2574,11 @@ mips*-*-linux*)				# Linux MIPS, either
  			default_mips_arch=mips64r6
  			enable_mips_multilibs="yes"
  			;;
@@ -123,7 +124,7 @@
  		mipsisa64r6*-*-linux*)
  			default_mips_abi=n32
  			default_mips_arch=mips64r6
-@@ -2568,6 +2573,10 @@ mips*-*-linux*)				# Linux MIPS, either
+@@ -2593,6 +2598,10 @@ mips*-*-linux*)				# Linux MIPS, either
  			default_mips_abi=64
  			enable_mips_multilibs="yes"
  			;;
@@ -134,7 +135,7 @@
  		mips64*-*-linux* | mipsisa64*-*-linux*)
  			default_mips_abi=n32
  			enable_mips_multilibs="yes"
-@@ -3607,6 +3616,16 @@ case ${target} in
+@@ -3631,6 +3640,16 @@ case ${target} in
  	;;
  esac
  
@@ -151,7 +152,7 @@
  # Build mkoffload tool
  case ${target} in
  *-intelmic-* | *-intelmicemul-*)
-@@ -5302,7 +5321,7 @@ case ${target} in
+@@ -5704,7 +5723,7 @@ case ${target} in
  		;;
  	i[34567]86-*-linux* | x86_64-*-linux*)
  		extra_objs="${extra_objs} gnu-property.o"
@@ -162,7 +163,7 @@
  		tmake_file="$tmake_file i386/t-kfreebsd"
 --- a/src/gcc/config/mips/mips.h
 +++ b/src/gcc/config/mips/mips.h
-@@ -3444,16 +3444,6 @@ struct GTY(())  machine_function {
+@@ -3440,16 +3440,6 @@ struct GTY(())  machine_function {
  #define PMODE_INSN(NAME, ARGS) \
    (Pmode == SImode ? NAME ## _si ARGS : NAME ## _di ARGS)
  
@@ -220,3 +221,12 @@
  MULTIARCH_DIRNAME = $(call if_multiarch,aarch64$(AARCH_BE)-linux-gnu)
  
  MULTILIB_OSDIRNAMES += mabi.ilp32=../libilp32$(call if_multiarch,:aarch64$(AARCH_BE)-linux-gnu_ilp32)
+--- a/src/gcc/config/arc/t-multilib-linux
++++ b/src/gcc/config/arc/t-multilib-linux
+@@ -23,3 +23,6 @@ MULTILIB_DIRNAMES = hs archs hs38 hs38_l
+ # Aliases:
+ MULTILIB_MATCHES += mcpu?arc700=mA7
+ MULTILIB_MATCHES += mcpu?arc700=mARC700
++
++MULTILIB_OSDIRNAMES =
++MULTIARCH_DIRNAME = $(call if_multiarch,arc-linux-gnu)

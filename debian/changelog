@@ -1,15 +1,476 @@
-gcc-12 (12.1.0-8deepin2) unstable; urgency=medium
+gcc-12 (12.3.0-14) unstable; urgency=medium
 
-  * No longer build common pkgs and common libs, promoting gcc-13 as default.
+  * Update to git 20240119 from the gcc-12 branch.
+    - Fix PR target/107201 (AVR), PR target/113156 (AVR),
+      PR target/112952 (AVR), PR target/112816 (x86), PR middle-end/112733,
+      PR tree-optimization/113013, PR target/112845 (x86),
+      PR target/112837 (x86), PR target/112816 (x86), PR target/111408 (x86),
+      PR tree-optimization/111967, PR c/112339, PR tree-optimization/110731,
+      PR debug/111080, PR tree-optimization/111137, PR ada/104354,
+      PR middle-end/111253, PR c++/109899, PR c++/111485, PR c++/108975,
+      PR sanitizer/112727, PR c++/112795, PR libstdc++/113200,
+      PR libstdc++/113250, PR testsuite/113175.
+  * Update the testsuite-hardening patches, and apply them again.
 
- -- Tianyu Chen <sweetyfish@deepin.org>  Thu, 28 Sep 2023 11:39:19 +0800
+ -- Matthias Klose <doko@debian.org>  Fri, 19 Jan 2024 12:01:10 +0100
 
-gcc-12 (12.1.0-8deepin1) unstable; urgency=medium
+gcc-12 (12.3.0-13) unstable; urgency=medium
 
-  * Import patches from gcc-11
-  * Downgrade dependency to gcc-12
+  * Update to git 20231215 from the gcc-12 branch.
+    - Fix PR target/112891 (x86), PR libstdc++/112314.
+  * Build again using GCC 11 to fix the bootstrap on riscv64.
+  * For Ubuntu 24.04 LTS and later, switch _FORTIFY_SOURCE to 3 by default
+    instead of 2 when optimization is enabled.
 
- -- Chang Yang <yangchang@deepin.org>  Wed, 06 Sep 2023 16:43:00 +0800
+ -- Matthias Klose <doko@debian.org>  Fri, 15 Dec 2023 10:15:51 +0100
+
+gcc-12 (12.3.0-12) unstable; urgency=medium
+
+  * Update to git 20231203 from the gcc-12 branch.
+    - Fix PR tree-optimization/111917, PR middle-end/111818,
+      PR tree-optimization/111614, PR tree-optimization/111764,
+      PR tree-optimization/111445, PR tree-optimization/111019,
+      PR tree-optimization/110702, PR tree-optimization/110556,
+      PR tree-optimization/110515, PR debug/110295, PR ipa/109983,
+      PR tree-optimization/109143, PR target/112672 (x86),
+      PR target/111815 (vax), PR target/111828 (PPC), PR target/112443 (x86),
+      PR c++/111703, PR c++/107939, PR c++/112269, PR c++/112301,
+      PR c++/102191, PR c++/33799, PR d/110712, PR d/112270,
+      PR fortran/111880, PR libstdc++/112491, PR libstdc++/112348,
+      PR libstdc++/112491, PR libbacktrace/111315, PR libbacktrace/112263.
+  * Add support to build from a combined binutils/GCC tree.
+  * Remove references to obsolete CPUs m32r and tilegx. Closes: #1056768.
+
+ -- Matthias Klose <doko@debian.org>  Sun, 03 Dec 2023 15:44:44 +0100
+
+gcc-12 (12.3.0-11) unstable; urgency=medium
+
+  * Update to git 20231028 from the gcc-12 branch.
+    - Fix PR target/111001 (SH), PR target/111367 (PPC), PR target/101177 (SH),
+      PR target/111528, PR target/111380 (PPC), PR target/111366 (PPC),
+      PR fortran/111837, PR target/110170 (x86), PR libstdc++/111936.
+  * Configure with --disable-s390-excess-float-precision for sid/trixie and
+    Ubuntu noble (24.04 LTS).
+
+ -- Matthias Klose <doko@debian.org>  Sat, 28 Oct 2023 13:23:42 +0200
+
+gcc-12 (12.3.0-10) unstable; urgency=medium
+
+  * Update to git 20231008 from the gcc-12 branch.
+    - Fix PR target/111411 (AArch64), PR c++/111357, PR middle-end/111699,
+      PR target/111121 (AArch64), PR libstdc++/108178, PR libstdc++/111050,
+      PR libstdc++/111511, PR c++/111512.
+    - Fix return register handling in untyped_call (AArch64).
+  * Update the libquadmath portions of the copyright file. Addresses: #1052314.
+
+ -- Matthias Klose <doko@debian.org>  Sun, 08 Oct 2023 09:05:57 +0200
+
+gcc-12 (12.3.0-9) unstable; urgency=medium
+
+  * Update to git 20230913 from the gcc-12 branch.
+    - Fix PR target/111340 (x86), PR target/96762 (PPC),
+      PR target/111306, PR target/111335, PR middle-end/111017,
+      PR target/110484 (loong64), PR tree-optimization/110914,
+      PR tree-optimization/111015.
+    - Address stack protector and stack clash protection weaknesses
+      on AArch64. CVE-2023-4039.
+
+ -- Matthias Klose <doko@debian.org>  Wed, 13 Sep 2023 13:33:30 +0200
+
+gcc-12 (12.3.0-8) unstable; urgency=medium
+
+  * Update to git 20230824 from the gcc-12 branch.
+    - Fix PR c++/106310, PR c++/106890, PR c++/109666, PR c++/108099,
+      PR c++/109761, PR d/110959, PR fortran/107397.
+  * Update sanitizer symbols files.
+  * Address some lintian warnings:
+    - Be quiet about libstdc++-doc manpages.
+    - Don't complain about unstripped sanitizer libraries.
+  * Update libgphobos symbols file.
+  * Remove test protocols in clean target. Closes: #1044154.
+  * Disable Ada, Go, D, Modula-2 frontends on loong64.
+
+ -- Matthias Klose <doko@debian.org>  Thu, 24 Aug 2023 22:13:46 +0200
+
+gcc-12 (12.3.0-7) unstable; urgency=medium
+
+  * Update to git 20230802 from the gcc-12 branch.
+    - Fix PR target/110741 (PPC), PR target/110206, PR target/101469 (SH),
+      PR target/106966 (alpha), PR c++/110468, PR fortran/95947,
+      PR fortran/110658, PR fortran/110288, PR libstdc++/95048.
+  * libgccjit-12-doc: Relax dependency on the gcc-12-base package.
+  * Fix some lintian warnings.
+  * gcc-12-doc: Fix installation of the libitm info file. LP: #1936394.
+
+ -- Matthias Klose <doko@debian.org>  Wed, 02 Aug 2023 12:21:30 +0200
+
+gcc-12 (12.3.0-6) unstable; urgency=medium
+
+  * Update to git 20230707 from the gcc-12 branch.
+    - Fix PR c++/110595, PR target/105325 (PPC), PR d/108842, PR d/110516,
+      PR d/110514, PR fortran/110585, PR libstdc++/104299.
+  * Apply proposed patch for PR target/106966. Addresses: #1019011.
+
+ -- Matthias Klose <doko@debian.org>  Mon, 10 Jul 2023 17:11:56 +0200
+
+gcc-12 (12.3.0-5) unstable; urgency=medium
+
+  * Update to git 20230630 from the gcc-12 branch.
+    - Fix PR tree-optimization/110298, PR middle-end/110182,
+      PR target/110132 (AArch64), PR target/110100 (AArch64),
+      PR target/110100 (AArch64), PR target/109932 (PPC),
+      PR target/110011 (PPC), PR tree-optimization/105651,
+      PR rtl-optimization/110237, PR target/110309 (x86),
+      PR testsuite/66005, PR middle-end/110420, PR middle-end/103979,
+      PR middle-end/98619, PR d/110359, PR d/110113.
+
+  [ Nicolas Boulenguez ]
+  * ada/check_ali_update.sh: report checksum changes but ignore timestamps
+
+  [ Matthias Klose ]
+  * Remove bad liblto_plugin.so symlink introduced in 12.3.0-4.
+
+ -- Matthias Klose <doko@debian.org>  Fri, 30 Jun 2023 14:05:15 +0200
+
+gcc-12 (12.3.0-4) unstable; urgency=medium
+
+  * Update to git 20230617 from the gcc-12 branch.
+    - Fix PR target/110136 (loongarch).
+  * Fix providing the liblto_plugin.so symlink in the new place.
+
+ -- Matthias Klose <doko@debian.org>  Sat, 17 Jun 2023 11:56:50 +0200
+
+gcc-12 (12.3.0-3) unstable; urgency=high
+
+  * Update to git 20230613 from the gcc-12 branch.
+    - Fix PR middle-end/110200.
+  * gcc-12-base: Bump the Breaks: gnat (<< 12) for smoother upgrades from
+    bullseye (Andreas Beckmann). Closes: #1036641.
+  * Remove obsolete gcn assembler patch.
+
+ -- Matthias Klose <doko@debian.org>  Tue, 13 Jun 2023 12:57:17 +0200
+
+gcc-12 (12.3.0-2) unstable; urgency=medium
+
+  * Update to git 20230611 from the gcc-12 branch.
+    - Fix PR tree-optimization/109778, PR target/108758 (PPC),
+      PR target/109069 (PPC), PR c/105660, PR c++/109160,
+      PR c++/106740, PR c++/105852, PR libffi/109447, PR target/109650 (AVR),
+      PR target/92729 (AVR), PR target/106907 (PPC), PR target/110044 (PPC),
+      PR target/110108 (X86), PR target/109800 (ARM), PR target/109939 (ARM),
+      PR target/110088 (AVR), PR target/109954 (AVR), PR target/110036 (RISCV),
+      PR target/104327 (AVR), PR target/82931 (AVR), PR target/70243 (PPC),
+      PR tree-optimization/109505, PR target/105753 (AVR),
+      PR target/108442 (ARM), PR target/108177 (ARM), PR target/96795 (ARM),
+      PR target/107515 (ARM), PR target/107515 (ARM), PR target/96795 (ARM),
+      PR target/96795 (ARM), PR c++/109868, PR c++/109241, PR c++/109160,
+      PR c++/106740, PR c++/105852, PR fortran/96024, PR fortran/100607,
+      PR fortran/109846, PR libffi/109447, PR libstdc++/109822,
+      PR libstdc++/109949, PR libstdc++/109261, PR libstdc++/109261,
+      PR libstdc++/109261, PR libstdc++/108030, PR libstdc++/108856,
+      PR libstdc++/108030, PR libstdc++/108030, PR libstdc++/107801.
+  * Configure --with-cpu=ev56 for alpha. Closes: #1036158.
+  * Also provide the liblto_plugin.so symlink in the new place.
+    Addresses: #1036566.
+
+ -- Matthias Klose <doko@debian.org>  Sun, 11 Jun 2023 14:06:02 +0200
+
+gcc-12 (12.3.0-1) experimental; urgency=medium
+
+  * GCC 12.3.0 release.
+  * Update newlib to 4.3.0.
+  * Refresh patches.
+
+ -- Matthias Klose <doko@debian.org>  Wed, 10 May 2023 08:59:00 +0200
+
+gcc-12 (12.2.0-18) experimental; urgency=medium
+
+  * Update to git 20230502 from the gcc-12 branch (12.3 release candidate).
+    - Fix PR other/109293, PR tree-optimization/109392,
+      PR tree-optimization/108791, PR rtl-optimization/106421,
+      PR target/105980 (x86), PR middle-end/106057, PR ipa/107769,
+      PR ipa/109318, PR target/109566 (PPC), PR tree-optimization/109609,
+      PR rtl-optimization/109585, PR tree-optimization/109573,
+      PR target/109478 (PARISC), PR target/108812 (PPC),
+      PR tree-optimization/109410, PR middle-end/106190, PR target/109276 (x86),
+      PR ipa/105685, PR tree-optimization/109176, PR target/108589 (AArch64),
+      PR target/108910 (AArch64), PR tree-optimization/109434,
+      PR tree-optimization/109502, PR tree-optimization/109491,
+      PR tree-optimization/109473, PR tree-optimization/109469, PR lto/109263,
+      PR tree-optimization/109219, PR ipa/106124, PR ipa/105676,
+      PR target/108699 (PPC), PR target/108807 (PPC), PR target/109137 (x86),
+      PR target/109067 (PPC), PR tree-optimization/109427,
+      PR tree-optimization/96373, PR tree-optimization/108979,
+      PR target/109072 (AArch64), PR rtl-optimization/108681,
+      PR tree-optimization/108608, PR tree-optimization/108603,
+      PR rtl-optimization/108508, PR tree-optimization/108430,
+      PR rtl-optimization/108086, PR target/109140 (SPARC), PR ipa/107925,
+      PR target/109178 (PPC), PR target/105554, PR middle-end/108685,
+      PR c/108079, PR testsuite/108973, PR c/108986, PR c++/108934,
+      PR debug/108967, PR middle-end/108854, PR target/108881 (x86),
+      PR tree-optimization/108819, PR target/100758 (x86),
+      PR tree-optimization/108950, PR tree-optimization/108821,
+      PR tree-optimization/108816, PR tree-optimization/108793,
+      PR tree-optimization/108724, PR middle-end/108625, PR middle-end/108500,
+      PR tree-optimization/107451, PR tree-optimization/106904,
+      PR target/108429 (x86), PR analyzer/109094, PR analyzer/108968,
+      PR analyzer/108733, PR analyzer/108704, PR analyzer/106325,
+      PR analyzer/107948, PR analyzer/105784, PR analyzer/107582,
+      PR analyzer/107345, PR analyzer/106573, PR analyzer/106573,
+      PR c++/107163, PR c/109151, PR c/107465, PR c/107465, PR sanitizer/108060,
+      PR sanitizer/109050, PR c/108079, PR c++/101118, PR c++/107768,
+      PR c++/106969, PR c++/108219, PR c++/108218, PR c++/108795,
+      PR c++/109357, PR c++/105481, PR c++/105996, PR c++/106890,
+      PR c++/108975, PR c++/69410, PR c++/105809, PR c++/108242,
+      PR c++/101869, PR c++/105406, PR c++/103871, PR c++/98056,
+      PR c++/108468, PR c++/107310, PR c++/108566, PR c++/107154,
+      PR c++/108099, PR c++/109319, PR c++/109164, PR c++/109096,
+      PR c++/107558, PR c++/109039, PR c/108079, PR debug/108716,
+      PR c++/107280, PR d/109144, PR d/109108, PR fortran/61615,
+      PR fortran/99982, PR fortran/108010, PR fortran/109511, PR fortran/106856,
+      PR fortran/108025, PR fortran/102331, PR fortran/103506,
+      PR fortran/99036, PR fortran/109186, PR fortran/85877, PR fortran/87127,
+      PR fortran/106945, PR fortran/104332, PR target/108910, PR other/109306,
+      PR libquadmath/87204, PR libquadmath/94756, PR libstdc++/108362,
+      PR libstdc++/107850, PR libstdc++/108952, PR libstdc++/109339,
+      PR libstdc++/107466, PR libstdc++/103755, PR libstdc++/107852,
+      PR libstdc++/106199, PR libstdc++/100366, PR libstdc++/103387,
+      PR libstdc++/109242, PR libstdc++/108118, PR libstdc++/108554,
+      PR libstdc++/109299, PR libstdc++/108413, PR libstdc++/109064,
+      PR libstdc++/109182, PR libstdc++/109165.
+  * Refresh patches.
+
+ -- Matthias Klose <doko@debian.org>  Tue, 02 May 2023 10:09:03 +0200
+
+gcc-12 (12.2.0-17) experimental; urgency=medium
+
+  * Update to git 20230314 from the gcc-12 branch.
+    - Fix PR tree-optimization/105532, PR tree-optimization/108684,
+      PR c++/106188, PR c++/106713, PR fortran/108923, PR fortran/108923,
+      PR libstdc++/103934.
+  * Drop gdc build dependency on unsupported architectures. Closes: #1026201.
+
+ -- Matthias Klose <doko@debian.org>  Tue, 14 Mar 2023 10:32:48 +0100
+
+gcc-12 (12.2.0-16) experimental; urgency=medium
+
+  * Update to git 20230309 from the gcc-12 branch.
+    - Fix PR middle-end/108546, PR target/109000 (loongarch), PR c++/107079,
+      PR c++/107939, PR c++/108998, PR c++/108116, PR c++/107853,
+      PR c++/107864, PR c++/107179.
+  * Pass GM2_FOR_TARGET for cross builds (Helmut Grohne). Closes: #1032161.
+  * Don't add libhwasan0 in the control file when not building common libs.
+
+ -- Matthias Klose <doko@debian.org>  Thu, 09 Mar 2023 10:32:27 +0100
+
+gcc-12 (12.2.0-15) experimental; urgency=medium
+
+  * Update to git 20230305 from the gcc-12 branch.
+    - Fix PR target/108396 (PPC), PR target/108348 (PPC),
+      PR target/108272 (PPC), PR c++/105593, PR c++/105593,
+      PR tree-optimization/108440, PR tree-optimization/106523,
+      PR tree-optimization/108688, PR tree-optimization/108692,
+      PR middle-end/108435, PR debug/108573, PR target/108599 (x86),
+      PR rtl-optimization/108596, PR other/108560, PR bootstrap/90543,
+      PR tree-optimization/108498, PR middle-end/108459, PR middle-end/108237,
+      PR middle-end/108264, PR tree-optimization/108068,
+      PR tree-optimization/108166, PR rtl-optimization/108193,
+      PR rtl-optimization/106751, PR tree-optimization/108095,
+      PR tree-optimization/107997, PR debug/106719, PR target/106875 (x86),
+      PR middle-end/107317, PR tree-optimization/108582,
+      PR tree-optimization/108522, PR tree-optimization/108522,
+      PR ipa/107944, PR tree-optimization/108306, PR target/107987 (ARM),
+      PR middle-end/108543, PR tree-optimization/108164, PR middle-end/107994,
+      PR tree-optimization/108076, PR tree-optimization/107554,
+      PR driver/106624, PR target/106101 (S390), PR tree-optimization/108199,
+      PR tree-optimization/108137, PR target/107714 (ARM),
+      PR target/108140 (AArch64), PR middle-end/102633, PR c/107127,
+      PR c++/107593, PR c++/108597, PR c++/105593, PR middle-end/102633,
+      PR c/105972, PR c++/107593, PR c++/108597, PR c++/106675, PR c++/105593,
+      PR middle-end/102633, PR c++/108474, PR c++/108365, PR c++/108607,
+      PR c++/53932, PR c++/108286, PR c++/108206, PR c++/108180,
+      PR c++/107065, PR c++/107461, PR c++/107461, PR c++/107755,
+      PR c++/107593, PR c++/108597, PR fortran/108451, PR fortran/108349,
+      PR fortran/103259, PR fortran/95107, PR fortran/108450,
+      PR fortran/108609, PR fortran/108527, PR fortran/108453,
+      PR fortran/108558, PR fortran/108529, PR fortran/106209,
+      PR fortran/108421, PR fortran/108420, PR fortran/108501,
+      PR fortran/108502, PR fortran/108434, PR fortran/106731,
+      PR middle-end/108459, PR c++/108286, PR c++/108180, PR fortran/108558,
+      PR libstdc++/103934, PR libstdc++/107468, PR libstdc++/107468,
+      PR libstdc++/105730, PR libstdc++/106183.
+    - Fix PR sanitizer/108834, PR target/104921 (AArch64), PR target/90458 (x86),
+      PR middle-end/106080, PR c/108880, PR c++/107938, PR c++/108550,
+      PR c++/106259, PR c++/107574, PR c++/108829, PR d/108877, PR fortran/108937,
+      PR fortran/96024, PR fortran/96025, PR fortran/104554, PR libstdc++/108030,
+      PR libstdc++/108636.
+    - Add support for AMD Family 19h Zen version 4.
+  * Stop building packages built by GCC 13.
+
+ -- Matthias Klose <doko@debian.org>  Sun, 05 Mar 2023 09:52:16 +0100
+
+gcc-12 (12.2.0-14) unstable; urgency=medium
+
+  * Update to git 20230108 from the gcc-12 branch.
+    - Fix PR target/106736 (PPC), PR c++/108282, PR libstdc++/108265.
+  * Bump standards version.
+
+ -- Matthias Klose <doko@debian.org>  Sun, 08 Jan 2023 10:12:42 +0100
+
+gcc-12 (12.2.0-13) unstable; urgency=medium
+
+  * Fix libstdc++ symbols file, not distinguishing versions for some
+    symbols.
+  * Build-depend on gnat-12 instead of gnat-11. Closes: #1023695.
+
+ -- Matthias Klose <doko@debian.org>  Mon, 02 Jan 2023 22:28:39 +0100
+
+gcc-12 (12.2.0-12) unstable; urgency=medium
+
+  * Update to git 20221231 from the gcc-12 branch.
+    - Fix PR fortran/108131.
+  * Update multiarch patch for looongson. Closes: #1027278.
+
+ -- Matthias Klose <doko@debian.org>  Sat, 31 Dec 2022 12:30:21 +0100
+
+gcc-12 (12.2.0-11) unstable; urgency=medium
+
+  * Update to git 20221226 from the gcc-12 branch.
+    - Fix PR bootstrap/106482, PR d/104749, PR target/98776 (AArch64),
+      PR tree-optimization/107898, PR tree-optimization/107865,
+      PR tree-optimization/107833, PR tree-optimization/107839,
+      PR tree-optimization/107686, PR tree-optimization/107766,
+      PR tree-optimization/107647, PR tree-optimization/107407,
+      PR tree-optimization/106868, PR libstdc++/107814, PR libstdc++/108097.
+  * Install versioned gm2 doc files. Closes: #1026245.
+  * Backport PR driver/93371 from the trunk. Closes: #1025948.
+
+ -- Matthias Klose <doko@debian.org>  Mon, 26 Dec 2022 16:39:09 +0100
+
+gcc-12 (12.2.0-10) unstable; urgency=medium
+
+  * Update to git 20221211 from the gcc-12 branch.
+    - Fix PR tree-optimization/107956, PR target/107863 (x86),
+      PR d/105659, PR rtl-optimization/107482, PR target/107748 (x86),
+      PR target/107183, PR target/107713, PR tree-optimization/107206,
+      PR target/107304 (x86), PR c/41041, PR target/107404 (x86),
+      PR tree-optimization/107121, PR c/107001, PR c++/107358, PR c/106981,
+      PR c++/104066, PR c++/105774, PR c++/106829, PR d/107592,
+      PR fortran/107576, PR target/104688 (x86), PR libstdc++/91456,
+      PR libstdc++/106201, PR libstdc++/107801, PR libstdc++/95048,
+      PR libstdc++/103295.
+  * Add multiarch support for loongarch (Dandan Zhang). Closes: #1023785.
+
+ -- Matthias Klose <doko@debian.org>  Sun, 11 Dec 2022 18:52:56 +0100
+
+gcc-12 (12.2.0-9) unstable; urgency=medium
+
+  * Update to git 20221103 from the gcc-12 branch.
+    - Fix PR c++/107358, PR c++/105774, PR tree-optimization/107121,
+      PR c/107001, PR c/106981, PR c++/106829.
+  * Fix PR ada/107475, proposed patch.
+  * gm2-12-doc: Add missing Breaks+Replaces to gm2-12. Closes: #1023324.
+  * Remove the armel specific libstdc++ symbols file. Closes: #1022935.
+  * Build libatomic in the rtlibs stage (Helmut Grohne). Closes: #1009286.
+
+ -- Matthias Klose <doko@debian.org>  Thu, 03 Nov 2022 09:40:42 +0100
+
+gcc-12 (12.2.0-8) experimental; urgency=medium
+
+  * Update to git 20221030 from the gcc-12 branch.
+    - Fix PR middle-end/90115, PR target/106355 (S390), PR target/107364 (x86),
+      PR target/105421 (GCN), PR tree-optimization/107323, PR fortran/100097,
+      PR fortran/100098, PR fortran/103413, PR fortran/105633, PR lto/107418,
+      PR middle-end/90115, PR target/105421.
+  * Split out a gm2-12-doc package.
+  * Update VCS attributes.
+  * Bump standards version.
+
+ -- Matthias Klose <doko@debian.org>  Mon, 31 Oct 2022 10:31:17 +0100
+
+gcc-12 (12.2.0-7) unstable; urgency=medium
+
+  * Update to git 20221021 from the gcc-12 branch.
+    - Fix PR middle-end/100400, PR target/96072 (PPC), PR target/100645 (PPC).
+  * Fix the binary-arch only build.
+
+ -- Matthias Klose <doko@debian.org>  Fri, 21 Oct 2022 10:19:56 +0200
+
+gcc-12 (12.2.0-6) unstable; urgency=medium
+
+  * Update to git 20221019 from the gcc-12 branch.
+    - Fix PR tree-optimization/106934, PR tree-optimization/106922,
+      PR tree-optimization/106892, PR tree-optimization/105937,
+      PR target/107064 (x86), PR fortran/106817, PR fortran/105012,
+      PR fortran/100040, PR fortran/100029, PR fortran/106579,
+      PR middle-end/106548, PR libstdc++/106320, PR libstdc++/106695,
+      PR libstdc++/106607, PR libstdc++/106589, PR libstdc++/105678,
+      PR target/99685 (PPC), PR tree-optimization/107254,
+      PR tree-optimization/107212, PR tree-optimization/107160,
+      PR tree-optimization/107107, PR tree-optimization/106922,
+      PR tree-optimization/106922, PR target/107248 (SPARC), PR c++/106925.
+  * Fix libstdc++ build on the Hurd. Closes: #1021357.
+  * gobjc: drop obsolete sparc-only conflict (Helmut Grohne). Closes: #1020599.
+  * gobjc: remove unused binary-without-manpage lintian overrides (Helmut
+    Grohne). Closes: #1020600.
+  * Include the Modula-2 documentation into the gm2-12 package.
+  * Handle the "bookworm" release name instead of "sid".
+  * Backport two newlib patches for the nvptx target.
+
+ -- Matthias Klose <doko@debian.org>  Wed, 19 Oct 2022 07:38:40 +0200
+
+gcc-12 (12.2.0-5) unstable; urgency=medium
+
+  * Update libgcc symbols file for arc.
+  * Work around building libobjc on arc.
+  * Don't build Ada, D and Go on arc.
+
+ -- Matthias Klose <doko@debian.org>  Mon, 03 Oct 2022 10:47:38 +0200
+
+gcc-12 (12.2.0-4) unstable; urgency=medium
+
+  * Update to git 20221004 from the gcc-12 branch.
+    - Fix PR target/107061 (x86), PR middle-end/106982,
+      PR target/106491 (AArch64), PR target/104482 (PPC),
+      PR target/105485 (PPC), PR fortran/100103, PR fortran/100132,
+      PR fortran/107054, PR fortran/82868, PR fortran/106985,
+      PR fortran/106986.
+  * Add multiarch patch for arc-linux-gnu. Closes: #989453.
+
+ -- Matthias Klose <doko@debian.org>  Sun, 02 Oct 2022 12:12:08 +0200
+
+gcc-12 (12.2.0-3) unstable; urgency=medium
+
+  * Update to git 20220920 from the gcc-12 branch.
+    - Fix PR tree-optimization/106860, PR tree-optimization/106841,
+      PR tree-optimization/106809, PR c++/93259, PR c++/106893, PR c++/90451,
+      PR fortran/106857, PR fortran/100245, PR libstdc++/106320.
+
+ -- Matthias Klose <doko@debian.org>  Tue, 20 Sep 2022 10:02:11 +0200
+
+gcc-12 (12.2.0-2) unstable; urgency=medium
+
+  * Update to git 20220908 from the gcc-12 branch.
+    - Fix PR target/101322 (PPC), PR rtl-optimization/106187,
+      PR target/105463 (ARM), PR other/106782, PR other/106782,
+      PR target/106524 (AArch64), PR target/106017 (PPC),
+      PR target/106714 (x86), PR target/106721 (x86), PR target/106704 (x86),
+      PR rtl-optimization/106590, PR target/106459 (loongarch),
+      PR tree-optimization/106322, PR target/103353 (PPC), PR middle-end/106548,
+      PR c++/106759, PR fortran/100136, PR fortran/106579, PR fortran/106579,
+      PR fortran/103694, PR fortran/106566, PR libstdc++/106695,
+      PR libstdc++/106607, PR libstdc++/106589, PR libstdc++/105678.
+
+ -- Matthias Klose <doko@debian.org>  Thu, 08 Sep 2022 15:52:13 +0200
+
+gcc-12 (12.2.0-1) unstable; urgency=medium
+
+  * GCC 12.2.0 release.
+  * Strip the cc* executables again. Closes: #1015185.
+  * cpp-12: Suggest cpp-12-doc. Closes: #1016930.
+  * Refresh patches.
+
+ -- Matthias Klose <doko@debian.org>  Mon, 22 Aug 2022 09:38:01 +0200
 
 gcc-12 (12.1.0-8) unstable; urgency=medium
 

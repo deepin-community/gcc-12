@@ -112,3 +112,32 @@
  else
  MULTIARCH_DIRNAME := $(call if_multiarch,powerpc-linux-gnu)
  endif
+--- a/src/gcc/config/loongarch/t-linux
++++ b/src/gcc/config/loongarch/t-linux
+@@ -32,22 +32,19 @@ ifneq ($(call if_multiarch,yes),yes)
+ else
+     # Only define MULTIARCH_DIRNAME when multiarch is enabled,
+     # or it would always introduce ${target} into the search path.
+-    MULTIARCH_DIRNAME = $(LA_MULTIARCH_TRIPLET)
++    MULTIARCH_DIRNAME = $(call if_multiarch,loongarch64-linux-gnuf64)
+ endif
+ 
+ # Don't define MULTILIB_OSDIRNAMES if multilib is disabled.
+ ifeq ($(filter LA_DISABLE_MULTILIB,$(tm_defines)),)
+ 
+     MULTILIB_OSDIRNAMES = \
+-      mabi.lp64d=../lib64$\
+-      $(call if_multiarch,:loongarch64-linux-gnu)
++      mabi.lp64d=../lib$(call if_multiarch,:loongarch64-linux-gnuf64)
+ 
+     MULTILIB_OSDIRNAMES += \
+-      mabi.lp64f=../lib64/f32$\
+-      $(call if_multiarch,:loongarch64-linux-gnuf32)
++      mabi.lp64f=../lib/f32$(call if_multiarch,:loongarch64-linux-gnuf32)
+ 
+     MULTILIB_OSDIRNAMES += \
+-      mabi.lp64s=../lib64/sf$\
+-      $(call if_multiarch,:loongarch64-linux-gnusf)
++      mabi.lp64s=../lib/sf$(call if_multiarch,:loongarch64-linux-gnusf)
+ 
+ endif

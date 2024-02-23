@@ -10,6 +10,9 @@ endif
 ifneq (,$(m2_tarball))
   tarballs += $(m2_tarball)
 endif
+ifeq ($(with_binutils),yes)
+  tarballs += $(binutils_dsc)
+endif
 
 unpack_stamps = $(foreach i,$(tarballs),$(unpack_stamp)-$(i))
 
@@ -143,6 +146,7 @@ ifeq ($(GFDL_INVARIANT_FREE),yes)
 	rm -f $(srcdir)/gcc/doc/*.info
 	rm -f $(srcdir)/gcc/fortran/*.info
 	rm -f $(srcdir)/libgomp/*.info
+	rm -f $(srcdir)/libquadmath/*.info
 	for i in $(gfdl_texinfo_files); do \
 	  if [ -f $(srcdir)/$$i ]; then \
 	    cp $(SOURCE_DIR)debian/dummy.texi $(srcdir)/$$i; \
@@ -198,4 +202,24 @@ $(unpack_stamp)-$(m2_tarball): $(m2_tarpath) $(unpack_stamp)-$(gcc_tarball)
 	(cd gm2 && tar cf - gcc libgm2) | (cd src && tar xf -)
 	rm -rf gm2
 	echo "$(m2_tarball) unpacked." > $@
+endif
+
+# ---------------------------------------------------------------------------
+ifneq (,$(binutils_dsc))
+$(unpack_stamp)-$(binutils_dsc): $(binutils_tarpath) $(unpack_stamp)-$(gcc_tarball)
+	: # unpack binutils package
+	mkdir -p $(stampdir)
+	: # rm -rf $(binutils_srcdir)
+	dpkg-source -x $(binutils_dsc)
+
+	: # symlink binutilds toplevel dirs into the gcc tree
+	for d in $(binutils_srcdir)/*; do \
+	  [ -d $$d ] || continue; \
+	  b=$$(basename $$d); \
+	  if [ ! -e $(srcdir)/$$b ]; then \
+	    ln -s ../$(binutils_srcdir)/$$b $(srcdir)/$$b; \
+	  fi; \
+	done
+
+	echo "$(binutils_dsc) unpacked." > $@
 endif

@@ -34,9 +34,9 @@ for ali1 in "$1"/adalib/*.ali; do
         continue
     fi
 
-    pattern="^D $unit\.ad"
-    lines1=`grep "$pattern" "$ali1"`
-    lines2=`grep "$pattern" "$ali2"`
+    # Strip the timestamp field, we are only interested in checksums.
+    lines1=`sed -En "s/^D $unit[.]ad[bs]\t+[0-9]{14} //p" "$ali1"`
+    lines2=`sed -En "s/^D $unit[.]ad[bs]\t+[0-9]{14} //p" "$ali2"`
     if [ "$lines1" != "$lines2" ]; then
         changed="$changed $unit.ali"
     fi
