@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin3) unstable; urgency=medium
+
+  * add riscv64 subword atomic patch
+
+ -- Chang Yang <yangchang@deepin.org>  Wed, 03 Jul 2024 14:00:29 +0800
+
 gcc-12 (12.3.0-17deepin2) unstable; urgency=medium
 
   * Import LoongArch patches.

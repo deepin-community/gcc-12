@@ -400,6 +400,9 @@ debian_patches += \
 	loong64/0132-fix-loongarch-t-linux-use-usr-lib-as-multilib-prefix \
 	loong64/0133-fix-loongarch-driver.h-drop-loongarch-multilib.h
 
+# RISCV backport.
+debian_patches += riscv64-inline-subword-atomic
+
 series_stamp = $(stampdir)/02-series-stamp
 series: $(series_stamp)
 $(series_stamp):
