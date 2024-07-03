@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin4) unstable; urgency=medium
+
+  * update build-depends gcc-12.
+
+ -- LiChengGang <lichenggang@uniontech.com>  Wed, 03 Jul 2024 16:10:39 +0800
+
 gcc-12 (12.3.0-17deepin3) unstable; urgency=medium
 
   * add riscv64 subword atomic patch

@@ -15,7 +15,7 @@ Build-Depends: debhelper (>= 9.20141010), dpkg-dev (>= 1.17.14), g++-multilib [a
   gperf (>= 3.0.1), bison (>= 1:2.3), flex, gettext, 
   gdb:native [!riscv64 !mipsel !mips64el], nvptx-tools [amd64 ppc64el], amdgcn-tools [amd64], 
   texinfo (>= 4.3), locales-all, sharutils, 
-  procps, gnat-13:native [!arc !ia64 !loong64 !sh3 !sh3eb !sh4eb], g++-13:native, netbase, gdc-13:native [!arc !ia64 !loong64 !m68k !sh4 !s390 !sparc64 !alpha !hurd-alpha !hurd-amd64 !hurd-i386 !hurd-alpha !kfreebsd-amd64 !kfreebsd-i386 !kfreebsd-alpha], python3:any, 
+  procps, gnat-12:native [!arc !ia64 !loong64 !sh3 !sh3eb !sh4eb], g++-12:native, netbase, gdc-12:native [!arc !ia64 !loong64 !m68k !sh4 !s390 !sparc64 !alpha !hurd-alpha !hurd-amd64 !hurd-i386 !hurd-alpha !kfreebsd-amd64 !kfreebsd-i386 !kfreebsd-alpha], python3:any, 
   libisl-dev (>= 0.20), libmpc-dev (>= 1.0), libmpfr-dev (>= 3.0.0-9~), libgmp-dev (>= 2:5.0.1~), lib32z1-dev [amd64 kfreebsd-amd64], lib64z1-dev [i386], unzip <!nocheck>, 
   dejagnu <!nocheck>, coreutils (>= 2.26) | realpath (>= 1.9.12), chrpath, lsb-release, quilt, time, 
   pkg-config, libgc-dev, 
