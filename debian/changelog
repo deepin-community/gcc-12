@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin5) unstable; urgency=medium
+
+  * LoongArch: fix errors in vec_duplicate.
+
+ -- Peng Fan <fanpeng@loongson.cn>  Tue, 16 Jul 2024 03:08:18 +0000
+
 gcc-12 (12.3.0-17deepin4) unstable; urgency=medium
 
   * update build-depends gcc-12.
