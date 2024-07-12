@@ -1,0 +1,20 @@
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index d0db08c82..03602bfcc 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -10400,6 +10400,7 @@ loongarch_expand_vector_init (rtx target, rtx vals)
+ 
+    }
+       return;
++    }
+ 
+   if (ISA_HAS_LSX)
+     {
+@@ -10553,7 +10554,6 @@ loongarch_expand_vector_init (rtx target, rtx vals)
+  
+   /* Loongson is the only cpu with vectors with more elements.  */
+   gcc_assert (0);
+-    }
+ }
+ 
+ /* Implement HARD_REGNO_CALLER_SAVE_MODE.  */
