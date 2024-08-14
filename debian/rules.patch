@@ -401,7 +401,6 @@ debian_patches += \
 	loong64/0133-fix-loongarch-driver.h-drop-loongarch-multilib.h \
 	loong64/0134-LoongArch-fix-error-in-vec-duplicate
 
-
 # RISCV backport.
 debian_patches += riscv64-inline-subword-atomic
 
