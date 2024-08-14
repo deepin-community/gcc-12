@@ -399,7 +399,8 @@ debian_patches += \
 	loong64/0131-Support-multilib-aware-target-lib-flags-self-specs-o \
 	loong64/0132-fix-loongarch-t-linux-use-usr-lib-as-multilib-prefix \
 	loong64/0133-fix-loongarch-driver.h-drop-loongarch-multilib.h \
-	loong64/0134-LoongArch-fix-error-in-vec-duplicate
+	loong64/0134-LoongArch-fix-error-in-vec-duplicate \
+	loong64/0135-LoongArch-Fix-print-operand-reloc
 
 # RISCV backport.
 debian_patches += riscv64-inline-subword-atomic

@@ -1,0 +1,166 @@
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 03602bfcc..4990d1140 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -5682,40 +5682,93 @@ loongarch_cas_failure_memorder_needs_acquire (enum memmodel model)
+    in context CONTEXT.  HI_RELOC indicates a high-part reloc.  */
+    
+ static void
+-loongarch_print_operand_reloc (FILE *file, rtx op, bool hi_reloc)
+-{  
++loongarch_print_operand_reloc (FILE *file, rtx op, bool hi64_part,
++        bool hi_reloc)
++{
+   const char *reloc;
+-   
+-  switch (loongarch_classify_symbolic_expression (op))
++  enum loongarch_symbol_type symbol_type =
++    loongarch_classify_symbolic_expression (op);
++
++  if (loongarch_symbol_extreme_p (symbol_type))
++    gcc_assert (TARGET_EXPLICIT_RELOCS);
++
++  switch (symbol_type)
++    {
++    case SYMBOL_PCREL64:
++      if (hi64_part)
+     {
++      reloc = hi_reloc ? "%pc64_hi12" : "%pc64_lo20";
++      break;
++    }
++      /* fall through */
+     case SYMBOL_PCREL:
+       reloc = hi_reloc ? "%pc_hi20" : "%pc_lo12";
+       break;
+-   
++
+     case SYMBOL_GOT_DISP:
+-      reloc = hi_reloc ? "%got_pc_hi20" : "%got_pc_lo12";
++      if (hi64_part)
++    {
++      if (TARGET_CMODEL_EXTREME)
++        reloc = hi_reloc ? "%got64_pc_hi12" : "%got64_pc_lo20";
++      else
++        gcc_unreachable ();
++    }
++      else
++    reloc = hi_reloc ? "%got_pc_hi20" : "%got_pc_lo12";
+       break;
+-   
++
+     case SYMBOL_TLS_IE:
+-      reloc = hi_reloc ? "%ie_pc_hi20" : "%ie_pc_lo12";
++      if (hi64_part)
++    {
++      if (TARGET_CMODEL_EXTREME)
++        reloc = hi_reloc ? "%ie64_pc_hi12" : "%ie64_pc_lo20";
++      else
++        gcc_unreachable ();
++    }
++      else
++    reloc = hi_reloc ? "%ie_pc_hi20" : "%ie_pc_lo12";
+       break;
+-   
++
+     case SYMBOL_TLS_LE:
+-      reloc = hi_reloc ? "%le_hi20" : "%le_lo12";
++      if (hi64_part)
++    {
++      if (TARGET_CMODEL_EXTREME)
++        reloc = hi_reloc ? "%le64_hi12" : "%le64_lo20";
++      else
++        gcc_unreachable ();
++    }
++      else
++    reloc = hi_reloc ? "%le_hi20" : "%le_lo12";
+       break;
+-   
++
+     case SYMBOL_TLSGD:
+-      reloc = hi_reloc ? "%gd_pc_hi20" : "%got_pc_lo12";
++      if (hi64_part)
++    {
++      if (TARGET_CMODEL_EXTREME)
++        reloc = hi_reloc ? "%got64_pc_hi12" : "%got64_pc_lo20";
++      else
++        gcc_unreachable ();
++    }
++      else
++    reloc = hi_reloc ? "%gd_pc_hi20" : "%got_pc_lo12";
+       break;
+-   
++
+     case SYMBOL_TLSLDM:
+-      reloc = hi_reloc ? "%ld_pc_hi20" : "%got_pc_lo12";
++      if (hi64_part)
++    {
++      if (TARGET_CMODEL_EXTREME)
++        reloc = hi_reloc ? "%got64_pc_hi12" : "%got64_pc_lo20";
++      else
++        gcc_unreachable ();
++    }
++      else
++    reloc = hi_reloc ? "%ld_pc_hi20" : "%got_pc_lo12";
+       break;
+-                                                                                                                                                                                             
++
+     default:
+       gcc_unreachable ();
+     }
+-   
++
+   fprintf (file, "%s(", reloc);
+   output_addr_const (file, loongarch_strip_unspec_address (op));
+   fputc (')', file);
+@@ -5814,11 +5867,13 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+     case 'h':
+       if (code == HIGH)
+ 	op = XEXP (op, 0);
+-      loongarch_print_operand_reloc (file, op, true /* hi_reloc */);
++      loongarch_print_operand_reloc (file, op, false /* hi64_part */,
++              true /* hi_reloc */);
+       break;
+ 
+     case 'H':
+-      loongarch_print_operand_reloc (file, op, true /* hi_reloc */);
++      loongarch_print_operand_reloc (file, op, true /* hi64_part */,
++              true /* hi_reloc */);
+       break;
+ 
+     case 'i':
+@@ -5827,7 +5882,8 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+       break;
+ 
+     case 'L':
+-      loongarch_print_operand_reloc (file, op, false /* lo_reloc */);
++      loongarch_print_operand_reloc (file, op, false /* hi64_part*/,
++              false /* lo_reloc */);
+       break;
+     case 'B':
+       if (GET_CODE (op) == CONST_VECTOR)
+@@ -5855,11 +5911,13 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+       break;
+ 
+     case 'r':
+-      loongarch_print_operand_reloc (file, op, true /* lo_reloc */);
++      loongarch_print_operand_reloc (file, op, false /* hi64_part */,
++              true /* lo_reloc */);
+       break;
+ 
+     case 'R':
+-      loongarch_print_operand_reloc (file, op, false /* lo_reloc */);
++      loongarch_print_operand_reloc (file, op, true /* hi64_part */,
++              false /* lo_reloc */);
+       break;
+ 
+     case 't':
+@@ -6034,7 +6092,8 @@ loongarch_print_operand_address (FILE *file, machine_mode /* mode  */, rtx x)
+ 
+       case ADDRESS_LO_SUM:
+ 	fprintf (file, "%s,", reg_names[REGNO (addr.reg)]);
+-	loongarch_print_operand_reloc (file, addr.offset, false /* hi_reloc */);
++    loongarch_print_operand_reloc (file, addr.offset, false /* hi64_part */,
++                       false /* hi_reloc */);
+ 	return;
+ 
+       case ADDRESS_CONST_INT:
