@@ -1,6 +1,7 @@
 gcc-12 (12.3.0-17deepin7) unstable; urgency=medium
 
   * Disable loong64 cross support for go, gm2, and gnat.
+  * Enable ubsan for riscv64.
 
  -- Mingcong Bai <baimingcong@uniontech.com>  Mon, 09 Sep 2024 14:43:59 +0800
 
