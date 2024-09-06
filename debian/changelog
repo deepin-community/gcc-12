@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin7) unstable; urgency=medium
+
+  * enable ubsan for riscv64
+
+ -- Chang Yang <yangchang@deepin.org>  Fri, 06 Sep 2024 13:58:35 +0800
+
 gcc-12 (12.3.0-17deepin6) unstable; urgency=medium
 
   * Fix loongarch_print_operand_reloc.
