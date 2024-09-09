@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin7) unstable; urgency=medium
+
+  * Disable loong64 cross support for go, gm2, and gnat.
+
+ -- Mingcong Bai <baimingcong@uniontech.com>  Mon, 09 Sep 2024 14:43:59 +0800
+
 gcc-12 (12.3.0-17deepin6) unstable; urgency=medium
 
   * Fix loongarch_print_operand_reloc.
