@@ -879,10 +879,8 @@ ada_no_snap	:= no
 #    ada_no_snap := yes
 #  endif
 #endif
-ifeq ($(DEB_CROSS),yes)
-  ifneq (,$(filter $(DEB_TARGET_ARCH),loong64))
-    ada_no_cross := yes
-  endif
+ifneq (,$(filter $(DEB_HOST_ARCH),loong64))
+  ada_no_cross := yes
 endif
 
 ifeq ($(with_dev),yes)
@@ -1036,10 +1034,8 @@ endif
 # Debian #969221
 go_no_archs += sh4
 
-ifeq ($(DEB_CROSS),yes)
-  ifneq (,$(filter $(DEB_TARGET_ARCH),loong64))
-    go_no_cross := yes
-  endif
+ifneq (,$(filter $(DEB_HOST_ARCH),loong64))
+  go_no_cross := yes
 endif
 
 ifneq ($(with_base_only),yes)
@@ -1111,6 +1107,9 @@ ifneq (,$(filter $(DEB_TARGET_GNU_SYSTEM),$(d_no_systems)))
 endif
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(d_no_archs)))
   with_d := disabled for architecture $(DEB_TARGET_ARCH)
+endif
+ifeq ($(d_no_cross)-$(DEB_CROSS),yes-yes)
+  with_d := disabled for cross compiler package
 endif
 ifeq ($(d_no_snap)-$(single_package),yes-yes)
   with_d := disabled for snapshot build
@@ -1289,11 +1288,11 @@ ifneq ($(with_base_only),yes)
   endif
 endif
 m2_no_archs = i386 loong64 powerpc ppc64 sh4 kfreebsd-amd64 kfreebsd-i386 hurd-i386
-ifeq ($(DEB_CROSS),yes)
-  ifneq (,$(filter $(DEB_TARGET_ARCH),loong64))
-    m2_no_cross := yes
-  endif
+
+ifneq (,$(filter $(DEB_HOST_ARCH),loong64))
+  m2_no_cross := yes
 endif
+
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(m2_no_archs)))
     with_m2 := disabled for cpu $(DEB_TARGET_ARCH)
 endif

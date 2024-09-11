@@ -1,3 +1,12 @@
+gcc-12 (12.3.0-17deepin8) unstable; urgency=medium
+
+  * Fix loong64 cross support markers - I erroneously used DEB_TARGET_ARCH to
+    match loong64 cross hosts, DEB_HOST_ARCH should have been used instead.
+  * Fix d_no_cross, which was missing a directive to disable D for cross
+    target builds.
+
+ -- Mingcong Bai <baimingcong@uniontech.com>  Wed, 11 Sep 2024 16:20:30 +0800
+
 gcc-12 (12.3.0-17deepin7) unstable; urgency=medium
 
   * Disable loong64 cross support for go, gm2, and gnat.
