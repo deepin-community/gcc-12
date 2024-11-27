@@ -1,0 +1,102 @@
+From 5634d2ea49a180bdc6f34245b53f1211891b0089 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 6 Jul 2022 23:22:29 +0800
+Subject: [PATCH 002/303] loongarch: avoid unnecessary sign-extend after 32-bit
+ division
+
+Like add.w/sub.w/mul.w, div.w/mod.w/div.wu/mod.wu also sign-extend the
+output on LA64.  But, LoongArch v1.00 mandates that the inputs of 32-bit
+division to be sign-extended so we have to expand 32-bit division into
+RTL sequences.
+
+We defined div.w/mod.w/div.wu/mod.wu as a (DI, DI) -> SI instruction.
+This definition does not indicate the fact that these instructions will
+store the result as sign-extended value in a 64-bit GR.  Then the
+compiler would emit unnecessary sign-extend operations.  For example:
+
+    int div(int a, int b) { return a / b; }
+
+was compiled to:
+
+    div.w  $r4, $r4, $r5
+    slli.w $r4, $r4, 0    # this is unnecessary
+    jr     $r1
+
+To remove this unnecessary operation, we change the division
+instructions to (DI, DI) -> DI and describe the sign-extend behavior
+explicitly in the RTL template.  In the expander for 32-bit division we
+then use simplify_gen_subreg to extract the lower 32 bits.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (<any_div>di3_fake): Describe
+	the sign-extend of result in the RTL template.
+	(<any_div><mode>3): Adjust for <any_div>di3_fake change.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/div-4.c: New test.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ gcc/config/loongarch/loongarch.md          | 12 ++++++++----
+ gcc/testsuite/gcc.target/loongarch/div-4.c |  9 +++++++++
+ 2 files changed, 17 insertions(+), 4 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/div-4.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 637815185..37cc3e0e6 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -753,6 +753,7 @@
+   {
+     rtx reg1 = gen_reg_rtx (DImode);
+     rtx reg2 = gen_reg_rtx (DImode);
++    rtx rd = gen_reg_rtx (DImode);
+ 
+     operands[1] = gen_rtx_SIGN_EXTEND (word_mode, operands[1]);
+     operands[2] = gen_rtx_SIGN_EXTEND (word_mode, operands[2]);
+@@ -760,7 +761,9 @@
+     emit_insn (gen_rtx_SET (reg1, operands[1]));
+     emit_insn (gen_rtx_SET (reg2, operands[2]));
+ 
+-    emit_insn (gen_<optab>di3_fake (operands[0], reg1, reg2));
++    emit_insn (gen_<optab>di3_fake (rd, reg1, reg2));
++    emit_insn (gen_rtx_SET (operands[0],
++			    simplify_gen_subreg (SImode, rd, DImode, 0)));
+     DONE;
+   }
+ })
+@@ -782,9 +785,10 @@
+ 	(const_string "no")))])
+ 
+ (define_insn "<optab>di3_fake"
+-  [(set (match_operand:SI 0 "register_operand" "=r,&r,&r")
+-	(any_div:SI (match_operand:DI 1 "register_operand" "r,r,0")
+-		    (match_operand:DI 2 "register_operand" "r,r,r")))]
++  [(set (match_operand:DI 0 "register_operand" "=r,&r,&r")
++	(sign_extend:DI
++	  (any_div:SI (match_operand:DI 1 "register_operand" "r,r,0")
++		      (match_operand:DI 2 "register_operand" "r,r,r"))))]
+   ""
+ {
+   return loongarch_output_division ("<insn>.w<u>\t%0,%1,%2", operands);
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-4.c b/src/gcc/testsuite/gcc.target/loongarch/div-4.c
+new file mode 100644
+index 000000000..a52f87d6c
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/div-4.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2" } */
++/* { dg-final { scan-assembler-not "slli" } } */
++
++int
++div(int a, int b)
++{
++  return a / b;
++}
+-- 
+2.33.0
+

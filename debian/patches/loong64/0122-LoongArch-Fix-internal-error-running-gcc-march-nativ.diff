@@ -1,0 +1,106 @@
+From 8affc9c5e80a39a5cafbb8c3cae84d0c46c548a5 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 17 Nov 2023 20:44:17 +0800
+Subject: [PATCH 122/303] LoongArch: Fix internal error running "gcc
+ -march=native" on LA664
+
+On LA664, the PRID preset is ISA_BASE_LA64V110 but the base architecture
+is guessed ISA_BASE_LA64V100.  This causes a warning to be outputed:
+
+    cc1: warning: base architecture 'la64' differs from PRID preset '?'
+
+But we've not set the "?" above in loongarch_isa_base_strings, thus it's
+a nullptr and then an ICE is triggered.
+
+Add ISA_BASE_LA64V110 to genopts and initialize
+loongarch_isa_base_strings[ISA_BASE_LA64V110] correctly to fix the ICE.
+The warning itself will be fixed later.
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/loongarch-strings:
+	(STR_ISA_BASE_LA64V110): Add.
+	* config/loongarch/genopts/loongarch.opt.in:
+	(ISA_BASE_LA64V110): Add.
+	* config/loongarch/loongarch-def.c
+	(loongarch_isa_base_strings): Initialize [ISA_BASE_LA64V110]
+	to STR_ISA_BASE_LA64V110.
+	* config/loongarch/loongarch.opt: Regenerate.
+	* config/loongarch/loongarch-str.h: Regenerate.
+
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ gcc/config/loongarch/genopts/loongarch-strings | 1 +
+ gcc/config/loongarch/genopts/loongarch.opt.in  | 3 +++
+ gcc/config/loongarch/loongarch-def.c           | 1 +
+ gcc/config/loongarch/loongarch-str.h           | 1 +
+ gcc/config/loongarch/loongarch.opt             | 3 +++
+ 5 files changed, 9 insertions(+)
+
+diff --git a/src/gcc/config/loongarch/genopts/loongarch-strings b/src/gcc/config/loongarch/genopts/loongarch-strings
+index 70802f923..eb5086fe3 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch-strings
++++ b/src/gcc/config/loongarch/genopts/loongarch-strings
+@@ -30,6 +30,7 @@ STR_CPU_LA664	      la664
+ 
+ # Base architecture
+ STR_ISA_BASE_LA64V100 la64
++STR_ISA_BASE_LA64V110 la64v1.1
+ 
+ # -mfpu
+ OPTSTR_ISA_EXT_FPU    fpu
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index d19d491f6..2ef1b1e3b 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -32,6 +32,9 @@ Basic ISAs of LoongArch:
+ EnumValue
+ Enum(isa_base) String(@@STR_ISA_BASE_LA64V100@@) Value(ISA_BASE_LA64V100)
+ 
++EnumValue
++Enum(isa_base) String(@@STR_ISA_BASE_LA64V110@@) Value(ISA_BASE_LA64V110)
++
+ ;; ISA extensions / adjustments
+ Enum
+ Name(isa_ext_fpu) Type(int)
+diff --git a/src/gcc/config/loongarch/loongarch-def.c b/src/gcc/config/loongarch/loongarch-def.c
+index c980fa37e..fe4474e77 100644
+--- a/src/gcc/config/loongarch/loongarch-def.c
++++ b/src/gcc/config/loongarch/loongarch-def.c
+@@ -165,6 +165,7 @@ loongarch_cpu_multipass_dfa_lookahead[N_TUNE_TYPES] = {
+ const char*
+ loongarch_isa_base_strings[N_ISA_BASE_TYPES] = {
+   [ISA_BASE_LA64V100] = STR_ISA_BASE_LA64V100,
++  [ISA_BASE_LA64V110] = STR_ISA_BASE_LA64V110,
+ };
+ 
+ const char*
+diff --git a/src/gcc/config/loongarch/loongarch-str.h b/src/gcc/config/loongarch/loongarch-str.h
+index f6d7bcd50..ecfebf9db 100644
+--- a/src/gcc/config/loongarch/loongarch-str.h
++++ b/src/gcc/config/loongarch/loongarch-str.h
+@@ -33,6 +33,7 @@ along with GCC; see the file COPYING3.  If not see
+ #define STR_CPU_LA664 "la664"
+ 
+ #define STR_ISA_BASE_LA64V100 "la64"
++#define STR_ISA_BASE_LA64V110 "la64v1.1"
+ 
+ #define OPTSTR_ISA_EXT_FPU "fpu"
+ #define STR_NONE "none"
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index dd528abfc..f2d21c9f3 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -39,6 +39,9 @@ Basic ISAs of LoongArch:
+ EnumValue
+ Enum(isa_base) String(la64) Value(ISA_BASE_LA64V100)
+ 
++EnumValue
++Enum(isa_base) String(la64v1.1) Value(ISA_BASE_LA64V110)
++
+ ;; ISA extensions / adjustments
+ Enum
+ Name(isa_ext_fpu) Type(int)
+-- 
+2.33.0
+

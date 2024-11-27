@@ -1,0 +1,34 @@
+From a8ee72cb7dcd2aa68f41b1235241174cd84bca0e Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 5 Sep 2023 20:02:51 +0800
+Subject: [PATCH 060/303] LoongArch: Fix unintentionally breakage in r14-3665
+
+Fix a build failure with no system assembler or system old assembler.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-opts.h (HAVE_AS_EXPLICIT_RELOCS):
+	Define to 0 if not defined yet.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ gcc/config/loongarch/loongarch-opts.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index e3f9b6f99..0d148e43b 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -93,4 +93,8 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+    while -m[no]-memcpy imposes a global constraint.  */
+ #define TARGET_DO_OPTIMIZE_BLOCK_MOVE_P  loongarch_do_optimize_block_move_p()
+ 
++#ifndef HAVE_AS_EXPLICIT_RELOCS
++#define HAVE_AS_EXPLICIT_RELOCS 0
++#endif
++
+ #endif /* LOONGARCH_OPTS_H */
+-- 
+2.33.0
+

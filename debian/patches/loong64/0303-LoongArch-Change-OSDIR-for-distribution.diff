@@ -1,0 +1,25 @@
+From c1c75dd9957498c91111e2836b34aee09ce0f0b0 Mon Sep 17 00:00:00 2001
+From: Peng Fan <fanpeng@loongson.cn>
+Date: Thu, 31 Oct 2024 02:01:49 +0000
+Subject: [PATCH 303/303] LoongArch: Change OSDIR for distribution
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+---
+ gcc/config/loongarch/t-linux | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/gcc/config/loongarch/t-linux b/src/gcc/config/loongarch/t-linux
+index 7cd7cde25..1d1f42596 100644
+--- a/src/gcc/config/loongarch/t-linux
++++ b/src/gcc/config/loongarch/t-linux
+@@ -28,4 +28,7 @@ ifeq ($(filter LA_DISABLE_MULTILIB,$(tm_defines)),)
+     MULTILIB_OSDIRNAMES += mabi.lp64f=$(MULTIOSDIR_lp64f)
+     MULTILIB_OSDIRNAMES += mabi.lp64s=$(MULTIOSDIR_lp64s)
+ 
++else
++    MULTILIB_OSDIRNAMES := ../lib64
++
+ endif
+-- 
+2.33.0
+

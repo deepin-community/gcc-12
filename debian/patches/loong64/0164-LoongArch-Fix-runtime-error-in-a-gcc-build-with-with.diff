@@ -1,0 +1,30 @@
+From 9a5476a6412d190bdfda45b95b9cbf5285dae8a3 Mon Sep 17 00:00:00 2001
+From: Guo Jie <guojie@loongson.cn>
+Date: Thu, 23 Nov 2023 11:05:56 +0800
+Subject: [PATCH 164/303] LoongArch: Fix runtime error in a gcc build with
+ --with-build-config=bootstrap-ubsan
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_split_plus_constant):
+	avoid left shift of negative value -0x8000.
+---
+ gcc/config/loongarch/loongarch.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 02dba0bbd..cdd8bfba6 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -4265,7 +4265,7 @@ loongarch_split_plus_constant (rtx *op, machine_mode mode)
+   else if (loongarch_addu16i_imm12_operand_p (v, mode))
+     a = (v & ~HWIT_UC_0xFFF) + ((v & 0x800) << 1);
+   else if (mode == DImode && DUAL_ADDU16I_OPERAND (v))
+-    a = (v > 0 ? 0x7fff : -0x8000) << 16;
++    a = (v > 0 ? 0x7fff0000 : ~0x7fffffff);
+   else
+     gcc_unreachable ();
+ 
+-- 
+2.33.0
+

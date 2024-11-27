@@ -1,0 +1,149 @@
+From 0657f117e39005750eb52436180984965dcb5a61 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 26 Jul 2022 21:46:20 +0800
+Subject: [PATCH 006/303] LoongArch: adjust the default of -mexplicit-relocs by
+ checking gas feature
+
+The assembly produced with -mexplicit-relocs is not supported by gas <=
+2.39.  Check if the assembler supports explicit relocations and set the
+default accordingly.
+
+gcc/ChangeLog:
+
+	* configure.ac (HAVE_AS_EXPLICIT_RELOCS): Define to 1 if the
+	assembler supports explicit relocation for LoongArch.
+	* configure: Regenerate.
+	* config/loongarch/loongarch-opts.h (HAVE_AS_EXPLICIT_RELOCS):
+	Define to 0 if not defined.
+	* config/loongarch/genopts/loongarch.opt.in
+	(TARGET_EXPLICIT_RELOCS): Default to HAVE_AS_EXPLICIT_RELOCS.
+	* config/loongarch/loongarch.opt: Regenerate.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ gcc/config/loongarch/genopts/loongarch.opt.in |  2 +-
+ gcc/config/loongarch/loongarch-opts.h         |  4 +++
+ gcc/config/loongarch/loongarch.opt            |  2 +-
+ gcc/configure                                 | 33 ++++++++++++++++++-
+ gcc/configure.ac                              |  7 +++-
+ 5 files changed, 44 insertions(+), 4 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index 6f3950093..a571b6b75 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -155,7 +155,7 @@ Target Joined RejectNegative UInteger Var(loongarch_max_inline_memcpy_size) Init
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
+ mexplicit-relocs
+-Target Var(TARGET_EXPLICIT_RELOCS) Init(1)
++Target Var(TARGET_EXPLICIT_RELOCS) Init(HAVE_AS_EXPLICIT_RELOCS)
+ Use %reloc() assembly operators.
+ 
+ ; The code model option names for -mcmodel.
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index eaa6fc074..da24ecd2b 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -87,4 +87,8 @@ loongarch_config_target (struct loongarch_target *target,
+    while -m[no]-memcpy imposes a global constraint.  */
+ #define TARGET_DO_OPTIMIZE_BLOCK_MOVE_P  loongarch_do_optimize_block_move_p()
+ 
++#ifndef HAVE_AS_EXPLICIT_RELOCS
++#define HAVE_AS_EXPLICIT_RELOCS 0
++#endif
++
+ #endif /* LOONGARCH_OPTS_H */
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 7a8c5b444..9df7e1872 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -162,7 +162,7 @@ Target Joined RejectNegative UInteger Var(loongarch_max_inline_memcpy_size) Init
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
+ mexplicit-relocs
+-Target Var(TARGET_EXPLICIT_RELOCS) Init(1)
++Target Var(TARGET_EXPLICIT_RELOCS) Init(HAVE_AS_EXPLICIT_RELOCS)
+ Use %reloc() assembly operators.
+ 
+ ; The code model option names for -mcmodel.
+diff --git a/src/gcc/configure b/src/gcc/configure
+index bc2b921a3..0c423d473 100755
+--- a/src/gcc/configure
++++ b/src/gcc/configure
+@@ -28837,7 +28837,7 @@ $as_echo "#define HAVE_AS_MARCH_ZIFENCEI 1" >>confdefs.h
+ fi
+ 
+     ;;
+-  loongarch*-*-*)
++    loongarch*-*-*)
+     { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for .dtprelword support" >&5
+ $as_echo_n "checking assembler for .dtprelword support... " >&6; }
+ if ${gcc_cv_as_loongarch_dtprelword+:} false; then :
+@@ -28873,6 +28873,37 @@ if test $gcc_cv_as_loongarch_dtprelword != yes; then
+ $as_echo "#define HAVE_AS_DTPRELWORD 1" >>confdefs.h
+ 
+ fi
++    { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for explicit relocation support" >&5
++$as_echo_n "checking assembler for explicit relocation support... " >&6; }
++if ${gcc_cv_as_loongarch_explicit_relocs+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  gcc_cv_as_loongarch_explicit_relocs=no
++  if test x$gcc_cv_as != x; then
++    $as_echo 'a:pcalau12i $t0,%pc_hi20(a)' > conftest.s
++    if { ac_try='$gcc_cv_as $gcc_cv_as_flags  -o conftest.o conftest.s >&5'
++  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
++  (eval $ac_try) 2>&5
++  ac_status=$?
++  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
++  test $ac_status = 0; }; }
++    then
++	gcc_cv_as_loongarch_explicit_relocs=yes
++    else
++      echo "configure: failed program was" >&5
++      cat conftest.s >&5
++    fi
++    rm -f conftest.o conftest.s
++  fi
++fi
++{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $gcc_cv_as_loongarch_explicit_relocs" >&5
++$as_echo "$gcc_cv_as_loongarch_explicit_relocs" >&6; }
++if test $gcc_cv_as_loongarch_explicit_relocs = yes; then
++
++$as_echo "#define HAVE_AS_EXPLICIT_RELOCS 1" >>confdefs.h
++
++fi
++
+     ;;
+     s390*-*-*)
+     { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for .gnu_attribute support" >&5
+diff --git a/src/gcc/configure.ac b/src/gcc/configure.ac
+index b2f57ff04..473f9720a 100644
+--- a/src/gcc/configure.ac
++++ b/src/gcc/configure.ac
+@@ -5328,7 +5328,7 @@ configured with --enable-newlib-nano-formatted-io.])
+       [AC_DEFINE(HAVE_AS_MARCH_ZIFENCEI, 1,
+ 		 [Define if the assembler understands -march=rv*_zifencei.])])
+     ;;
+-  loongarch*-*-*)
++    loongarch*-*-*)
+     gcc_GAS_CHECK_FEATURE([.dtprelword support],
+       gcc_cv_as_loongarch_dtprelword, [2,18,0],,
+       [.section .tdata,"awT",@progbits
+@@ -5338,6 +5338,11 @@ x:
+ 	.dtprelword x+0x8000],,
+       [AC_DEFINE(HAVE_AS_DTPRELWORD, 1,
+ 	  [Define if your assembler supports .dtprelword.])])
++    gcc_GAS_CHECK_FEATURE([explicit relocation support],
++      gcc_cv_as_loongarch_explicit_relocs,,
++      [a:pcalau12i $t0,%pc_hi20(a)],,
++      [AC_DEFINE(HAVE_AS_EXPLICIT_RELOCS, 1,
++	  [Define if your assembler supports explicit relocation.])])
+     ;;
+     s390*-*-*)
+     gcc_GAS_CHECK_FEATURE([.gnu_attribute support],
+-- 
+2.33.0
+

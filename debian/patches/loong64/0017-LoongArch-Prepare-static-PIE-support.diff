@@ -1,0 +1,44 @@
+From 6c8aec241d3d6cef300739091602b6699b9d61e4 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 13 Sep 2022 23:21:39 +0800
+Subject: [PATCH 017/303] LoongArch: Prepare static PIE support
+
+Static PIE allows us to extend the ASLR to cover static executables and
+it's not too difficult to support it.  On GCC side, we just pass a group
+of options to the linker, like other ports with static PIE support.
+
+The real implementation of static PIE (rcrt1.o) will be added into Glibc
+later.
+
+gcc/ChangeLog:
+
+	* config/loongarch/gnu-user.h (GNU_USER_TARGET_LINK_SPEC): For
+	-static-pie, pass -static -pie --no-dynamic-linker -z text to
+	the linker, and do not pass --dynamic-linker.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ gcc/config/loongarch/gnu-user.h | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/gnu-user.h b/src/gcc/config/loongarch/gnu-user.h
+index f050078da..2bde3c93c 100644
+--- a/src/gcc/config/loongarch/gnu-user.h
++++ b/src/gcc/config/loongarch/gnu-user.h
+@@ -45,8 +45,10 @@ along with GCC; see the file COPYING3.  If not see
+ #undef GNU_USER_TARGET_LINK_SPEC
+ #define GNU_USER_TARGET_LINK_SPEC \
+   "%{G*} %{shared} -m " GNU_USER_LINK_EMULATION \
+-  "%{!shared: %{static} %{!static: %{rdynamic:-export-dynamic} " \
+-  "-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}}"
++  "%{!shared: %{static} " \
++  "%{!static: %{!static-pie: %{rdynamic:-export-dynamic} " \
++  "-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}} " \
++  "%{static-pie: -static -pie --no-dynamic-linker -z text}}"
+ 
+ 
+ /* Similar to standard Linux, but adding -ffast-math support.  */
+-- 
+2.33.0
+

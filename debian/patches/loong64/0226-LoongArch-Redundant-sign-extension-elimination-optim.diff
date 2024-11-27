@@ -1,0 +1,56 @@
+From 30e59f3b419ed9622d73bcd58ad0766cd7e941e6 Mon Sep 17 00:00:00 2001
+From: Li Wei <liwei@loongson.cn>
+Date: Thu, 11 Jan 2024 19:36:33 +0800
+Subject: [PATCH 226/303] LoongArch: Redundant sign extension elimination
+ optimization 2.
+
+Eliminate the redundant sign extension that exists after the conditional
+move when the target register is SImode.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_expand_conditional_move):
+	Adjust.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/sign-extend-2.c: Adjust.
+---
+ gcc/config/loongarch/loongarch.cc                  | 6 ++++++
+ gcc/testsuite/gcc.target/loongarch/sign-extend-2.c | 5 +++--
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index f54308211..d27176028 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -5367,6 +5367,12 @@ loongarch_expand_conditional_move (rtx *operands)
+ 	  rtx temp3 = gen_reg_rtx (mode);
+ 	  emit_insn (gen_rtx_SET (temp3, gen_rtx_IOR (mode, temp, temp2)));
+ 	  temp3 = gen_lowpart (GET_MODE (operands[0]), temp3);
++	  /* Nonzero in a subreg if it was made when accessing an object that
++	     was promoted to a wider mode in accord with the PROMOTED_MODE
++	     machine description macro.  */
++	  SUBREG_PROMOTED_VAR_P (temp3) = 1;
++	  /* Sets promoted mode for SUBREG_PROMOTED_VAR_P.  */
++	  SUBREG_PROMOTED_SET (temp3, SRP_SIGNED);
+ 	  loongarch_emit_move (operands[0], temp3);
+ 	}
+       else
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/sign-extend-2.c b/src/gcc/testsuite/gcc.target/loongarch/sign-extend-2.c
+index a45dde4f7..e57a2727d 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/sign-extend-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/sign-extend-2.c
+@@ -1,6 +1,7 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O2" } */
+-/* { dg-final { scan-assembler-times "slli.w\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,0" 1 } } */
++/* { dg-options "-mabi=lp64d -O2 -fdump-rtl-expand" } */
++/* { dg-final { scan-rtl-dump "subreg/s" "expand" } } */
++/* { dg-final { scan-assembler-not "slli.w\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,0" } } */
+ 
+ #include <stdint.h>
+ #define my_min(x, y) ((x) < (y) ? (x) : (y))
+-- 
+2.33.0
+

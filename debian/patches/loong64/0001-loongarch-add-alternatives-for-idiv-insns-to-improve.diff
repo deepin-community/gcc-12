@@ -1,0 +1,184 @@
+From 07079d7606577f4bf85908438678c879c2f49589 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 6 Jul 2022 13:45:55 +0800
+Subject: [PATCH 001/303] loongarch: add alternatives for idiv insns to improve
+ code generation
+
+Currently in the description of LoongArch integer division instructions,
+the output is marked as earlyclobbered ('&').  It's necessary when
+loongarch_check_zero_div_p() because clobbering operand 2 (divisor) will
+make the checking for zero divisor impossible.
+
+But, for -mno-check-zero-division (the default of GCC >= 12.2 for
+optimized code), the output is not earlyclobbered at all.  And, the
+read of operand 1 only occurs before clobbering the output.  So we make
+three alternatives for an idiv instruction:
+
+* (=r,r,r): For -mno-check-zero-division.
+* (=&r,r,r): For -mcheck-zero-division.
+* (=&r,0,r): For -mcheck-zero-division, to explicitly allow patterns
+  like "div.d $a0, $a0, $a1".
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_check_zero_div_p):
+	Remove static, for use in the machine description file.
+	* config/loongarch/loongarch-protos.h:
+	(loongarch_check_zero_div_p): Add prototype.
+	* config/loongarch/loongarch.md (enabled): New attr.
+	(*<optab><mode>3): Add (=r,r,r) and (=&r,0,r) alternatives for
+	idiv.  Conditionally enable the alternatives using
+	loongarch_check_zero_div_p.
+	(<optab>di3_fake): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/div-1.c: New test.
+	* gcc.target/loongarch/div-2.c: New test.
+	* gcc.target/loongarch/div-3.c: New test.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ gcc/config/loongarch/loongarch-protos.h    |  1 +
+ gcc/config/loongarch/loongarch.cc          |  2 +-
+ gcc/config/loongarch/loongarch.md          | 28 +++++++++++++++-------
+ gcc/testsuite/gcc.target/loongarch/div-1.c |  9 +++++++
+ gcc/testsuite/gcc.target/loongarch/div-2.c |  9 +++++++
+ gcc/testsuite/gcc.target/loongarch/div-3.c |  9 +++++++
+ 6 files changed, 49 insertions(+), 9 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/div-1.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/div-2.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/div-3.c
+
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index 2144c2421..2287fd376 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -130,6 +130,7 @@ extern bool loongarch_symbol_binds_local_p (const_rtx);
+ extern const char *current_section_name (void);
+ extern unsigned int current_section_flags (void);
+ extern bool loongarch_use_ins_ext_p (rtx, HOST_WIDE_INT, HOST_WIDE_INT);
++extern bool loongarch_check_zero_div_p (void);
+ 
+ union loongarch_gen_fn_ptrs
+ {
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 41819eba3..c3f824b60 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -2112,7 +2112,7 @@ loongarch_load_store_insns (rtx mem, rtx_insn *insn)
+ 
+ /* Return true if we need to trap on division by zero.  */
+ 
+-static bool
++bool
+ loongarch_check_zero_div_p (void)
+ {
+   /* if -m[no-]check-zero-division is given explicitly.  */
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index b49e05840..637815185 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -111,6 +111,8 @@
+ ;;
+ ;; ....................
+ 
++(define_attr "enabled" "no,yes" (const_string "yes"))
++
+ (define_attr "got" "unset,load"
+   (const_string "unset"))
+ 
+@@ -764,26 +766,36 @@
+ })
+ 
+ (define_insn "*<optab><mode>3"
+-  [(set (match_operand:GPR 0 "register_operand" "=&r")
+-	(any_div:GPR (match_operand:GPR 1 "register_operand" "r")
+-		     (match_operand:GPR 2 "register_operand" "r")))]
++  [(set (match_operand:GPR 0 "register_operand" "=r,&r,&r")
++	(any_div:GPR (match_operand:GPR 1 "register_operand" "r,r,0")
++		     (match_operand:GPR 2 "register_operand" "r,r,r")))]
+   ""
+ {
+   return loongarch_output_division ("<insn>.<d><u>\t%0,%1,%2", operands);
+ }
+   [(set_attr "type" "idiv")
+-   (set_attr "mode" "<MODE>")])
++   (set_attr "mode" "<MODE>")
++   (set (attr "enabled")
++      (if_then_else
++	(match_test "!!which_alternative == loongarch_check_zero_div_p()")
++	(const_string "yes")
++	(const_string "no")))])
+ 
+ (define_insn "<optab>di3_fake"
+-  [(set (match_operand:SI 0 "register_operand" "=&r")
+-	(any_div:SI (match_operand:DI 1 "register_operand" "r")
+-		    (match_operand:DI 2 "register_operand" "r")))]
++  [(set (match_operand:SI 0 "register_operand" "=r,&r,&r")
++	(any_div:SI (match_operand:DI 1 "register_operand" "r,r,0")
++		    (match_operand:DI 2 "register_operand" "r,r,r")))]
+   ""
+ {
+   return loongarch_output_division ("<insn>.w<u>\t%0,%1,%2", operands);
+ }
+   [(set_attr "type" "idiv")
+-   (set_attr "mode" "SI")])
++   (set_attr "mode" "SI")
++   (set (attr "enabled")
++      (if_then_else
++	(match_test "!!which_alternative == loongarch_check_zero_div_p()")
++	(const_string "yes")
++	(const_string "no")))])
+ 
+ ;; Floating point multiply accumulate instructions.
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-1.c b/src/gcc/testsuite/gcc.target/loongarch/div-1.c
+new file mode 100644
+index 000000000..b1683f853
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/div-1.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mcheck-zero-division" } */
++/* { dg-final { scan-assembler "div.\[wd\]\t\\\$r4,\\\$r4,\\\$r5" } } */
++
++long
++div(long a, long b)
++{
++  return a / b;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-2.c b/src/gcc/testsuite/gcc.target/loongarch/div-2.c
+new file mode 100644
+index 000000000..4c2beb5b9
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/div-2.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mno-check-zero-division" } */
++/* { dg-final { scan-assembler "div.\[wd\]\t\\\$r4,\\\$r5,\\\$r4" } } */
++
++long
++div(long a, long b)
++{
++  return b / a;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-3.c b/src/gcc/testsuite/gcc.target/loongarch/div-3.c
+new file mode 100644
+index 000000000..d25969263
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/div-3.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mcheck-zero-division" } */
++/* { dg-final { scan-assembler-not "div.\[wd\]\t\\\$r4,\\\$r5,\\\$r4" } } */
++
++long
++div(long a, long b)
++{
++  return b / a;
++}
+-- 
+2.33.0
+
