@@ -1,0 +1,253 @@
+From 929b40a5ec8c8e0841a75a3e086bd85135065e6a Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Fri, 5 Jan 2024 15:38:25 +0800
+Subject: [PATCH 216/301] LoongArch: Implement vec_init<M><N> where N is a LSX
+ vector mode
+
+This patch implements more vec_init optabs that can handle two LSX vectors producing a LASX
+vector by concatenating them. When an lsx vector is concatenated with an LSX const_vector of
+zeroes, the vec_concatz pattern can be used effectively. For example as below
+
+typedef short v8hi __attribute__ ((vector_size (16)));
+typedef short v16hi __attribute__ ((vector_size (32)));
+v8hi a, b;
+
+v16hi vec_initv16hiv8hi ()
+{
+ return __builtin_shufflevector (a, b, 0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15);
+}
+
+Before this patch:
+
+vec_initv16hiv8hi:
+    addi.d  $r3,$r3,-64
+    .cfi_def_cfa_offset 64
+    xvrepli.h   $xr0,0
+    la.local    $r12,.LANCHOR0
+    xvst    $xr0,$r3,0
+    xvst    $xr0,$r3,32
+    vld $vr0,$r12,0
+    vst $vr0,$r3,0
+    vld $vr0,$r12,16
+    vst $vr0,$r3,32
+    xvld    $xr1,$r3,32
+    xvld    $xr2,$r3,32
+    xvld    $xr0,$r3,0
+    xvilvh.h    $xr0,$xr1,$xr0
+    xvld    $xr1,$r3,0
+    xvilvl.h    $xr1,$xr2,$xr1
+    addi.d  $r3,$r3,64
+    .cfi_def_cfa_offset 0
+    xvpermi.q   $xr0,$xr1,32
+    jr  $r1
+
+After this patch:
+
+vec_initv16hiv8hi:
+    la.local        $r12,.LANCHOR0
+    vld     $vr0,$r12,32
+    vld     $vr2,$r12,48
+    xvilvh.h        $xr1,$xr2,$xr0
+    xvilvl.h        $xr0,$xr2,$xr0
+    xvpermi.q       $xr1,$xr0,32
+    xvst    $xr1,$r4,0
+    jr      $r1
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (vec_initv32qiv16qi): Rename to ..
+	(vec_init<mode><lasxhalf>): .. this, and extend to mode.
+	(@vec_concatz<mode>): New insn pattern.
+	* config/loongarch/loongarch.cc (loongarch_expand_vector_group_init):
+	Handle VALS containing two vectors.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-vec-init-2.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 26 +++++++-
+ src/gcc/config/loongarch/loongarch.cc         | 44 +++++++++++--
+ .../loongarch/vector/lasx/lasx-vec-init-2.c   | 65 +++++++++++++++++++
+ 3 files changed, 128 insertions(+), 7 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vec-init-2.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index b4aa8e261..803c5dd93 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -465,6 +465,11 @@
+    (V16HI "w")
+    (V32QI "w")])
+ 
++;; Half modes of all LASX vector modes, in lower-case.
++(define_mode_attr lasxhalf [(V32QI "v16qi")  (V16HI "v8hi")
++             (V8SI "v4si")  (V4DI  "v2di")
++             (V8SF  "v4sf") (V4DF  "v2df")])
++
+ (define_expand "vec_init<mode><unitmode>"
+   [(match_operand:LASX 0 "register_operand")
+    (match_operand:LASX 1 "")]
+@@ -474,9 +479,9 @@
+   DONE;
+ })
+ 
+-(define_expand "vec_initv32qiv16qi"
+- [(match_operand:V32QI 0 "register_operand")
+-  (match_operand:V16QI 1 "")]
++(define_expand "vec_init<mode><lasxhalf>"
++ [(match_operand:LASX 0 "register_operand")
++  (match_operand:<VHMODE256_ALL> 1 "")]
+   "ISA_HAS_LASX"
+ {
+   loongarch_expand_vector_group_init (operands[0], operands[1]);
+@@ -577,6 +582,21 @@
+   [(set_attr "type" "simd_insert")
+    (set_attr "mode" "<MODE>")])
+ 
++(define_insn "@vec_concatz<mode>"
++  [(set (match_operand:LASX 0 "register_operand" "=f")
++    (vec_concat:LASX
++      (match_operand:<VHMODE256_ALL> 1 "nonimmediate_operand")
++      (match_operand:<VHMODE256_ALL> 2 "const_0_operand")))]
++  "ISA_HAS_LASX"
++{
++  if (MEM_P (operands[1]))
++    return "vld\t%w0,%1";
++  else
++    return "vori.b\t%w0,%w1,0";
++}
++  [(set_attr "type" "simd_splat")
++   (set_attr "mode" "<MODE>")])
++
+ (define_insn "vec_concat<mode>"
+   [(set (match_operand:LASX 0 "register_operand" "=f")
+ 	(vec_concat:LASX
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 158bf1465..e51cfa15a 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -9840,10 +9840,46 @@ loongarch_gen_const_int_vector_shuffle (machine_mode mode, int val)
+ void
+ loongarch_expand_vector_group_init (rtx target, rtx vals)
+ {
+-  rtx ops[2] = { force_reg (E_V16QImode, XVECEXP (vals, 0, 0)),
+-      force_reg (E_V16QImode, XVECEXP (vals, 0, 1)) };
+-  emit_insn (gen_rtx_SET (target, gen_rtx_VEC_CONCAT (E_V32QImode, ops[0],
+-						      ops[1])));
++  machine_mode vmode = GET_MODE (target);
++  machine_mode half_mode = VOIDmode;
++  rtx low = XVECEXP (vals, 0, 0);
++  rtx high = XVECEXP (vals, 0, 1);
++
++  switch (vmode)
++    {
++    case E_V32QImode:
++      half_mode = V16QImode;
++      break;
++    case E_V16HImode:
++      half_mode = V8HImode;
++      break;
++    case E_V8SImode:
++      half_mode = V4SImode;
++      break;
++    case E_V4DImode:
++      half_mode = V2DImode;
++      break;
++    case E_V8SFmode:
++      half_mode = V4SFmode;
++      break;
++    case E_V4DFmode:
++      half_mode = V2DFmode;
++      break;
++    default:
++      gcc_unreachable ();
++    }
++
++  if (high == CONST0_RTX (half_mode))
++    emit_insn (gen_vec_concatz (vmode, target, low, high));
++  else
++    {
++      if (!register_operand (low, half_mode))
++	low = force_reg (half_mode, low);
++      if (!register_operand (high, half_mode))
++	high = force_reg (half_mode, high);
++      emit_insn (gen_rtx_SET (target,
++			      gen_rtx_VEC_CONCAT (vmode, low, high)));
++    }
+ }
+ 
+ /* Expand initialization of a vector which has all same elements.  */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vec-init-2.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vec-init-2.c
+new file mode 100644
+index 000000000..7592198c4
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vec-init-2.c
+@@ -0,0 +1,65 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -fno-vect-cost-model -mlasx" } */
++/* { dg-final { scan-assembler-times "vld" 12 } } */
++
++
++typedef char v16qi __attribute__ ((vector_size (16)));
++typedef char v32qi __attribute__ ((vector_size (32)));
++
++typedef short v8hi __attribute__ ((vector_size (16)));
++typedef short v16hi __attribute__ ((vector_size (32)));
++
++typedef int v4si __attribute__ ((vector_size (16)));
++typedef int v8si __attribute__ ((vector_size (32)));
++
++typedef long v2di __attribute__ ((vector_size (16)));
++typedef long v4di __attribute__ ((vector_size (32)));
++
++typedef float v4sf __attribute__ ((vector_size (16)));
++typedef float v8sf __attribute__ ((vector_size (32)));
++
++typedef double v2df __attribute__ ((vector_size (16)));
++typedef double v4df __attribute__ ((vector_size (32)));
++
++v16qi a_qi, b_qi;
++v8hi  a_hi, b_hi;
++v4si  a_si, b_si;
++v2di  a_di, b_di;
++v4sf  a_sf, b_sf;
++v2df  a_df, b_df;
++
++v32qi
++foo_v32qi ()
++{
++  return __builtin_shufflevector (a_qi, b_qi, 0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23, 8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31);
++}
++
++v16hi
++foo_v16qi ()
++{
++  return __builtin_shufflevector (a_hi, b_hi, 0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15);
++}
++
++v8si
++foo_v8si ()
++{
++  return __builtin_shufflevector (a_si, b_si, 0, 4, 1, 5, 2, 6, 3, 7);
++}
++
++v4di
++foo_v4di ()
++{
++  return __builtin_shufflevector (a_di, b_di, 0, 2, 1, 3);
++}
++
++v8sf
++foo_v8sf ()
++{
++  return __builtin_shufflevector (a_sf, b_sf, 0, 4, 1, 5, 2, 6, 3, 7);
++}
++
++v4df
++foo_v4df ()
++{
++  return __builtin_shufflevector (a_df, b_df, 0, 2, 1, 3);
++}
+-- 
+2.45.2
+

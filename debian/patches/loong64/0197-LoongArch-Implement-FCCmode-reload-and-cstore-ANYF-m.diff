@@ -1,0 +1,392 @@
+From 13e815bb81645683349cc6dee6a553864945f96c Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 15 Dec 2023 01:49:40 +0800
+Subject: [PATCH 197/301] LoongArch: Implement FCCmode reload and
+ cstore<ANYF:mode>4
+
+We used a branch to load floating-point comparison results into GPR.
+This is very slow when the branch is not predictable.
+
+Implement movfcc so we can reload FCCmode into GPRs, FPRs, and MEM.
+Then implement cstore<ANYF:mode>4.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-tune.h
+	(loongarch_rtx_cost_data::movcf2gr): New field.
+	(loongarch_rtx_cost_data::movcf2gr_): New method.
+	(loongarch_rtx_cost_data::use_movcf2gr): New method.
+	* config/loongarch/loongarch-def.cc
+	(loongarch_rtx_cost_data::loongarch_rtx_cost_data): Set movcf2gr
+	to COSTS_N_INSNS (7) and movgr2cf to COSTS_N_INSNS (15), based
+	on timing on LA464.
+	(loongarch_cpu_rtx_cost_data): Set movcf2gr and movgr2cf to
+	COSTS_N_INSNS (1) for LA664.
+	(loongarch_rtx_cost_optimize_size): Set movcf2gr and movgr2cf to
+	COSTS_N_INSNS (1) + 1.
+	* config/loongarch/predicates.md (loongarch_fcmp_operator): New
+	predicate.
+	* config/loongarch/loongarch.md (movfcc): Change to
+	define_expand.
+	(movfcc_internal): New define_insn.
+	(fcc_to_<X:mode>): New define_insn.
+	(cstore<ANYF:mode>4): New define_expand.
+	* config/loongarch/loongarch.cc
+	(loongarch_hard_regno_mode_ok_uncached): Allow FCCmode in GPRs
+	and GPRs.
+	(loongarch_secondary_reload): Reload FCCmode via FPR and/or GPR.
+	(loongarch_emit_float_compare): Call gen_reg_rtx instead of
+	loongarch_allocate_fcc.
+	(loongarch_allocate_fcc): Remove.
+	(loongarch_move_to_gpr_cost): Handle FCC_REGS -> GR_REGS.
+	(loongarch_move_from_gpr_cost): Handle GR_REGS -> FCC_REGS.
+	(loongarch_register_move_cost): Handle FCC_REGS -> FCC_REGS,
+	FCC_REGS -> FP_REGS, and FP_REGS -> FCC_REGS.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/movcf2gr.c: New test.
+	* gcc.target/loongarch/movcf2gr-via-fr.c: New test.
+---
+ src/gcc/config/loongarch/loongarch-def.cc     | 13 +++-
+ src/gcc/config/loongarch/loongarch-tune.h     | 15 +++-
+ src/gcc/config/loongarch/loongarch.cc         | 70 ++++++++++++-------
+ src/gcc/config/loongarch/loongarch.md         | 69 ++++++++++++++++--
+ src/gcc/config/loongarch/predicates.md        |  4 ++
+ .../gcc.target/loongarch/movcf2gr-via-fr.c    | 10 +++
+ .../testsuite/gcc.target/loongarch/movcf2gr.c |  9 +++
+ 7 files changed, 157 insertions(+), 33 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/movcf2gr-via-fr.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/movcf2gr.c
+
+diff --git a/src/gcc/config/loongarch/loongarch-def.cc b/src/gcc/config/loongarch/loongarch-def.cc
+index 4a8885e83..843be78e4 100644
+--- a/src/gcc/config/loongarch/loongarch-def.cc
++++ b/src/gcc/config/loongarch/loongarch-def.cc
+@@ -101,15 +101,21 @@ loongarch_rtx_cost_data::loongarch_rtx_cost_data ()
+     int_mult_di (COSTS_N_INSNS (4)),
+     int_div_si (COSTS_N_INSNS (5)),
+     int_div_di (COSTS_N_INSNS (5)),
++    movcf2gr (COSTS_N_INSNS (7)),
++    movgr2cf (COSTS_N_INSNS (15)),
+     branch_cost (6),
+     memory_latency (4) {}
+ 
+ /* The following properties cannot be looked up directly using "cpucfg".
+  So it is necessary to provide a default value for "unknown native"
+  tune targets (i.e. -mtune=native while PRID does not correspond to
+- any known "-mtune" type).  Currently all numbers are default.  */
++ any known "-mtune" type).  */
+ array_tune<loongarch_rtx_cost_data> loongarch_cpu_rtx_cost_data =
+-  array_tune<loongarch_rtx_cost_data> ();
++  array_tune<loongarch_rtx_cost_data> ()
++    .set (CPU_LA664,
++	  loongarch_rtx_cost_data ()
++	    .movcf2gr_ (COSTS_N_INSNS (1))
++	    .movgr2cf_ (COSTS_N_INSNS (1)));
+ 
+ /* RTX costs to use when optimizing for size.
+    We use a value slightly larger than COSTS_N_INSNS (1) for all of them
+@@ -125,7 +131,8 @@ const loongarch_rtx_cost_data loongarch_rtx_cost_optimize_size =
+     .int_mult_si_ (COST_COMPLEX_INSN)
+     .int_mult_di_ (COST_COMPLEX_INSN)
+     .int_div_si_ (COST_COMPLEX_INSN)
+-    .int_div_di_ (COST_COMPLEX_INSN);
++    .int_div_di_ (COST_COMPLEX_INSN)
++    .movcf2gr_ (COST_COMPLEX_INSN);
+ 
+ array_tune<int> loongarch_cpu_issue_rate = array_tune<int> ()
+   .set (CPU_NATIVE, 4)
+diff --git a/src/gcc/config/loongarch/loongarch-tune.h b/src/gcc/config/loongarch/loongarch-tune.h
+index 616b94e87..26f163f0a 100644
+--- a/src/gcc/config/loongarch/loongarch-tune.h
++++ b/src/gcc/config/loongarch/loongarch-tune.h
+@@ -35,6 +35,8 @@ struct loongarch_rtx_cost_data
+   unsigned short int_mult_di;
+   unsigned short int_div_si;
+   unsigned short int_div_di;
++  unsigned short movcf2gr;
++  unsigned short movgr2cf;
+   unsigned short branch_cost;
+   unsigned short memory_latency;
+ 
+@@ -95,6 +97,18 @@ struct loongarch_rtx_cost_data
+     return *this;
+   }
+ 
++  loongarch_rtx_cost_data movcf2gr_ (unsigned short _movcf2gr)
++  {
++    movcf2gr = _movcf2gr;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data movgr2cf_ (unsigned short _movgr2cf)
++  {
++    movgr2cf = _movgr2cf;
++    return *this;
++  }
++
+   loongarch_rtx_cost_data branch_cost_ (unsigned short _branch_cost)
+   {
+     branch_cost = _branch_cost;
+@@ -106,7 +120,6 @@ struct loongarch_rtx_cost_data
+     memory_latency = _memory_latency;
+     return *this;
+   }
+-
+ };
+ 
+ /* Costs to use when optimizing for size.  */
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 36fb21871..e09b15900 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -5119,29 +5119,6 @@ loongarch_zero_if_equal (rtx cmp0, rtx cmp1)
+ 		       OPTAB_DIRECT);
+ }
+ 
+-/* Allocate a floating-point condition-code register of mode MODE.  */
+-
+-static rtx
+-loongarch_allocate_fcc (machine_mode mode)
+-{
+-  unsigned int regno, count;
+-
+-  gcc_assert (TARGET_HARD_FLOAT);
+-
+-  if (mode == FCCmode)
+-    count = 1;
+-  else
+-    gcc_unreachable ();
+-
+-  cfun->machine->next_fcc += -cfun->machine->next_fcc & (count - 1);
+-  if (cfun->machine->next_fcc > FCC_REG_LAST - FCC_REG_FIRST)
+-    cfun->machine->next_fcc = 0;
+-
+-  regno = FCC_REG_FIRST + cfun->machine->next_fcc;
+-  cfun->machine->next_fcc += count;
+-  return gen_rtx_REG (mode, regno);
+-}
+-
+ /* Sign- or zero-extend OP0 and OP1 for integer comparisons.  */
+ 
+ static void
+@@ -5256,7 +5233,7 @@ loongarch_emit_float_compare (enum rtx_code *code, rtx *op0, rtx *op1)
+      operands for FCMP.cond.fmt, instead a reversed condition code is
+      required and a test for false.  */
+   *code = NE;
+-  *op0 = loongarch_allocate_fcc (FCCmode);
++  *op0 = gen_reg_rtx (FCCmode);
+ 
+   *op1 = const0_rtx;
+   loongarch_emit_binary (cmp_code, *op0, cmp_op0, cmp_op1);
+@@ -6624,7 +6601,7 @@ loongarch_hard_regno_mode_ok_uncached (unsigned int regno, machine_mode mode)
+   enum mode_class mclass;
+ 
+   if (mode == FCCmode)
+-    return FCC_REG_P (regno);
++    return FCC_REG_P (regno) || GP_REG_P (regno) || FP_REG_P (regno);
+ 
+   size = GET_MODE_SIZE (mode);
+   mclass = GET_MODE_CLASS (mode);
+@@ -6839,6 +6816,9 @@ loongarch_move_to_gpr_cost (reg_class_t from)
+       /* MOVFR2GR, etc.  */
+       return 4;
+ 
++    case FCC_REGS:
++      return loongarch_cost->movcf2gr;
++
+     default:
+       return 0;
+     }
+@@ -6861,6 +6841,9 @@ loongarch_move_from_gpr_cost (reg_class_t to)
+       /* MOVGR2FR, etc.  */
+       return 4;
+ 
++    case FCC_REGS:
++      return loongarch_cost->movgr2cf;
++
+     default:
+       return 0;
+     }
+@@ -6895,6 +6878,10 @@ loongarch_register_move_cost (machine_mode mode, reg_class_t from,
+   if (to == dregs)
+     return loongarch_move_to_gpr_cost (from);
+ 
++  /* fcc -> fcc, fcc -> fpr, or fpr -> fcc. */
++  if (from == FCC_REGS || to == FCC_REGS)
++    return COSTS_N_INSNS (from == to ? 2 : 1);
++
+   /* Handles cases that require a GPR temporary.  */
+   cost1 = loongarch_move_to_gpr_cost (from);
+   if (cost1 != 0)
+@@ -6931,6 +6918,39 @@ loongarch_secondary_reload (bool in_p ATTRIBUTE_UNUSED, rtx x,
+ 
+   regno = true_regnum (x);
+ 
++  if (mode == FCCmode)
++    {
++      if (reg_class_subset_p (rclass, FCC_REGS) && !FP_REG_P (regno))
++	{
++	  if (FCC_REG_P (regno))
++	    return FP_REGS;
++
++	  auto fn = in_p ? loongarch_move_from_gpr_cost
++			 : loongarch_move_to_gpr_cost;
++
++	  if (fn (FCC_REGS) > fn (FP_REGS) + COSTS_N_INSNS (1))
++	    return FP_REGS;
++
++	  return GP_REG_P (regno) ? NO_REGS : GR_REGS;
++	}
++
++      if (reg_class_subset_p (rclass, GR_REGS) && FCC_REG_P (regno))
++	{
++	  auto fn = in_p ? loongarch_move_to_gpr_cost
++			 : loongarch_move_from_gpr_cost;
++
++	  if (fn (FCC_REGS) > fn (FP_REGS) + COSTS_N_INSNS (1))
++	    return FP_REGS;
++
++	  return NO_REGS;
++	}
++
++      if (reg_class_subset_p (rclass, FP_REGS) && MEM_P (x))
++	return GR_REGS;
++
++      return NO_REGS;
++    }
++
+   if (reg_class_subset_p (rclass, FP_REGS))
+     {
+       if (regno < 0
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 23368008e..6cf71d9e4 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -2283,11 +2283,72 @@
+ 
+ ;; Clear one FCC register
+ 
+-(define_insn "movfcc"
+-  [(set (match_operand:FCC 0 "register_operand" "=z")
+-	(const_int 0))]
++(define_expand "movfcc"
++  [(set (match_operand:FCC 0 "")
++	(match_operand:FCC 1 ""))]
++  "TARGET_HARD_FLOAT"
++{
++  if (memory_operand (operands[0], FCCmode)
++      && memory_operand (operands[1], FCCmode))
++    operands[1] = force_reg (FCCmode, operands[1]);
++})
++
++(define_insn "movfcc_internal"
++  [(set (match_operand:FCC 0 "nonimmediate_operand"
++			     "=z,z,*f,*f,*r,*r,*m,*f,*r,z,*r")
++	(match_operand:FCC 1 "reg_or_0_operand"
++			     "J,*f,z,*f,J*r,*m,J*r,J*r,*f,*r,z"))]
++  "TARGET_HARD_FLOAT"
++  "@
++   fcmp.caf.s\t%0,$f0,$f0
++   movfr2cf\t%0,%1
++   movcf2fr\t%0,%1
++   fmov.s\t%0,%1
++   or\t%0,%z1,$r0
++   ld.b\t%0,%1
++   st.b\t%z1,%0
++   movgr2fr.w\t%0,%1
++   movfr2gr.s\t%0,%1
++   movgr2cf\t%0,%1
++   movcf2gr\t%0,%1"
++  [(set_attr "type" "move")
++   (set_attr "mode" "FCC")])
++
++(define_insn "fcc_to_<X:mode>"
++  [(set (match_operand:X 0 "register_operand" "=r")
++	(if_then_else:X (ne (match_operand:FCC 1 "register_operand" "0")
++			    (const_int 0))
++			(const_int 1)
++			(const_int 0)))]
++  "TARGET_HARD_FLOAT"
+   ""
+-  "fcmp.caf.s\t%0,$f0,$f0")
++  [(set_attr "length" "0")
++   (set_attr "type" "ghost")])
++
++(define_expand "cstore<ANYF:mode>4"
++  [(set (match_operand:SI 0 "register_operand")
++	(match_operator:SI 1 "loongarch_fcmp_operator"
++	  [(match_operand:ANYF 2 "register_operand")
++	   (match_operand:ANYF 3 "register_operand")]))]
++  ""
++  {
++    rtx fcc = gen_reg_rtx (FCCmode);
++    rtx cmp = gen_rtx_fmt_ee (GET_CODE (operands[1]), FCCmode,
++			      operands[2], operands[3]);
++
++    emit_insn (gen_rtx_SET (fcc, cmp));
++    if (TARGET_64BIT)
++      {
++	rtx gpr = gen_reg_rtx (DImode);
++	emit_insn (gen_fcc_to_di (gpr, fcc));
++	emit_insn (gen_rtx_SET (operands[0],
++				lowpart_subreg (SImode, gpr, DImode)));
++      }
++    else
++      emit_insn (gen_fcc_to_si (operands[0], fcc));
++
++    DONE;
++  })
+ 
+ ;; Conditional move instructions.
+ 
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 88e54c915..58f9a7826 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -590,6 +590,10 @@
+ (define_predicate "loongarch_cstore_operator"
+   (match_code "ne,eq,gt,gtu,ge,geu,lt,ltu,le,leu"))
+ 
++(define_predicate "loongarch_fcmp_operator"
++  (match_code
++    "unordered,uneq,unlt,unle,eq,lt,le,ordered,ltgt,ne,ge,gt,unge,ungt"))
++
+ (define_predicate "small_data_pattern"
+   (and (match_code "set,parallel,unspec,unspec_volatile,prefetch")
+        (match_test "loongarch_small_data_pattern_p (op)")))
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/movcf2gr-via-fr.c b/src/gcc/testsuite/gcc.target/loongarch/movcf2gr-via-fr.c
+new file mode 100644
+index 000000000..23334a3a3
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/movcf2gr-via-fr.c
+@@ -0,0 +1,10 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mtune=la464 -mabi=lp64d" } */
++/* { dg-final { scan-assembler "movcf2fr\t\\\$f\[0-9\]+,\\\$fcc" } } */
++/* { dg-final { scan-assembler "movfr2gr\\.s\t\\\$r4" } } */
++
++int
++t (float a, float b)
++{
++  return a > b;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/movcf2gr.c b/src/gcc/testsuite/gcc.target/loongarch/movcf2gr.c
+new file mode 100644
+index 000000000..d27c393b5
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/movcf2gr.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mtune=la664 -mabi=lp64d" } */
++/* { dg-final { scan-assembler "movcf2gr\t\\\$r4,\\\$fcc" } } */
++
++int
++t (float a, float b)
++{
++  return a > b;
++}
+-- 
+2.45.2
+

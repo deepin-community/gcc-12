@@ -1,0 +1,85 @@
+From 901da323fa3eab89cb8a3578b8f734c30b02732a Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Thu, 14 Mar 2024 09:26:54 +0800
+Subject: [PATCH 262/301] LoongArch: Remove masking process for operand 3 of
+ xvpermi.q.
+
+The behavior of non-zero unused bits in xvpermi.q instruction's
+third operand is undefined on LoongArch, according to our
+discussion (https://github.com/llvm/llvm-project/pull/83540),
+we think that keeping original insn operand as unmodified
+state is better solution.
+
+This patch partially reverts 7b158e036a95b1ab40793dd53bed7dbd770ffdaf.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (lasx_xvpermi_q_<LASX:mode>):
+	Remove masking of operand 3.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c:
+	Reposition operand 3's value into instruction's defined accept range.
+---
+ src/gcc/config/loongarch/lasx.md                            | 5 -----
+ .../gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c       | 6 +++---
+ 2 files changed, 3 insertions(+), 8 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 38f35bad6..f3b5ea373 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -640,8 +640,6 @@
+    (set_attr "mode" "<MODE>")])
+ 
+ ;; xvpermi.q
+-;; Unused bits in operands[3] need be set to 0 to avoid
+-;; causing undefined behavior on LA464.
+ (define_insn "lasx_xvpermi_q_<LASX:mode>"
+   [(set (match_operand:LASX 0 "register_operand" "=f")
+ 	(unspec:LASX
+@@ -651,9 +649,6 @@
+ 	  UNSPEC_LASX_XVPERMI_Q))]
+   "ISA_HAS_LASX"
+ {
+-  int mask = 0x33;
+-  mask &= INTVAL (operands[3]);
+-  operands[3] = GEN_INT (mask);
+   return "xvpermi.q\t%u0,%u2,%3";
+ }
+   [(set_attr "type" "simd_splat")
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c
+index dbc29d2fb..f89dfc311 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c
+@@ -27,7 +27,7 @@ main ()
+   *((unsigned long*)& __m256i_result[2]) = 0x7fff7fff7fff0000;
+   *((unsigned long*)& __m256i_result[1]) = 0x7fe37fe3001d001d;
+   *((unsigned long*)& __m256i_result[0]) = 0x7fff7fff7fff0000;
+-  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0x2a);
++  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0x22);
+   ASSERTEQ_64 (__LINE__, __m256i_result, __m256i_out);
+ 
+   *((unsigned long*)& __m256i_op0[3]) = 0x0000000000000000;
+@@ -42,7 +42,7 @@ main ()
+   *((unsigned long*)& __m256i_result[2]) = 0x000000000019001c;
+   *((unsigned long*)& __m256i_result[1]) = 0x0000000000000000;
+   *((unsigned long*)& __m256i_result[0]) = 0x00000000000001fe;
+-  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0xb9);
++  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0x31);
+   ASSERTEQ_64 (__LINE__, __m256i_result, __m256i_out);
+ 
+   *((unsigned long*)& __m256i_op0[3]) = 0x00ff00ff00ff00ff;
+@@ -57,7 +57,7 @@ main ()
+   *((unsigned long*)& __m256i_result[2]) = 0xffff0000ffff0000;
+   *((unsigned long*)& __m256i_result[1]) = 0x00ff00ff00ff00ff;
+   *((unsigned long*)& __m256i_result[0]) = 0x00ff00ff00ff00ff;
+-  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0xca);
++  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0x02);
+   ASSERTEQ_64 (__LINE__, __m256i_result, __m256i_out);
+ 
+   return 0;
+-- 
+2.45.2
+

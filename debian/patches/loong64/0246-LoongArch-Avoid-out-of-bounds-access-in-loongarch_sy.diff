@@ -1,0 +1,72 @@
+From ebd7a5981f6b50494a117afbc332b4832cc44b4a Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 2 Feb 2024 08:51:08 +0800
+Subject: [PATCH 246/301] LoongArch: Avoid out-of-bounds access in
+ loongarch_symbol_insns
+
+We call loongarch_symbol_insns with mode = MAX_MACHINE_MODE sometimes.
+But in loongarch_symbol_insns:
+
+    if (LSX_SUPPORTED_MODE_P (mode) || LASX_SUPPORTED_MODE_P (mode))
+      return 0;
+
+And LSX_SUPPORTED_MODE_P is defined as:
+
+    #define LSX_SUPPORTED_MODE_P(MODE) \
+      (ISA_HAS_LSX \
+       && GET_MODE_SIZE (MODE) == UNITS_PER_LSX_REG ... ...
+
+GET_MODE_SIZE is expanded to a call to mode_to_bytes, which is defined:
+
+    ALWAYS_INLINE poly_uint16
+    mode_to_bytes (machine_mode mode)
+    {
+    #if GCC_VERSION >= 4001
+      return (__builtin_constant_p (mode)
+	  ? mode_size_inline (mode) : mode_size[mode]);
+    #else
+      return mode_size[mode];
+    #endif
+    }
+
+There is an assertion in mode_size_inline:
+
+    gcc_assert (mode >= 0 && mode < NUM_MACHINE_MODES);
+
+Note that NUM_MACHINE_MODES = MAX_MACHINE_MODE (emitted by genmodes.cc),
+thus if __builtin_constant_p (mode) is evaluated true (it happens when
+GCC is bootstrapped with LTO+PGO), the assertion will be triggered and
+cause an ICE.  OTOH if __builtin_constant_p (mode) is evaluated false,
+mode_size[mode] is still an out-of-bound array access (the length or the
+mode_size array is NUM_MACHINE_MODES).
+
+So we shouldn't call LSX_SUPPORTED_MODE_P or LASX_SUPPORTED_MODE_P with
+MAX_MACHINE_MODE in loongarch_symbol_insns.  This is very similar to a
+MIPS bug PR98491 fixed by me about 3 years ago.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_symbol_insns): Do not
+	use LSX_SUPPORTED_MODE_P or LASX_SUPPORTED_MODE_P if mode is
+	MAX_MACHINE_MODE.
+---
+ src/gcc/config/loongarch/loongarch.cc | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 7d2b649bc..863748a50 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -2004,7 +2004,8 @@ loongarch_symbol_insns (enum loongarch_symbol_type type, machine_mode mode)
+ {
+   /* LSX LD.* and ST.* cannot support loading symbols via an immediate
+      operand.  */
+-  if (LSX_SUPPORTED_MODE_P (mode) || LASX_SUPPORTED_MODE_P (mode))
++  if (mode != MAX_MACHINE_MODE
++      && (LSX_SUPPORTED_MODE_P (mode) || LASX_SUPPORTED_MODE_P (mode)))
+     return 0;
+ 
+   switch (type)
+-- 
+2.45.2
+

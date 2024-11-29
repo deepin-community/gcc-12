@@ -1,0 +1,107 @@
+From 2cc27aac9feccf3b64f22f30405d2e361ce8486d Mon Sep 17 00:00:00 2001
+From: Li Wei <liwei@loongson.cn>
+Date: Wed, 24 Jan 2024 17:44:17 +0800
+Subject: [PATCH 233/301] LoongArch: Optimize implementation of
+ single-precision floating-point approximate division.
+
+We found that in the spec17 521.wrf program, some loop invariant code generated
+from single-precision floating-point approximate division calculation failed to
+propose a loop. This is because the pseudo-register that stores the
+intermediate temporary calculation results is rewritten in the implementation
+of single-precision floating-point approximate division, failing to propose
+invariants in the loop2_invariant pass. To this end, the intermediate temporary
+calculation results are stored in new pseudo-registers without destroying the
+read-write dependency, so that they could be recognized as loop invariants in
+the loop2_invariant pass.
+After optimization, the number of instructions of 521.wrf is reduced by 0.18%
+compared with before optimization (1716612948501 -> 1713471771364).
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_emit_swdivsf): Adjust.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/invariant-recip.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 19 +++++++----
+ .../gcc.target/loongarch/invariant-recip.c    | 33 +++++++++++++++++++
+ 2 files changed, 46 insertions(+), 6 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/invariant-recip.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 0c9fdc321..c26b9ad54 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -10840,16 +10840,23 @@ void loongarch_emit_swdivsf (rtx res, rtx a, rtx b, machine_mode mode)
+   /* x0 = 1./b estimate.  */
+   emit_insn (gen_rtx_SET (x0, gen_rtx_UNSPEC (mode, gen_rtvec (1, b),
+ 					      unspec)));
+-  /* 2.0 - b * x0  */
++  /* e0 = 2.0 - b * x0.  */
+   emit_insn (gen_rtx_SET (e0, gen_rtx_FMA (mode,
+ 					   gen_rtx_NEG (mode, b), x0, mtwo)));
+ 
+-  /* x0 = a * x0  */
+   if (a != CONST1_RTX (mode))
+-    emit_insn (gen_rtx_SET (x0, gen_rtx_MULT (mode, a, x0)));
+-
+-  /* res = e0 * x0  */
+-  emit_insn (gen_rtx_SET (res, gen_rtx_MULT (mode, e0, x0)));
++    {
++      rtx e1 = gen_reg_rtx (mode);
++      /* e1 = a * x0.  */
++      emit_insn (gen_rtx_SET (e1, gen_rtx_MULT (mode, a, x0)));
++      /* res = e0 * e1.  */
++      emit_insn (gen_rtx_SET (res, gen_rtx_MULT (mode, e0, e1)));
++    }
++  else
++    {
++      /* res = e0 * x0.  */
++      emit_insn (gen_rtx_SET (res, gen_rtx_MULT (mode, e0, x0)));
++    }
+ }
+ 
+ static bool
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/invariant-recip.c b/src/gcc/testsuite/gcc.target/loongarch/invariant-recip.c
+new file mode 100644
+index 000000000..2f64f6ed5
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/invariant-recip.c
+@@ -0,0 +1,33 @@
++/* { dg-do compile } */
++/* { dg-options "-Ofast -march=loongarch64 -mabi=lp64d -mrecip -mfrecipe -fdump-rtl-loop2_invariant " } */
++/* { dg-final { scan-rtl-dump "Decided to move dependent invariant" "loop2_invariant" } } */
++
++void
++nislfv_rain_plm (int im, int km, float dzl[im][km], float rql[im][km],
++                 float dt)
++{
++  int i, k;
++  float con1, decfl;
++  float dz[km], qn[km], wi[km + 1];
++
++  for (i = 0; i < im; i++)
++    {
++      for (k = 0; k < km; k++)
++        {
++          dz[k] = dzl[i][k];
++        }
++      con1 = 0.05;
++      for (k = km - 1; k >= 0; k--)
++        {
++          decfl = (wi[k + 1] - wi[k]) * dt / dz[k];
++          if (decfl > con1)
++            {
++              wi[k] = wi[k + 1] - con1 * dz[k] / dt;
++            }
++        }
++      for (k = 0; k < km; k++)
++        {
++          rql[i][k] = qn[k];
++        }
++    }
++}
+-- 
+2.45.2
+

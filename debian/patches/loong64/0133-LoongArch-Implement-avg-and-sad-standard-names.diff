@@ -1,0 +1,389 @@
+From 3cb1f9fceee2cb786623021ae44f49f2ea223943 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Wed, 18 Oct 2023 17:36:12 +0800
+Subject: [PATCH 133/301] LoongArch:Implement avg and sad standard names.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md
+	(avg<mode>3_ceil): New patterns.
+	(uavg<mode>3_ceil): Ditto.
+	(avg<mode>3_floor): Ditto.
+	(uavg<mode>3_floor): Ditto.
+	(usadv32qi): Ditto.
+	(ssadv32qi): Ditto.
+	* config/loongarch/lsx.md
+	(avg<mode>3_ceil): New patterns.
+	(uavg<mode>3_ceil): Ditto.
+	(avg<mode>3_floor): Ditto.
+	(uavg<mode>3_floor): Ditto.
+	(usadv16qi): Ditto.
+	(ssadv16qi): Ditto.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/avg-ceil-lasx.c: New test.
+	* gcc.target/loongarch/avg-ceil-lsx.c: New test.
+	* gcc.target/loongarch/avg-floor-lasx.c: New test.
+	* gcc.target/loongarch/avg-floor-lsx.c: New test.
+	* gcc.target/loongarch/sad-lasx.c: New test.
+	* gcc.target/loongarch/sad-lsx.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 78 +++++++++++++++++++
+ src/gcc/config/loongarch/lsx.md               | 78 +++++++++++++++++++
+ .../gcc.target/loongarch/avg-ceil-lasx.c      | 22 ++++++
+ .../gcc.target/loongarch/avg-ceil-lsx.c       | 22 ++++++
+ .../gcc.target/loongarch/avg-floor-lasx.c     | 22 ++++++
+ .../gcc.target/loongarch/avg-floor-lsx.c      | 22 ++++++
+ .../testsuite/gcc.target/loongarch/sad-lasx.c | 20 +++++
+ .../testsuite/gcc.target/loongarch/sad-lsx.c  | 20 +++++
+ 8 files changed, 284 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/avg-ceil-lasx.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/avg-ceil-lsx.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/avg-floor-lasx.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/avg-floor-lsx.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/sad-lasx.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/sad-lsx.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 2bc5d47ed..c7496d68a 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -5171,3 +5171,81 @@
+ 					      const0_rtx));
+   DONE;
+ })
++
++(define_expand "avg<mode>3_ceil"
++  [(match_operand:ILASX_WHB 0 "register_operand")
++   (match_operand:ILASX_WHB 1 "register_operand")
++   (match_operand:ILASX_WHB 2 "register_operand")]
++  "ISA_HAS_LASX"
++{
++  emit_insn (gen_lasx_xvavgr_s_<lasxfmt> (operands[0],
++	operands[1], operands[2]));
++  DONE;
++})
++
++(define_expand "uavg<mode>3_ceil"
++  [(match_operand:ILASX_WHB 0 "register_operand")
++   (match_operand:ILASX_WHB 1 "register_operand")
++   (match_operand:ILASX_WHB 2 "register_operand")]
++  "ISA_HAS_LASX"
++{
++  emit_insn (gen_lasx_xvavgr_u_<lasxfmt_u> (operands[0],
++	operands[1], operands[2]));
++  DONE;
++})
++
++(define_expand "avg<mode>3_floor"
++  [(match_operand:ILASX_WHB 0 "register_operand")
++   (match_operand:ILASX_WHB 1 "register_operand")
++   (match_operand:ILASX_WHB 2 "register_operand")]
++  "ISA_HAS_LASX"
++{
++  emit_insn (gen_lasx_xvavg_s_<lasxfmt> (operands[0],
++	operands[1], operands[2]));
++  DONE;
++})
++
++(define_expand "uavg<mode>3_floor"
++  [(match_operand:ILASX_WHB 0 "register_operand")
++   (match_operand:ILASX_WHB 1 "register_operand")
++   (match_operand:ILASX_WHB 2 "register_operand")]
++  "ISA_HAS_LASX"
++{
++  emit_insn (gen_lasx_xvavg_u_<lasxfmt_u> (operands[0],
++	operands[1], operands[2]));
++  DONE;
++})
++
++(define_expand "usadv32qi"
++  [(match_operand:V8SI 0 "register_operand")
++   (match_operand:V32QI 1 "register_operand")
++   (match_operand:V32QI 2 "register_operand")
++   (match_operand:V8SI 3 "register_operand")]
++  "ISA_HAS_LASX"
++{
++  rtx t1 = gen_reg_rtx (V32QImode);
++  rtx t2 = gen_reg_rtx (V16HImode);
++  rtx t3 = gen_reg_rtx (V8SImode);
++  emit_insn (gen_lasx_xvabsd_u_bu (t1, operands[1], operands[2]));
++  emit_insn (gen_lasx_xvhaddw_h_b (t2, t1, t1));
++  emit_insn (gen_lasx_xvhaddw_w_h (t3, t2, t2));
++  emit_insn (gen_addv8si3 (operands[0], t3, operands[3]));
++  DONE;
++})
++
++(define_expand "ssadv32qi"
++  [(match_operand:V8SI 0 "register_operand")
++   (match_operand:V32QI 1 "register_operand")
++   (match_operand:V32QI 2 "register_operand")
++   (match_operand:V8SI 3 "register_operand")]
++  "ISA_HAS_LASX"
++{
++  rtx t1 = gen_reg_rtx (V32QImode);
++  rtx t2 = gen_reg_rtx (V16HImode);
++  rtx t3 = gen_reg_rtx (V8SImode);
++  emit_insn (gen_lasx_xvabsd_s_b (t1, operands[1], operands[2]));
++  emit_insn (gen_lasx_xvhaddw_h_b (t2, t1, t1));
++  emit_insn (gen_lasx_xvhaddw_w_h (t3, t2, t2));
++  emit_insn (gen_addv8si3 (operands[0], t3, operands[3]));
++  DONE;
++})
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 075f6ba56..b4e92ae9c 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -3581,6 +3581,84 @@
+   DONE;
+ })
+ 
++(define_expand "avg<mode>3_ceil"
++  [(match_operand:ILSX_WHB 0 "register_operand")
++   (match_operand:ILSX_WHB 1 "register_operand")
++   (match_operand:ILSX_WHB 2 "register_operand")]
++  "ISA_HAS_LSX"
++{
++  emit_insn (gen_lsx_vavgr_s_<lsxfmt> (operands[0],
++	operands[1], operands[2]));
++  DONE;
++})
++
++(define_expand "uavg<mode>3_ceil"
++  [(match_operand:ILSX_WHB 0 "register_operand")
++   (match_operand:ILSX_WHB 1 "register_operand")
++   (match_operand:ILSX_WHB 2 "register_operand")]
++  "ISA_HAS_LSX"
++{
++  emit_insn (gen_lsx_vavgr_u_<lsxfmt_u> (operands[0],
++	operands[1], operands[2]));
++  DONE;
++})
++
++(define_expand "avg<mode>3_floor"
++  [(match_operand:ILSX_WHB 0 "register_operand")
++   (match_operand:ILSX_WHB 1 "register_operand")
++   (match_operand:ILSX_WHB 2 "register_operand")]
++  "ISA_HAS_LSX"
++{
++  emit_insn (gen_lsx_vavg_s_<lsxfmt> (operands[0],
++	operands[1], operands[2]));
++  DONE;
++})
++
++(define_expand "uavg<mode>3_floor"
++  [(match_operand:ILSX_WHB 0 "register_operand")
++   (match_operand:ILSX_WHB 1 "register_operand")
++   (match_operand:ILSX_WHB 2 "register_operand")]
++  "ISA_HAS_LSX"
++{
++  emit_insn (gen_lsx_vavg_u_<lsxfmt_u> (operands[0],
++	operands[1], operands[2]));
++  DONE;
++})
++
++(define_expand "usadv16qi"
++  [(match_operand:V4SI 0 "register_operand")
++   (match_operand:V16QI 1 "register_operand")
++   (match_operand:V16QI 2 "register_operand")
++   (match_operand:V4SI 3 "register_operand")]
++  "ISA_HAS_LSX"
++{
++  rtx t1 = gen_reg_rtx (V16QImode);
++  rtx t2 = gen_reg_rtx (V8HImode);
++  rtx t3 = gen_reg_rtx (V4SImode);
++  emit_insn (gen_lsx_vabsd_u_bu (t1, operands[1], operands[2]));
++  emit_insn (gen_lsx_vhaddw_h_b (t2, t1, t1));
++  emit_insn (gen_lsx_vhaddw_w_h (t3, t2, t2));
++  emit_insn (gen_addv4si3 (operands[0], t3, operands[3]));
++  DONE;
++})
++
++(define_expand "ssadv16qi"
++  [(match_operand:V4SI 0 "register_operand")
++   (match_operand:V16QI 1 "register_operand")
++   (match_operand:V16QI 2 "register_operand")
++   (match_operand:V4SI 3 "register_operand")]
++  "ISA_HAS_LSX"
++{
++  rtx t1 = gen_reg_rtx (V16QImode);
++  rtx t2 = gen_reg_rtx (V8HImode);
++  rtx t3 = gen_reg_rtx (V4SImode);
++  emit_insn (gen_lsx_vabsd_s_b (t1, operands[1], operands[2]));
++  emit_insn (gen_lsx_vhaddw_h_b (t2, t1, t1));
++  emit_insn (gen_lsx_vhaddw_w_h (t3, t2, t2));
++  emit_insn (gen_addv4si3 (operands[0], t3, operands[3]));
++  DONE;
++})
++
+ (define_insn "lsx_v<optab>wev_d_w<u>"
+   [(set (match_operand:V2DI 0 "register_operand" "=f")
+ 	(addsubmul:V2DI
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/avg-ceil-lasx.c b/src/gcc/testsuite/gcc.target/loongarch/avg-ceil-lasx.c
+new file mode 100644
+index 000000000..16db7bf72
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/avg-ceil-lasx.c
+@@ -0,0 +1,22 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlasx" } */
++/* { dg-final { scan-assembler "xvavgr.b" } } */
++/* { dg-final { scan-assembler "xvavgr.bu" } } */
++/* { dg-final { scan-assembler "xvavgr.hu" } } */
++/* { dg-final { scan-assembler "xvavgr.h" } } */
++
++#define N 1024
++
++#define TEST(TYPE, NAME)                                        \
++  TYPE a_##NAME[N], b_##NAME[N], c_##NAME[N];                   \
++  void f_##NAME (void)                                          \
++  {                                                             \
++    int i;                                                      \
++    for (i = 0; i < N; i++)                                     \
++      a_##NAME[i] = (b_##NAME[i] + c_##NAME[i] + 1) >> 1;       \
++  }
++
++TEST(char, 1);
++TEST(short, 2);
++TEST(unsigned char, 3);
++TEST(unsigned short, 4);
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/avg-ceil-lsx.c b/src/gcc/testsuite/gcc.target/loongarch/avg-ceil-lsx.c
+new file mode 100644
+index 000000000..94119c23b
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/avg-ceil-lsx.c
+@@ -0,0 +1,22 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlsx" } */
++/* { dg-final { scan-assembler "vavgr.b" } } */
++/* { dg-final { scan-assembler "vavgr.bu" } } */
++/* { dg-final { scan-assembler "vavgr.hu" } } */
++/* { dg-final { scan-assembler "vavgr.h" } } */
++
++#define N 1024
++
++#define TEST(TYPE, NAME)                                        \
++  TYPE a_##NAME[N], b_##NAME[N], c_##NAME[N];                   \
++  void f_##NAME (void)                                          \
++  {                                                             \
++    int i;                                                      \
++    for (i = 0; i < N; i++)                                     \
++      a_##NAME[i] = (b_##NAME[i] + c_##NAME[i] + 1) >> 1;       \
++  }
++
++TEST(char, 1);
++TEST(short, 2);
++TEST(unsigned char, 3);
++TEST(unsigned short, 4);
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/avg-floor-lasx.c b/src/gcc/testsuite/gcc.target/loongarch/avg-floor-lasx.c
+new file mode 100644
+index 000000000..da6896531
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/avg-floor-lasx.c
+@@ -0,0 +1,22 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlasx" } */
++/* { dg-final { scan-assembler "xvavg.b" } } */
++/* { dg-final { scan-assembler "xvavg.bu" } } */
++/* { dg-final { scan-assembler "xvavg.hu" } } */
++/* { dg-final { scan-assembler "xvavg.h" } } */
++
++#define N 1024
++
++#define TEST(TYPE, NAME)                                        \
++  TYPE a_##NAME[N], b_##NAME[N], c_##NAME[N];                   \
++  void f_##NAME (void)                                          \
++  {                                                             \
++    int i;                                                      \
++    for (i = 0; i < N; i++)                                     \
++      a_##NAME[i] = (b_##NAME[i] + c_##NAME[i]) >> 1;           \
++  }
++
++TEST(char, 1);
++TEST(short, 2);
++TEST(unsigned char, 3);
++TEST(unsigned short, 4);
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/avg-floor-lsx.c b/src/gcc/testsuite/gcc.target/loongarch/avg-floor-lsx.c
+new file mode 100644
+index 000000000..bbb9db527
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/avg-floor-lsx.c
+@@ -0,0 +1,22 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlsx" } */
++/* { dg-final { scan-assembler "vavg.b" } } */
++/* { dg-final { scan-assembler "vavg.bu" } } */
++/* { dg-final { scan-assembler "vavg.hu" } } */
++/* { dg-final { scan-assembler "vavg.h" } } */
++
++#define N 1024
++
++#define TEST(TYPE, NAME)                                        \
++  TYPE a_##NAME[N], b_##NAME[N], c_##NAME[N];                   \
++  void f_##NAME (void)                                          \
++  {                                                             \
++    int i;                                                      \
++    for (i = 0; i < N; i++)                                     \
++      a_##NAME[i] = (b_##NAME[i] + c_##NAME[i]) >> 1;           \
++  }
++
++TEST(char, 1);
++TEST(short, 2);
++TEST(unsigned char, 3);
++TEST(unsigned short, 4);
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/sad-lasx.c b/src/gcc/testsuite/gcc.target/loongarch/sad-lasx.c
+new file mode 100644
+index 000000000..6c0cdfd97
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/sad-lasx.c
+@@ -0,0 +1,20 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlasx" } */
++
++#define N 1024
++
++#define TEST(SIGN)                                             \
++  SIGN char a_##SIGN[N], b_##SIGN[N];                          \
++  int f_##SIGN (void)                                          \
++  {                                                            \
++    int i, sum = 0;                                            \
++    for (i = 0; i < N; i++)                                    \
++      sum += __builtin_abs (a_##SIGN[i] - b_##SIGN[i]);;       \
++    return sum;                                                \
++  }
++
++TEST(signed);
++TEST(unsigned);
++
++/* { dg-final { scan-assembler {\txvabsd.bu\t} } } */
++/* { dg-final { scan-assembler {\txvabsd.b\t} } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/sad-lsx.c b/src/gcc/testsuite/gcc.target/loongarch/sad-lsx.c
+new file mode 100644
+index 000000000..b92110a8b
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/sad-lsx.c
+@@ -0,0 +1,20 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlsx" } */
++
++#define N 1024
++
++#define TEST(SIGN)                                             \
++  SIGN char a_##SIGN[N], b_##SIGN[N];                          \
++  int f_##SIGN (void)                                          \
++  {                                                            \
++    int i, sum = 0;                                            \
++    for (i = 0; i < N; i++)                                    \
++      sum += __builtin_abs (a_##SIGN[i] - b_##SIGN[i]);;       \
++    return sum;                                                \
++  }
++
++TEST(signed);
++TEST(unsigned);
++
++/* { dg-final { scan-assembler {\tvabsd.bu\t} } } */
++/* { dg-final { scan-assembler {\tvabsd.b\t} } } */
+-- 
+2.45.2
+

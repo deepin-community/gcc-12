@@ -1,0 +1,150 @@
+From 01d62233e28b15e867bbc42dc5b930bf4872ef96 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Fri, 5 Jan 2024 15:37:13 +0800
+Subject: [PATCH 215/301] LoongArch: Improve lasx_xvpermi_q_<LASX:mode> insn
+ pattern
+
+For instruction xvpermi.q, unused bits in operands[3] need be set to 0 to avoid
+causing undefined behavior on LA464.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md: Set the unused bits in operand[3] to 0.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-xvpremi.c: Removed.
+	* gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              |  9 ++-
+ .../loongarch/vector/lasx/lasx-xvpermi_q.c    | 64 +++++++++++++++++++
+ .../loongarch/vector/lasx/lasx-xvpremi.c      | 19 ------
+ 3 files changed, 72 insertions(+), 20 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c
+ delete mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpremi.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 95c6bae20..b4aa8e261 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -635,6 +635,8 @@
+    (set_attr "mode" "<MODE>")])
+ 
+ ;; xvpermi.q
++;; Unused bits in operands[3] need be set to 0 to avoid
++;; causing undefined behavior on LA464.
+ (define_insn "lasx_xvpermi_q_<LASX:mode>"
+   [(set (match_operand:LASX 0 "register_operand" "=f")
+ 	(unspec:LASX
+@@ -643,7 +645,12 @@
+ 	   (match_operand     3 "const_uimm8_operand")]
+ 	  UNSPEC_LASX_XVPERMI_Q))]
+   "ISA_HAS_LASX"
+-  "xvpermi.q\t%u0,%u2,%3"
++{
++  int mask = 0x33;
++  mask &= INTVAL (operands[3]);
++  operands[3] = GEN_INT (mask);
++  return "xvpermi.q\t%u0,%u2,%3";
++}
+   [(set_attr "type" "simd_splat")
+    (set_attr "mode" "<MODE>")])
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c
+new file mode 100644
+index 000000000..dbc29d2fb
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpermi_q.c
+@@ -0,0 +1,64 @@
++/* { dg-options "-mlasx -w -fno-strict-aliasing" } */
++#include "../simd_correctness_check.h"
++#include <lasxintrin.h>
++
++int
++main ()
++{
++  __m256i __m256i_op0, __m256i_op1, __m256i_op2, __m256i_out, __m256i_result;
++  __m256 __m256_op0, __m256_op1, __m256_op2, __m256_out, __m256_result;
++  __m256d __m256d_op0, __m256d_op1, __m256d_op2, __m256d_out, __m256d_result;
++
++  int int_op0, int_op1, int_op2, int_out, int_result, i = 1, fail;
++  long int long_op0, long_op1, long_op2, lont_out, lont_result;
++  long int long_int_out, long_int_result;
++  unsigned int unsigned_int_out, unsigned_int_result;
++  unsigned long int unsigned_long_int_out, unsigned_long_int_result;
++
++  *((unsigned long*)& __m256i_op0[3]) = 0x7fe37fe3001d001d;
++  *((unsigned long*)& __m256i_op0[2]) = 0x7fff7fff7fff0000;
++  *((unsigned long*)& __m256i_op0[1]) = 0x7fe37fe3001d001d;
++  *((unsigned long*)& __m256i_op0[0]) = 0x7fff7fff7fff0000;
++  *((unsigned long*)& __m256i_op1[3]) = 0x7575757575757575;
++  *((unsigned long*)& __m256i_op1[2]) = 0x7575757575757575;
++  *((unsigned long*)& __m256i_op1[1]) = 0x7575757575757575;
++  *((unsigned long*)& __m256i_op1[0]) = 0x7575757575757575;
++  *((unsigned long*)& __m256i_result[3]) = 0x7fe37fe3001d001d;
++  *((unsigned long*)& __m256i_result[2]) = 0x7fff7fff7fff0000;
++  *((unsigned long*)& __m256i_result[1]) = 0x7fe37fe3001d001d;
++  *((unsigned long*)& __m256i_result[0]) = 0x7fff7fff7fff0000;
++  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0x2a);
++  ASSERTEQ_64 (__LINE__, __m256i_result, __m256i_out);
++
++  *((unsigned long*)& __m256i_op0[3]) = 0x0000000000000000;
++  *((unsigned long*)& __m256i_op0[2]) = 0x000000000019001c;
++  *((unsigned long*)& __m256i_op0[1]) = 0x0000000000000000;
++  *((unsigned long*)& __m256i_op0[0]) = 0x000000000019001c;
++  *((unsigned long*)& __m256i_op1[3]) = 0x0000000000000000;
++  *((unsigned long*)& __m256i_op1[2]) = 0x00000000000001fe;
++  *((unsigned long*)& __m256i_op1[1]) = 0x0000000000000000;
++  *((unsigned long*)& __m256i_op1[0]) = 0x00000000000001fe;
++  *((unsigned long*)& __m256i_result[3]) = 0x0000000000000000;
++  *((unsigned long*)& __m256i_result[2]) = 0x000000000019001c;
++  *((unsigned long*)& __m256i_result[1]) = 0x0000000000000000;
++  *((unsigned long*)& __m256i_result[0]) = 0x00000000000001fe;
++  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0xb9);
++  ASSERTEQ_64 (__LINE__, __m256i_result, __m256i_out);
++
++  *((unsigned long*)& __m256i_op0[3]) = 0x00ff00ff00ff00ff;
++  *((unsigned long*)& __m256i_op0[2]) = 0x00ff00ff00ff00ff;
++  *((unsigned long*)& __m256i_op0[1]) = 0x00ff00ff00ff00ff;
++  *((unsigned long*)& __m256i_op0[0]) = 0x00ff00ff00ff00ff;
++  *((unsigned long*)& __m256i_op1[3]) = 0xffffffffffffffff;
++  *((unsigned long*)& __m256i_op1[2]) = 0xffff0000ffff0000;
++  *((unsigned long*)& __m256i_op1[1]) = 0xffffffffffffffff;
++  *((unsigned long*)& __m256i_op1[0]) = 0xffff0000ffff0000;
++  *((unsigned long*)& __m256i_result[3]) = 0xffffffffffffffff;
++  *((unsigned long*)& __m256i_result[2]) = 0xffff0000ffff0000;
++  *((unsigned long*)& __m256i_result[1]) = 0x00ff00ff00ff00ff;
++  *((unsigned long*)& __m256i_result[0]) = 0x00ff00ff00ff00ff;
++  __m256i_out = __lasx_xvpermi_q (__m256i_op0, __m256i_op1, 0xca);
++  ASSERTEQ_64 (__LINE__, __m256i_result, __m256i_out);
++
++  return 0;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpremi.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpremi.c
+deleted file mode 100644
+index e9fc1d7d3..000000000
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvpremi.c
++++ /dev/null
+@@ -1,19 +0,0 @@
+-/* { dg-options "-mlasx -w -fno-strict-aliasing" } */
+-#include "../simd_correctness_check.h"
+-#include <lasxintrin.h>
+-
+-int
+-main ()
+-{
+-  __m256i __m256i_op0, __m256i_op1, __m256i_op2, __m256i_out, __m256i_result;
+-  __m256 __m256_op0, __m256_op1, __m256_op2, __m256_out, __m256_result;
+-  __m256d __m256d_op0, __m256d_op1, __m256d_op2, __m256d_out, __m256d_result;
+-
+-  int int_op0, int_op1, int_op2, int_out, int_result, i = 1, fail;
+-  long int long_op0, long_op1, long_op2, lont_out, lont_result;
+-  long int long_int_out, long_int_result;
+-  unsigned int unsigned_int_out, unsigned_int_result;
+-  unsigned long int unsigned_long_int_out, unsigned_long_int_result;
+-
+-  return 0;
+-}
+-- 
+2.45.2
+

@@ -1,0 +1,123 @@
+From a00422fccadcec1debc531cb8d3834d17ec99ce8 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 28 Jul 2024 17:02:49 +0800
+Subject: [PATCH 290/301] LoongArch: Relax ins_zero_bitmask_operand and remove
+ and<mode>3_align
+
+In r15-1207 I was too stupid to realize we just need to relax
+ins_zero_bitmask_operand to allow using bstrins for aligning, instead of
+adding a new split.  And, "> 12" in ins_zero_bitmask_operand also makes
+no sense: it rejects bstrins for things like "x & ~4l" with no good
+reason.
+
+So fix my errors now.
+
+gcc/ChangeLog:
+
+	* config/loongarch/predicates.md (ins_zero_bitmask_operand):
+	Cover more cases that bstrins can benefit.
+	(high_bitmask_operand): Remove.
+	* config/loongarch/constraints.md (Yy): Remove.
+	* config/loongarch/loongarch.md (and<mode>3_align): Remove.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/bstrins-4.c: New test.
+---
+ src/gcc/config/loongarch/constraints.md         |  4 ----
+ src/gcc/config/loongarch/loongarch.md           | 17 -----------------
+ src/gcc/config/loongarch/predicates.md          |  9 ++-------
+ .../testsuite/gcc.target/loongarch/bstrins-4.c  |  9 +++++++++
+ 4 files changed, 11 insertions(+), 28 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/bstrins-4.c
+
+diff --git a/src/gcc/config/loongarch/constraints.md b/src/gcc/config/loongarch/constraints.md
+index f3f5776da..d653ea82a 100644
+--- a/src/gcc/config/loongarch/constraints.md
++++ b/src/gcc/config/loongarch/constraints.md
+@@ -292,10 +292,6 @@
+    "@internal"
+    (match_operand 0 "low_bitmask_operand"))
+ 
+-(define_constraint "Yy"
+-   "@internal"
+-   (match_operand 0 "high_bitmask_operand"))
+-
+ (define_constraint "YI"
+   "@internal
+    A replicated vector const in which the replicated value is in the range
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 6915dab0e..1ebcfa0c7 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -1588,23 +1588,6 @@
+   [(set_attr "move_type" "pick_ins")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn_and_split "and<mode>3_align"
+-  [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(and:GPR (match_operand:GPR 1 "register_operand" "r")
+-		 (match_operand:GPR 2 "high_bitmask_operand" "Yy")))]
+-  ""
+-  "#"
+-  ""
+-  [(set (match_dup 0) (match_dup 1))
+-   (set (zero_extract:GPR (match_dup 0) (match_dup 2) (const_int 0))
+-	(const_int 0))]
+-{
+-  int len;
+-
+-  len = low_bitmask_len (<MODE>mode, ~INTVAL (operands[2]));
+-  operands[2] = GEN_INT (len);
+-})
+-
+ (define_insn_and_split "*bstrins_<mode>_for_mask"
+   [(set (match_operand:GPR 0 "register_operand" "=r")
+ 	(and:GPR (match_operand:GPR 1 "register_operand" "r")
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 95be8a4fe..2b7f7ed47 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -293,10 +293,6 @@
+   (and (match_code "const_int")
+        (match_test "low_bitmask_len (mode, INTVAL (op)) > 12")))
+ 
+-(define_predicate "high_bitmask_operand"
+-  (and (match_code "const_int")
+-       (match_test "low_bitmask_len (mode, ~INTVAL (op)) > 0")))
+-
+ (define_predicate "d_operand"
+   (and (match_code "reg")
+        (match_test "GP_REG_P (REGNO (op))")))
+@@ -406,11 +402,10 @@
+ 
+ (define_predicate "ins_zero_bitmask_operand"
+   (and (match_code "const_int")
+-       (match_test "INTVAL (op) != -1")
+-       (match_test "INTVAL (op) & 1")
+        (match_test "low_bitmask_len (mode, \
+ 				     ~UINTVAL (op) | (~UINTVAL(op) - 1)) \
+-		    > 12")))
++		    > 0")
++       (not (match_operand 0 "const_uns_arith_operand"))))
+ 
+ (define_predicate "const_call_insn_operand"
+   (match_code "const,symbol_ref,label_ref")
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/bstrins-4.c b/src/gcc/testsuite/gcc.target/loongarch/bstrins-4.c
+new file mode 100644
+index 000000000..0823cfc38
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/bstrins-4.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d" } */
++/* { dg-final { scan-assembler "bstrins\\.d\t\\\$r4,\\\$r0,2,2" } } */
++
++long
++x (long a)
++{
++  return a & ~4;
++}
+-- 
+2.45.2
+

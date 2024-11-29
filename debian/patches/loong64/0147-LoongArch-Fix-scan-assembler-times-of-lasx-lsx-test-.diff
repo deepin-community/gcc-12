@@ -1,0 +1,161 @@
+From 73b9a2f9dbc8152178bef7875328af1c66c90d43 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Thu, 16 Nov 2023 20:31:09 +0800
+Subject: [PATCH 147/301] LoongArch: Fix scan-assembler-times of lasx/lsx test
+ case.
+
+These tests fail when they are first added,this patch adjusts the scan-assembler-times
+to fix them.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-vcond-1.c: Adjust assembler times.
+	* gcc.target/loongarch/vector/lasx/lasx-vcond-2.c: Ditto.
+	* gcc.target/loongarch/vector/lsx/lsx-vcond-1.c: Ditto.
+	* gcc.target/loongarch/vector/lsx/lsx-vcond-2.c: Ditto.
+---
+ .../loongarch/vector/lasx/lasx-vcond-1.c      | 12 +++----
+ .../loongarch/vector/lasx/lasx-vcond-2.c      | 36 +++++++++----------
+ .../loongarch/vector/lsx/lsx-vcond-1.c        | 12 +++----
+ .../loongarch/vector/lsx/lsx-vcond-2.c        | 36 +++++++++----------
+ 4 files changed, 48 insertions(+), 48 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-1.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-1.c
+index ee9cb1a1f..57064eac9 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-1.c
+@@ -52,13 +52,13 @@ TEST_VAR_ALL (DEF_VCOND_VAR)
+ 
+ /* { dg-final { scan-assembler-times {\txvslt\.b} 4 } } */
+ /* { dg-final { scan-assembler-times {\txvslt\.h} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvslt\.w} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvslt\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\txvslt\.w} 8 } } */
++/* { dg-final { scan-assembler-times {\txvslt\.d} 8 } } */
+ /* { dg-final { scan-assembler-times {\txvsle\.b} 4 } } */
+ /* { dg-final { scan-assembler-times {\txvsle\.h} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvsle\.w} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvsle\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\txvsle\.w} 8 } } */
++/* { dg-final { scan-assembler-times {\txvsle\.d} 8 } } */
+ /* { dg-final { scan-assembler-times {\txvseq\.b} 4 } } */
+ /* { dg-final { scan-assembler-times {\txvseq\.h} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvseq\.w} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvseq\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\txvseq\.w} 8 } } */
++/* { dg-final { scan-assembler-times {\txvseq\.d} 8 } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
+index 5f40ed44c..55d5a084c 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
+@@ -67,21 +67,21 @@ TEST_CMP (nule)
+ TEST_CMP (nuge)
+ TEST_CMP (nugt)
+ 
+-/* { dg-final { scan-assembler-times {\txvfcmp\.ceq\.s} 2 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.ceq\.d} 2 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cne\.s} 2 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cne\.d} 2 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.slt\.s} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.slt\.d} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.sle\.s} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.sle\.d} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cor\.s} 2 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cor\.d} 2 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cun\.s} 2 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cun\.d} 2 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cueq\.s} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cueq\.d} 4 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cule\.s} 8 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cule\.d} 8 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cult\.s} 8 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cult\.d} 8 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.ceq\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.ceq\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cne\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cne\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.slt\.s} 6 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.slt\.d} 6 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.sle\.s} 6 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.sle\.d} 6 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cor\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cor\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cun\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cun\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cueq\.s} 6 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cueq\.d} 6 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cule\.s} 12 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cule\.d} 12 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cult\.s} 12 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cult\.d} 12 } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-1.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-1.c
+index 138adccfa..8c69f0d9b 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-1.c
+@@ -52,13 +52,13 @@ TEST_VAR_ALL (DEF_VCOND_VAR)
+ 
+ /* { dg-final { scan-assembler-times {\tvslt\.b} 4 } } */
+ /* { dg-final { scan-assembler-times {\tvslt\.h} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvslt\.w} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvslt\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\tvslt\.w} 8 } } */
++/* { dg-final { scan-assembler-times {\tvslt\.d} 8 } } */
+ /* { dg-final { scan-assembler-times {\tvsle\.b} 4 } } */
+ /* { dg-final { scan-assembler-times {\tvsle\.h} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvsle\.w} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvsle\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\tvsle\.w} 8 } } */
++/* { dg-final { scan-assembler-times {\tvsle\.d} 8 } } */
+ /* { dg-final { scan-assembler-times {\tvseq\.b} 4 } } */
+ /* { dg-final { scan-assembler-times {\tvseq\.h} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvseq\.w} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvseq\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\tvseq\.w} 8 } } */
++/* { dg-final { scan-assembler-times {\tvseq\.d} 8 } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
+index e8fe31f8f..2214afd0a 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
+@@ -67,21 +67,21 @@ TEST_CMP (nule)
+ TEST_CMP (nuge)
+ TEST_CMP (nugt)
+ 
+-/* { dg-final { scan-assembler-times {\tvfcmp\.ceq\.s} 2 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.ceq\.d} 2 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cne\.s} 2 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cne\.d} 2 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.slt\.s} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.slt\.d} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.sle\.s} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.sle\.d} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cor\.s} 2 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cor\.d} 2 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cun\.s} 2 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cun\.d} 2 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cueq\.s} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cueq\.d} 4 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cule\.s} 8 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cule\.d} 8 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cult\.s} 8 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cult\.d} 8 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.ceq\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.ceq\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cne\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cne\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.slt\.s} 6 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.slt\.d} 6 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.sle\.s} 6 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.sle\.d} 6 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cor\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cor\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cun\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cun\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cueq\.s} 6 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cueq\.d} 6 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cule\.s} 12 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cule\.d} 12 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cult\.s} 12 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cult\.d} 12 } } */
+-- 
+2.45.2
+

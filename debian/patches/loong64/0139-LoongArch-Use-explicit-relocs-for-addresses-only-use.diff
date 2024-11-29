@@ -1,0 +1,245 @@
+From 4fd098735cc82debcbe8579f367c1c6e0cf3d8f2 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 1 Oct 2023 11:14:29 +0800
+Subject: [PATCH 139/301] LoongArch: Use explicit relocs for addresses only
+ used for one load or store with -mexplicit-relocs=auto and
+ -mcmodel={normal,medium}
+
+In these cases, if we use explicit relocs, we end up with 2
+instructions:
+
+    pcalau12i    t0, %pc_hi20(x)
+    ld.d         t0, t0, %pc_lo12(x)
+
+If we use la.local pseudo-op, in the best scenario (x is in +/- 2MiB
+range) we still have 2 instructions:
+
+    pcaddi       t0, %pcrel_20(x)
+    ld.d         t0, t0, 0
+
+If x is out of the range we'll have 3 instructions.  So for these cases
+just emit machine instructions with explicit relocs.
+
+gcc/ChangeLog:
+
+	* config/loongarch/predicates.md (symbolic_pcrel_operand): New
+	predicate.
+	* config/loongarch/loongarch.md (define_peephole2): Optimize
+	la.local + ld/st to pcalau12i + ld/st if the address is only used
+	once if -mexplicit-relocs=auto and -mcmodel=normal or medium.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/explicit-relocs-auto-single-load-store.c:
+	New test.
+	* gcc.target/loongarch/explicit-relocs-auto-single-load-store-no-anchor.c:
+	New test.
+---
+ src/gcc/config/loongarch/loongarch.md         | 122 ++++++++++++++++++
+ src/gcc/config/loongarch/predicates.md        |   7 +
+ ...-relocs-auto-single-load-store-no-anchor.c |   6 +
+ .../explicit-relocs-auto-single-load-store.c  |  14 ++
+ 4 files changed, 149 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-no-anchor.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 8651274e6..80487488d 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -65,6 +65,7 @@
+ 
+   UNSPEC_LOAD_FROM_GOT
+   UNSPEC_PCALAU12I
++  UNSPEC_PCALAU12I_GR
+   UNSPEC_ORI_L_LO12
+   UNSPEC_LUI_L_HI20
+   UNSPEC_LUI_H_LO20
+@@ -2298,6 +2299,16 @@
+   "pcalau12i\t%0,%%pc_hi20(%1)"
+   [(set_attr "type" "move")])
+ 
++;; @pcalau12i may be used for sibcall so it has a strict constraint.  This
++;; allows any general register as the operand.
++(define_insn "@pcalau12i_gr<mode>"
++  [(set (match_operand:P 0 "register_operand" "=r")
++       (unspec:P [(match_operand:P 1 "symbolic_operand" "")]
++       UNSPEC_PCALAU12I_GR))]
++  ""
++  "pcalau12i\t%0,%%pc_hi20(%1)"
++  [(set_attr "type" "move")])
++
+ (define_insn "@ori_l_lo12<mode>"
+   [(set (match_operand:P 0 "register_operand" "=r")
+ 	(unspec:P [(match_operand:P 1 "register_operand" "r")
+@@ -3755,6 +3766,117 @@
+   [(set_attr "type" "unknown")
+    (set_attr "mode" "<MODE>")])
+ 
++;; With normal or medium code models, if the only use of a pc-relative
++;; address is for loading or storing a value, then relying on linker
++;; relaxation is not better than emitting the machine instruction directly.
++;; Even if the la.local pseudo op can be relaxed, we get:
++;;
++;;     pcaddi     $t0, %pcrel_20(x)
++;;     ld.d       $t0, $t0, 0
++;;
++;; There are still two instructions, same as using the machine instructions
++;; and explicit relocs:
++;;
++;;     pcalau12i  $t0, %pc_hi20(x)
++;;     ld.d       $t0, $t0, %pc_lo12(x)
++;;
++;; And if the pseudo op cannot be relaxed, we'll get a worse result (with
++;; 3 instructions).
++(define_peephole2
++  [(set (match_operand:P 0 "register_operand")
++	(match_operand:P 1 "symbolic_pcrel_operand"))
++   (set (match_operand:GPR 2 "register_operand")
++	(mem:GPR (match_dup 0)))]
++  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
++   && (peep2_reg_dead_p (2, operands[0]) \
++       || REGNO (operands[0]) == REGNO (operands[2]))"
++  [(set (match_dup 2) (mem:GPR (lo_sum:P (match_dup 0) (match_dup 1))))]
++  {
++    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++  })
++
++(define_peephole2
++  [(set (match_operand:P 0 "register_operand")
++	(match_operand:P 1 "symbolic_pcrel_operand"))
++   (set (match_operand:GPR 2 "register_operand")
++	(mem:GPR (plus (match_dup 0)
++		       (match_operand 3 "const_int_operand"))))]
++  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
++   && (peep2_reg_dead_p (2, operands[0]) \
++       || REGNO (operands[0]) == REGNO (operands[2]))"
++  [(set (match_dup 2) (mem:GPR (lo_sum:P (match_dup 0) (match_dup 1))))]
++  {
++    operands[1] = plus_constant (Pmode, operands[1], INTVAL (operands[3]));
++    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++  })
++
++(define_peephole2
++  [(set (match_operand:P 0 "register_operand")
++	(match_operand:P 1 "symbolic_pcrel_operand"))
++   (set (match_operand:GPR 2 "register_operand")
++	(any_extend:GPR (mem:SUBDI (match_dup 0))))]
++  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
++   && (peep2_reg_dead_p (2, operands[0]) \
++       || REGNO (operands[0]) == REGNO (operands[2]))"
++  [(set (match_dup 2)
++	(any_extend:GPR (mem:SUBDI (lo_sum:P (match_dup 0)
++					     (match_dup 1)))))]
++  {
++    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++  })
++
++(define_peephole2
++  [(set (match_operand:P 0 "register_operand")
++	(match_operand:P 1 "symbolic_pcrel_operand"))
++   (set (match_operand:GPR 2 "register_operand")
++	(any_extend:GPR
++	  (mem:SUBDI (plus (match_dup 0)
++			   (match_operand 3 "const_int_operand")))))]
++  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
++   && (peep2_reg_dead_p (2, operands[0]) \
++       || REGNO (operands[0]) == REGNO (operands[2]))"
++  [(set (match_dup 2)
++	(any_extend:GPR (mem:SUBDI (lo_sum:P (match_dup 0)
++					     (match_dup 1)))))]
++  {
++    operands[1] = plus_constant (Pmode, operands[1], INTVAL (operands[3]));
++    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++  })
++
++(define_peephole2
++  [(set (match_operand:P 0 "register_operand")
++	(match_operand:P 1 "symbolic_pcrel_operand"))
++   (set (mem:QHWD (match_dup 0))
++	(match_operand:QHWD 2 "register_operand"))]
++  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
++   && (peep2_reg_dead_p (2, operands[0])) \
++   && REGNO (operands[0]) != REGNO (operands[2])"
++  [(set (mem:QHWD (lo_sum:P (match_dup 0) (match_dup 1))) (match_dup 2))]
++  {
++    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++  })
++
++(define_peephole2
++  [(set (match_operand:P 0 "register_operand")
++	(match_operand:P 1 "symbolic_pcrel_operand"))
++   (set (mem:QHWD (plus (match_dup 0)
++			(match_operand 3 "const_int_operand")))
++	(match_operand:QHWD 2 "register_operand"))]
++  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
++   && (peep2_reg_dead_p (2, operands[0])) \
++   && REGNO (operands[0]) != REGNO (operands[2])"
++  [(set (mem:QHWD (lo_sum:P (match_dup 0) (match_dup 1))) (match_dup 2))]
++  {
++    operands[1] = plus_constant (Pmode, operands[1], INTVAL (operands[3]));
++    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++  })
++
+ ;; Synchronization instructions.
+ 
+ (include "sync.md")
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 6b50b3a4d..1d669f560 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -563,6 +563,13 @@
+   return loongarch_symbolic_constant_p (op, &type);
+ })
+ 
++(define_predicate "symbolic_pcrel_operand"
++  (match_code "const,symbol_ref,label_ref")
++{
++  enum loongarch_symbol_type type;
++  return loongarch_symbolic_constant_p (op, &type) && type == SYMBOL_PCREL;
++})
++
+ (define_predicate "equality_operator"
+   (match_code "eq,ne"))
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-no-anchor.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-no-anchor.c
+new file mode 100644
+index 000000000..fb03403d7
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-no-anchor.c
+@@ -0,0 +1,6 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d -mexplicit-relocs=auto -fno-section-anchors" } */
++
++#include "explicit-relocs-auto-single-load-store.c"
++
++/* { dg-final { scan-assembler-not "la.local" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store.c
+new file mode 100644
+index 000000000..0d53644cd
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store.c
+@@ -0,0 +1,14 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d -mexplicit-relocs=auto" } */
++
++long a;
++int b;
++unsigned int c;
++
++long load_a() { return a; }
++long load_b() { return b; }
++long load_c() { return c; }
++void store_a(long x) { a = x; }
++void store_b(int x) { b = x; }
++
++/* { dg-final { scan-assembler-not "la.local" } } */
+-- 
+2.45.2
+

@@ -1,0 +1,533 @@
+From e309e96c6b77bba41262dc694ee8d4f10dd35b27 Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Mon, 8 Jan 2024 09:14:07 +0800
+Subject: [PATCH 217/301] LoongArch: Handle ISA evolution switches along with
+ other options
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/genstr.sh: Prepend the isa_evolution
+	variable with the common la_ prefix.
+	* config/loongarch/genopts/loongarch.opt.in: Mark ISA evolution
+	flags as saved using TargetVariable.
+	* config/loongarch/loongarch.opt: Same.
+	* config/loongarch/loongarch-def.h: Define evolution_set to
+	mark changes to the -march default.
+	* config/loongarch/loongarch-driver.cc: Same.
+	* config/loongarch/loongarch-opts.cc: Same.
+	* config/loongarch/loongarch-opts.h: Define and use ISA evolution
+	conditions around the la_target structure.
+	* config/loongarch/loongarch.cc: Same.
+	* config/loongarch/loongarch.md: Same.
+	* config/loongarch/loongarch-builtins.cc: Same.
+	* config/loongarch/loongarch-c.cc: Same.
+	* config/loongarch/lasx.md: Same.
+	* config/loongarch/lsx.md: Same.
+	* config/loongarch/sync.md: Same.
+---
+ src/gcc/config/loongarch/genopts/genstr.sh    |  2 +-
+ .../config/loongarch/genopts/loongarch.opt.in |  6 ++---
+ src/gcc/config/loongarch/lasx.md              |  4 ++--
+ .../config/loongarch/loongarch-builtins.cc    |  6 ++---
+ src/gcc/config/loongarch/loongarch-c.cc       |  2 +-
+ src/gcc/config/loongarch/loongarch-def.h      |  5 +++-
+ src/gcc/config/loongarch/loongarch-driver.cc  |  5 ++--
+ src/gcc/config/loongarch/loongarch-opts.cc    | 17 ++++++++++++-
+ src/gcc/config/loongarch/loongarch-opts.h     | 24 +++++++++++++++----
+ src/gcc/config/loongarch/loongarch.cc         | 24 ++++++++-----------
+ src/gcc/config/loongarch/loongarch.md         | 12 +++++-----
+ src/gcc/config/loongarch/loongarch.opt        | 16 ++++++-------
+ src/gcc/config/loongarch/lsx.md               |  4 ++--
+ src/gcc/config/loongarch/sync.md              | 22 ++++++++---------
+ 14 files changed, 90 insertions(+), 59 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/genopts/genstr.sh b/src/gcc/config/loongarch/genopts/genstr.sh
+index bcc616e98..391eca121 100755
+--- a/src/gcc/config/loongarch/genopts/genstr.sh
++++ b/src/gcc/config/loongarch/genopts/genstr.sh
+@@ -107,7 +107,7 @@ EOF
+       print("")
+       print("m"$3)
+       gsub(/-/, "_", $3)
+-      print("Target Mask(ISA_"toupper($3)") Var(isa_evolution)")
++      print("Target Mask(ISA_"toupper($3)") Var(la_isa_evolution)")
+       $1=""; $2=""; $3=""
+       sub(/^ */, "", $0)
+       print($0)
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index 102202b03..a866dab84 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -259,6 +259,6 @@ default value is 4.
+ ; Features added during ISA evolution.  This concept is different from ISA
+ ; extension, read Section 1.5 of LoongArch v1.10 Volume 1 for the
+ ; explanation.  These features may be implemented and enumerated with
+-; CPUCFG independantly, so we use bit flags to specify them.
+-Variable
+-HOST_WIDE_INT isa_evolution = 0
++; CPUCFG independently, so we use bit flags to specify them.
++TargetVariable
++HOST_WIDE_INT la_isa_evolution = 0
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 803c5dd93..fdfd65e4a 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -1540,7 +1540,7 @@
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+     (unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
+ 		  UNSPEC_LASX_XVFRECIPE))]
+-  "ISA_HAS_LASX && TARGET_FRECIPE"
++  "ISA_HAS_LASX && ISA_HAS_FRECIPE"
+   "xvfrecipe.<flasxfmt>\t%u0,%u1"
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+@@ -1573,7 +1573,7 @@
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+     (unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
+ 		  UNSPEC_LASX_XVFRSQRTE))]
+-  "ISA_HAS_LASX && TARGET_FRECIPE"
++  "ISA_HAS_LASX && ISA_HAS_FRECIPE"
+   "xvfrsqrte.<flasxfmt>\t%u0,%u1"
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+diff --git a/src/gcc/config/loongarch/loongarch-builtins.cc b/src/gcc/config/loongarch/loongarch-builtins.cc
+index 85849ed29..e3b4dbc52 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -120,9 +120,9 @@ struct loongarch_builtin_description
+ AVAIL_ALL (hard_float, TARGET_HARD_FLOAT_ABI)
+ AVAIL_ALL (lsx, ISA_HAS_LSX)
+ AVAIL_ALL (lasx, ISA_HAS_LASX)
+-AVAIL_ALL (frecipe, TARGET_FRECIPE && TARGET_HARD_FLOAT_ABI)
+-AVAIL_ALL (lsx_frecipe, ISA_HAS_LSX && TARGET_FRECIPE)
+-AVAIL_ALL (lasx_frecipe, ISA_HAS_LASX && TARGET_FRECIPE)
++AVAIL_ALL (frecipe, ISA_HAS_FRECIPE && TARGET_HARD_FLOAT_ABI)
++AVAIL_ALL (lsx_frecipe, ISA_HAS_LSX && ISA_HAS_FRECIPE)
++AVAIL_ALL (lasx_frecipe, ISA_HAS_LASX && ISA_HAS_FRECIPE)
+ 
+ /* Construct a loongarch_builtin_description from the given arguments.
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-c.cc b/src/gcc/config/loongarch/loongarch-c.cc
+index a89477a74..df2a482ad 100644
+--- a/src/gcc/config/loongarch/loongarch-c.cc
++++ b/src/gcc/config/loongarch/loongarch-c.cc
+@@ -102,7 +102,7 @@ loongarch_cpu_cpp_builtins (cpp_reader *pfile)
+   else
+     builtin_define ("__loongarch_frlen=0");
+ 
+-  if (TARGET_HARD_FLOAT && TARGET_FRECIPE)
++  if (TARGET_HARD_FLOAT && ISA_HAS_FRECIPE)
+     builtin_define ("__loongarch_frecipe");
+ 
+   if (ISA_HAS_LSX)
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index f8f36f0e2..9e5eee0e2 100644
+--- a/src/gcc/config/loongarch/loongarch-def.h
++++ b/src/gcc/config/loongarch/loongarch-def.h
+@@ -132,8 +132,11 @@ struct loongarch_isa
+ 
+      Using int64_t instead of HOST_WIDE_INT for C compatibility.  */
+   int64_t evolution;
++  int64_t evolution_set;
+ 
+-  loongarch_isa () : base (0), fpu (0), simd (0), evolution (0) {}
++  loongarch_isa () :
++    base (0), fpu (0), simd (0), evolution (0), evolution_set (0)
++  {}
+   loongarch_isa base_ (int _base) { base = _base; return *this; }
+   loongarch_isa fpu_ (int _fpu) { fpu = _fpu; return *this; }
+   loongarch_isa simd_ (int _simd) { simd = _simd; return *this; }
+diff --git a/src/gcc/config/loongarch/loongarch-driver.cc b/src/gcc/config/loongarch/loongarch-driver.cc
+index b3626984d..b84a6eaf7 100644
+--- a/src/gcc/config/loongarch/loongarch-driver.cc
++++ b/src/gcc/config/loongarch/loongarch-driver.cc
+@@ -42,9 +42,10 @@ extern struct obstack opts_obstack;
+ const char*
+ la_driver_init (int argc ATTRIBUTE_UNUSED, const char **argv ATTRIBUTE_UNUSED)
+ {
+-  /* Initialize all fields of la_target to -1 */
++  /* Initialize all fields of la_target.  */
+   loongarch_init_target (&la_target, M_OPT_UNSET, M_OPT_UNSET, M_OPT_UNSET,
+-			 M_OPT_UNSET, M_OPT_UNSET, M_OPT_UNSET, M_OPT_UNSET);
++			 M_OPT_UNSET, M_OPT_UNSET, M_OPT_UNSET, M_OPT_UNSET,
++			 0, 0);
+   return "";
+ }
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index d31becc67..935d09f45 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -140,7 +140,9 @@ static int with_default_simd = 0;
+ void
+ loongarch_init_target (struct loongarch_target *target,
+ 		       int cpu_arch, int cpu_tune, int fpu, int simd,
+-		       int abi_base, int abi_ext, int cmodel)
++		       int abi_base, int abi_ext, int cmodel,
++		       HOST_WIDE_INT isa_evolution,
++		       HOST_WIDE_INT isa_evolution_set)
+ {
+   if (!target)
+     return;
+@@ -148,6 +150,8 @@ loongarch_init_target (struct loongarch_target *target,
+   target->cpu_tune = cpu_tune;
+   target->isa.fpu = fpu;
+   target->isa.simd = simd;
++  target->isa.evolution = isa_evolution;
++  target->isa.evolution_set = isa_evolution_set;
+   target->abi.base = abi_base;
+   target->abi.ext = abi_ext;
+   target->cmodel = cmodel;
+@@ -184,6 +188,9 @@ loongarch_config_target (struct loongarch_target *target,
+       M_OPT_ABSENT (target->abi.base)	  ? 0 : 1,
+   };
+ 
++  int64_t isa_evolution = target->isa.evolution;
++  int64_t isa_evolution_set = target->isa.evolution_set;
++
+   /* 1.  Target ABI */
+   if (constrained.abi_base)
+     t.abi.base = target->abi.base;
+@@ -394,6 +401,13 @@ config_target_isa:
+ 	}
+     }
+ 
++  /* Apply the ISA evolution feature switches from the user.  */
++  HOST_WIDE_INT isa_evolution_orig = t.isa.evolution;
++  t.isa.evolution &= ~(~isa_evolution & isa_evolution_set);
++  t.isa.evolution |= isa_evolution & isa_evolution_set;
++
++  /* evolution_set means "what's different from the -march default".  */
++  t.isa.evolution_set = isa_evolution_orig ^ t.isa.evolution;
+ 
+   /* 4.  ABI-ISA compatibility */
+   /* Note:
+@@ -774,4 +788,5 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+   /* status of -mfpu */
+   opts->x_la_opt_fpu = target->isa.fpu;
+   opts->x_la_opt_simd = target->isa.simd;
++  opts->x_la_isa_evolution = target->isa.evolution;
+ }
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index 8491bee0d..204338553 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -34,7 +34,9 @@ extern struct loongarch_target la_target;
+ void
+ loongarch_init_target (struct loongarch_target *target,
+ 		       int cpu_arch, int cpu_tune, int fpu, int simd,
+-		       int abi_base, int abi_ext, int cmodel);
++		       int abi_base, int abi_ext, int cmodel,
++		       HOST_WIDE_INT isa_evolutions,
++		       HOST_WIDE_INT isa_evolutions_set);
+ 
+ 
+ /* Handler for "-m" option combinations,
+@@ -82,9 +84,23 @@ struct loongarch_flags {
+ 				   || la_target.abi.base == ABI_BASE_LP64F \
+ 				   || la_target.abi.base == ABI_BASE_LP64S)
+ 
+-#define ISA_HAS_LSX		  (la_target.isa.simd == ISA_EXT_SIMD_LSX \
+-				   || la_target.isa.simd == ISA_EXT_SIMD_LASX)
+-#define ISA_HAS_LASX		  (la_target.isa.simd == ISA_EXT_SIMD_LASX)
++#define ISA_HAS_LSX \
++  (la_target.isa.simd == ISA_EXT_SIMD_LSX \
++   || la_target.isa.simd == ISA_EXT_SIMD_LASX)
++
++#define ISA_HAS_LASX \
++  (la_target.isa.simd == ISA_EXT_SIMD_LASX)
++
++#define ISA_HAS_FRECIPE \
++  (la_target.isa.evolution & OPTION_MASK_ISA_FRECIPE)
++#define ISA_HAS_DIV32 \
++  (la_target.isa.evolution & OPTION_MASK_ISA_DIV32)
++#define ISA_HAS_LAM_BH \
++  (la_target.isa.evolution & OPTION_MASK_ISA_LAM_BH)
++#define ISA_HAS_LAMCAS \
++  (la_target.isa.evolution & OPTION_MASK_ISA_LAMCAS)
++#define ISA_HAS_LD_SEQ_SA \
++  (la_target.isa.evolution & OPTION_MASK_ISA_LD_SEQ_SA)
+ 
+ /* TARGET_ macros for use in *.md template conditionals */
+ #define TARGET_uARCH_LA464	  (la_target.cpu_tune == CPU_LA464)
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index e51cfa15a..06eefb836 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -3859,7 +3859,7 @@ loongarch_rtx_costs (rtx x, machine_mode mode, int outer_code,
+       else
+ 	{
+ 	  *total = loongarch_cost->int_div_si;
+-	  if (TARGET_64BIT && !TARGET_DIV32)
++	  if (TARGET_64BIT && !ISA_HAS_DIV32)
+ 	    *total += COSTS_N_INSNS (2);
+ 	}
+ 
+@@ -6105,7 +6105,7 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+        if (loongarch_cas_failure_memorder_needs_acquire (
+             memmodel_from_int (INTVAL (op))))
+         fputs ("dbar\t0b10100", file);
+-       else if (!TARGET_LD_SEQ_SA)
++       else if (!ISA_HAS_LD_SEQ_SA)
+         fputs ("dbar\t0x700", file);      
+       break;
+ 
+@@ -7507,7 +7507,8 @@ loongarch_option_override_internal (struct gcc_options *opts,
+   loongarch_init_target (&la_target,
+ 			 la_opt_cpu_arch, la_opt_cpu_tune, la_opt_fpu,
+ 			 la_opt_simd, la_opt_abi_base, la_opt_abi_ext,
+-			 la_opt_cmodel);
++			 la_opt_cmodel, opts->x_la_isa_evolution,
++			 opts_set->x_la_isa_evolution);
+ 
+   /* Handle target-specific options: compute defaults/conflicts etc.  */
+   loongarch_config_target (&la_target, NULL, 0);
+@@ -7548,11 +7549,6 @@ loongarch_option_override_internal (struct gcc_options *opts,
+   if (loongarch_branch_cost == 0)
+     loongarch_branch_cost = loongarch_cost->branch_cost;
+ 
+-  /* If the user hasn't disabled a feature added during ISA evolution,
+-     use the processor's default.  */
+-  isa_evolution |= (la_target.isa.evolution &
+-		    ~global_options_set.x_isa_evolution);
+-
+   /* Enable sw prefetching at -O3 and higher.  */
+   if (opts->x_flag_prefetch_loop_arrays < 0
+       && (opts->x_optimize >= 3 || opts->x_flag_profile_use)
+@@ -7683,7 +7679,7 @@ loongarch_option_override_internal (struct gcc_options *opts,
+     }
+   if (loongarch_recip)
+     recip_mask |= RECIP_MASK_ALL;
+-  if (!TARGET_FRECIPE)
++  if (!ISA_HAS_FRECIPE)
+     recip_mask = RECIP_MASK_NONE;
+ }
+ 
+@@ -10873,11 +10869,11 @@ loongarch_asm_code_end (void)
+ 	       loongarch_cpu_strings [la_target.cpu_tune]);
+       fprintf (asm_out_file, "%s Base ISA: %s\n", ASM_COMMENT_START,
+ 	       loongarch_isa_base_strings [la_target.isa.base]);
+-      DUMP_FEATURE (TARGET_FRECIPE);
+-      DUMP_FEATURE (TARGET_DIV32);
+-      DUMP_FEATURE (TARGET_LAM_BH);
+-      DUMP_FEATURE (TARGET_LAMCAS);
+-      DUMP_FEATURE (TARGET_LD_SEQ_SA);
++      DUMP_FEATURE (ISA_HAS_FRECIPE);
++      DUMP_FEATURE (ISA_HAS_DIV32);
++      DUMP_FEATURE (ISA_HAS_LAM_BH);
++      DUMP_FEATURE (ISA_HAS_LAMCAS);
++      DUMP_FEATURE (ISA_HAS_LD_SEQ_SA);
+     }
+ 
+   fputs ("\n\n", asm_out_file);
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 02c537d4c..23653a2b0 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -425,7 +425,7 @@
+ 
+ ;; A mode for anything legal as a input of a div or mod instruction.
+ (define_mode_iterator DIV [(DI "TARGET_64BIT")
+-			   (SI "!TARGET_64BIT || TARGET_DIV32")])
++			   (SI "!TARGET_64BIT || ISA_HAS_DIV32")])
+ 
+ ;; In GPR templates, a string like "mul.<d>" will expand to "mul.w" in the
+ ;; 32-bit version and "mul.d" in the 64-bit version.
+@@ -941,7 +941,7 @@
+   [(set (match_operand:ANYF 0 "register_operand" "=f")
+     (unspec:ANYF [(match_operand:ANYF 1 "register_operand" "f")]
+ 	     UNSPEC_RECIPE))]
+-  "TARGET_FRECIPE"
++  "ISA_HAS_FRECIPE"
+   "frecipe.<fmt>\t%0,%1"
+   [(set_attr "type" "frecipe")
+    (set_attr "mode" "<UNITMODE>")
+@@ -954,7 +954,7 @@
+ 		     (match_operand:GPR 2 "register_operand")))]
+   ""
+ {
+- if (GET_MODE (operands[0]) == SImode && TARGET_64BIT && !TARGET_DIV32)
++ if (GET_MODE (operands[0]) == SImode && TARGET_64BIT && !ISA_HAS_DIV32)
+   {
+     rtx reg1 = gen_reg_rtx (DImode);
+     rtx reg2 = gen_reg_rtx (DImode);
+@@ -994,7 +994,7 @@
+ 	(sign_extend
+ 	  (any_div:SI (match_operand:SI 1 "register_operand" "r,r,0")
+ 		      (match_operand:SI 2 "register_operand" "r,r,r"))))]
+-  "TARGET_64BIT && TARGET_DIV32"
++  "TARGET_64BIT && ISA_HAS_DIV32"
+ {
+   return loongarch_output_division ("<insn>.w<u>\t%0,%1,%2", operands);
+ }
+@@ -1014,7 +1014,7 @@
+ 	     (any_div:DI (match_operand:DI 1 "register_operand" "r,r,0")
+ 			 (match_operand:DI 2 "register_operand" "r,r,r")) 0)]
+ 	  UNSPEC_FAKE_ANY_DIV)))]
+-  "TARGET_64BIT && !TARGET_DIV32"
++  "TARGET_64BIT && !ISA_HAS_DIV32"
+ {
+   return loongarch_output_division ("<insn>.w<u>\t%0,%1,%2", operands);
+ }
+@@ -1197,7 +1197,7 @@
+   [(set (match_operand:ANYF 0 "register_operand" "=f")
+     (unspec:ANYF [(match_operand:ANYF 1 "register_operand" "f")]
+ 		 UNSPEC_RSQRTE))]
+-  "TARGET_FRECIPE"
++  "ISA_HAS_FRECIPE"
+   "frsqrte.<fmt>\t%0,%1"
+   [(set_attr "type" "frsqrte")
+    (set_attr "mode" "<UNITMODE>")])
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 56f6a9564..b5a46df4e 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -267,26 +267,26 @@ default value is 4.
+ ; Features added during ISA evolution.  This concept is different from ISA
+ ; extension, read Section 1.5 of LoongArch v1.10 Volume 1 for the
+ ; explanation.  These features may be implemented and enumerated with
+-; CPUCFG independantly, so we use bit flags to specify them.
+-Variable
+-HOST_WIDE_INT isa_evolution = 0
++; CPUCFG independently, so we use bit flags to specify them.
++TargetVariable
++HOST_WIDE_INT la_isa_evolution = 0
+ 
+ mfrecipe
+-Target Mask(ISA_FRECIPE) Var(isa_evolution)
++Target Mask(ISA_FRECIPE) Var(la_isa_evolution)
+ Support frecipe.{s/d} and frsqrte.{s/d} instructions.
+ 
+ mdiv32
+-Target Mask(ISA_DIV32) Var(isa_evolution)
++Target Mask(ISA_DIV32) Var(la_isa_evolution)
+ Support div.w[u] and mod.w[u] instructions with inputs not sign-extended.
+ 
+ mlam-bh
+-Target Mask(ISA_LAM_BH) Var(isa_evolution)
++Target Mask(ISA_LAM_BH) Var(la_isa_evolution)
+ Support am{swap/add}[_db].{b/h} instructions.
+ 
+ mlamcas
+-Target Mask(ISA_LAMCAS) Var(isa_evolution)
++Target Mask(ISA_LAMCAS) Var(la_isa_evolution)
+ Support amcas[_db].{b/h/w/d} instructions.
+ 
+ mld-seq-sa
+-Target Mask(ISA_LD_SEQ_SA) Var(isa_evolution)
++Target Mask(ISA_LD_SEQ_SA) Var(la_isa_evolution)
+ Do not need load-load barriers (dbar 0x700).
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 02e89247b..612377436 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -1479,7 +1479,7 @@
+   [(set (match_operand:FLSX 0 "register_operand" "=f")
+     (unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
+ 		 UNSPEC_LSX_VFRECIPE))]
+-  "ISA_HAS_LSX && TARGET_FRECIPE"
++  "ISA_HAS_LSX && ISA_HAS_FRECIPE"
+   "vfrecipe.<flsxfmt>\t%w0,%w1"
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+@@ -1512,7 +1512,7 @@
+   [(set (match_operand:FLSX 0 "register_operand" "=f")
+     (unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
+ 		 UNSPEC_LSX_VFRSQRTE))]
+-  "ISA_HAS_LSX && TARGET_FRECIPE"
++  "ISA_HAS_LSX && ISA_HAS_FRECIPE"
+   "vfrsqrte.<flsxfmt>\t%w0,%w1"
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+diff --git a/src/gcc/config/loongarch/sync.md b/src/gcc/config/loongarch/sync.md
+index a678e7131..5da5c2780 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -124,9 +124,9 @@
+       return "ld.<size>\t%0,%1\\n\\t"
+ 	     "dbar\t0x14";
+     case MEMMODEL_RELAXED:
+-      return TARGET_LD_SEQ_SA ? "ld.<size>\t%0,%1"
+-			      : "ld.<size>\t%0,%1\\n\\t"
+-				"dbar\t0x700";
++      return ISA_HAS_LD_SEQ_SA ? "ld.<size>\t%0,%1"
++			       : "ld.<size>\t%0,%1\\n\\t"
++				 "dbar\t0x700";
+ 
+     default:
+       /* The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST,
+@@ -193,7 +193,7 @@
+ 		       (match_operand:SHORT 1 "reg_or_0_operand" "rJ"))
+ 	   (match_operand:SI 2 "const_int_operand")] ;; model
+ 	 UNSPEC_SYNC_OLD_OP))]
+-  "TARGET_LAM_BH"
++  "ISA_HAS_LAM_BH"
+   "amadd%A2.<amo>\t$zero,%z1,%0"
+   [(set (attr "length") (const_int 4))])
+ 
+@@ -230,7 +230,7 @@
+ 	  UNSPEC_SYNC_EXCHANGE))
+    (set (match_dup 1)
+ 	(match_operand:SHORT 2 "register_operand" "r"))]
+-  "TARGET_LAM_BH"
++  "ISA_HAS_LAM_BH"
+   "amswap%A3.<amo>\t%0,%z2,%1"
+   [(set (attr "length") (const_int 4))])
+ 
+@@ -266,7 +266,7 @@
+ 			       (match_operand:QHWD 3 "reg_or_0_operand" "rJ")
+ 			       (match_operand:SI 4 "const_int_operand")]  ;; mod_s
+ 	 UNSPEC_COMPARE_AND_SWAP))]
+-  "TARGET_LAMCAS"
++  "ISA_HAS_LAMCAS"
+   "ori\t%0,%z2,0\n\tamcas%A4.<amo>\t%0,%z3,%1"
+   [(set (attr "length") (const_int 8))])
+ 
+@@ -296,7 +296,7 @@
+ 
+   operands[6] = mod_s;
+ 
+-  if (TARGET_LAMCAS)
++  if (ISA_HAS_LAMCAS)
+     emit_insn (gen_atomic_cas_value_strong<mode>_amcas (operands[1], operands[2],
+ 							 operands[3], operands[4],
+ 							 operands[6]));
+@@ -422,7 +422,7 @@
+ 
+   operands[6] = mod_s;
+ 
+-  if (TARGET_LAMCAS)
++  if (ISA_HAS_LAMCAS)
+     emit_insn (gen_atomic_cas_value_strong<mode>_amcas (operands[1], operands[2],
+ 						       operands[3], operands[4],
+ 						       operands[6]));
+@@ -642,7 +642,7 @@
+ 	(match_operand:SHORT 2 "register_operand"))]
+   ""
+ {
+-  if (TARGET_LAM_BH)
++  if (ISA_HAS_LAM_BH)
+     emit_insn (gen_atomic_exchange<mode>_short (operands[0], operands[1], operands[2], operands[3]));
+   else
+     {
+@@ -663,7 +663,7 @@
+ 		     (match_operand:SHORT 2 "reg_or_0_operand" "rJ"))
+ 	   (match_operand:SI 3 "const_int_operand")] ;; model
+ 	 UNSPEC_SYNC_OLD_OP))]
+-  "TARGET_LAM_BH"
++  "ISA_HAS_LAM_BH"
+   "amadd%A3.<amo>\t%0,%z2,%1"
+   [(set (attr "length") (const_int 4))])
+ 
+@@ -678,7 +678,7 @@
+ 	 UNSPEC_SYNC_OLD_OP))]
+   ""
+ {
+-  if (TARGET_LAM_BH)
++  if (ISA_HAS_LAM_BH)
+     emit_insn (gen_atomic_fetch_add<mode>_short (operands[0], operands[1],
+ 					     operands[2], operands[3]));
+   else
+-- 
+2.45.2
+

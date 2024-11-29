@@ -1,0 +1,51 @@
+From 11409a8c61d57df16cd8fd3f8fc9ad00216c79e5 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Mon, 2 Oct 2023 18:51:00 +0800
+Subject: [PATCH 127/301] LoongArch: Replace UNSPEC_FCOPYSIGN with copysign RTL
+
+When I added copysign support for LoongArch (r13-3702), we did not have
+a copysign RTL insn, so I had to use UNSPEC to represent the copysign
+instruction. Now the copysign RTX code has been added in r14-1586, so
+this patch removes those UNSPECs, and it uses the native RTL copysign
+insn.
+
+Inspired by rs6000 patch "Cleanup: Replace UNSPEC_COPYSIGN with copysign
+RTL" [1] from Michael Meissner.
+
+[1]: https://gcc.gnu.org/pipermail/gcc-patches/2023-September/631701.html
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (UNSPEC_FCOPYSIGN): Delete.
+	(copysign<mode>3): Use copysign RTL instead of UNSPEC.
+---
+ src/gcc/config/loongarch/loongarch.md | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 6dd0c092d..d306efdeb 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -37,7 +37,6 @@
+   UNSPEC_FCLASS
+   UNSPEC_FMAX
+   UNSPEC_FMIN
+-  UNSPEC_FCOPYSIGN
+   UNSPEC_FTINT
+   UNSPEC_FTINTRM
+   UNSPEC_FTINTRP
+@@ -1130,9 +1129,8 @@
+ 
+ (define_insn "copysign<mode>3"
+   [(set (match_operand:ANYF 0 "register_operand" "=f")
+-	(unspec:ANYF [(match_operand:ANYF 1 "register_operand" "f")
+-		      (match_operand:ANYF 2 "register_operand" "f")]
+-		     UNSPEC_FCOPYSIGN))]
++	(copysign:ANYF (match_operand:ANYF 1 "register_operand" "f")
++		       (match_operand:ANYF 2 "register_operand" "f")))]
+   "TARGET_HARD_FLOAT"
+   "fcopysign.<fmt>\t%0,%1,%2"
+   [(set_attr "type" "fcopysign")
+-- 
+2.45.2
+

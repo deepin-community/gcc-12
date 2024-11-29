@@ -1,0 +1,689 @@
+From 3101e6b937de57854f5928e5d1a3594589beba9d Mon Sep 17 00:00:00 2001
+From: mengqinggang <mengqinggang@loongson.cn>
+Date: Tue, 2 Apr 2024 09:57:20 +0800
+Subject: [PATCH 271/301] LoongArch: Add support for TLS descriptors.
+
+Add support for TLS descriptors on normal code model and extreme
+code model.
+
+Normal code model instruction sequence:
+  -mno-explicit-relocs:
+    la.tls.desc	$r4, s
+    add.d	$r12, $r4, $r2
+  -mexplicit-relocs:
+    pcalau12i	$r4,%desc_pc_hi20(s)
+    addi.d	$r4,$r4,%desc_pc_lo12(s)
+    ld.d	$r1,$r4,%desc_ld(s)
+    jirl	$r1,$r1,%desc_call(s)
+    add.d	$r12, $r4, $r2
+
+Extreme code model instruction sequence:
+  -mno-explicit-relocs:
+    la.tls.desc	$r4, $r12, s
+    add.d	$r12, $r4, $r2
+  -mexplicit-relocs:
+    pcalau12i	$r4,%desc_pc_hi20(s)
+    addi.d	$r12,$r0,%desc_pc_lo12(s)
+    lu32i.d	$r12,%desc64_pc_lo20(s)
+    lu52i.d	$r12,$r12,%desc64_pc_hi12(s)
+    add.d	$r4,$r4,$r12
+    ld.d	$r1,$r4,%desc_ld(s)
+    jirl	$r1,$r1,%desc_call(s)
+    add.d	$r12, $r4, $r2
+
+The default is still traditional TLS model, but can be configured with
+--with-tls={trad,desc}. The default can change to TLS descriptors once
+libc and LLVM support this.
+
+gcc/ChangeLog:
+
+	* config.gcc: Add --with-tls option to change TLS flavor.
+	* config/loongarch/genopts/loongarch.opt.in: Add -mtls-dialect to
+	configure TLS flavor.
+	* config/loongarch/loongarch-def.h (struct loongarch_target): Add
+	tls_dialect.
+	* config/loongarch/loongarch-driver.cc (la_driver_init): Add tls
+	flavor.
+	* config/loongarch/loongarch-opts.cc (loongarch_init_target): Add
+	tls_dialect.
+	(loongarch_config_target): Ditto.
+	(loongarch_update_gcc_opt_status): Ditto.
+	* config/loongarch/loongarch-opts.h (loongarch_init_target): Ditto.
+	(TARGET_TLS_DESC): New define.
+	* config/loongarch/loongarch.cc (loongarch_symbol_insns): Add TLS
+	DESC instructions sequence length.
+	(loongarch_legitimize_tls_address): New TLS DESC instruction sequence.
+	(loongarch_option_override_internal): Add la_opt_tls_dialect.
+	(loongarch_option_restore): Add la_target.tls_dialect.
+	* config/loongarch/loongarch.md (@got_load_tls_desc<mode>): Normal
+	code model for TLS DESC.
+	(got_load_tls_desc_off64): Extreme cmode model for TLS DESC.
+	* config/loongarch/loongarch.opt: Regenerate.
+	* config/loongarch/loongarch.opt.urls: Ditto.
+	* doc/invoke.texi: Add a description of the compilation option
+	'-mtls-dialect={trad,desc}'.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/cmodel-extreme-1.c: Add -mtls-dialect=trad.
+	* gcc.target/loongarch/cmodel-extreme-2.c: Ditto.
+	* gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c: Ditto.
+	* gcc.target/loongarch/explicit-relocs-medium-call36-auto-tls-ld-gd.c:
+	Ditto.
+	* gcc.target/loongarch/func-call-medium-1.c: Ditto.
+	* gcc.target/loongarch/func-call-medium-2.c: Ditto.
+	* gcc.target/loongarch/func-call-medium-3.c: Ditto.
+	* gcc.target/loongarch/func-call-medium-4.c: Ditto.
+	* gcc.target/loongarch/tls-extreme-macro.c: Ditto.
+	* gcc.target/loongarch/tls-gd-noplt.c: Ditto.
+	* gcc.target/loongarch/explicit-relocs-auto-extreme-tls-desc.c: New test.
+	* gcc.target/loongarch/explicit-relocs-auto-tls-desc.c: New test.
+	* gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c: New test.
+	* gcc.target/loongarch/explicit-relocs-tls-desc.c: New test.
+
+Co-authored-by: Lulu Cheng <chenglulu@loongson.cn>
+Co-authored-by: Xi Ruoyao <xry111@xry111.site>
+---
+ src/gcc/config.gcc                            | 19 +++++-
+ .../config/loongarch/genopts/loongarch.opt.in | 14 ++++
+ src/gcc/config/loongarch/loongarch-def.h      |  7 ++
+ src/gcc/config/loongarch/loongarch-driver.cc  |  2 +-
+ src/gcc/config/loongarch/loongarch-opts.cc    | 12 +++-
+ src/gcc/config/loongarch/loongarch-opts.h     |  3 +
+ src/gcc/config/loongarch/loongarch.cc         | 45 ++++++++----
+ src/gcc/config/loongarch/loongarch.md         | 68 +++++++++++++++++++
+ src/gcc/config/loongarch/loongarch.opt        | 14 ++++
+ .../gcc.target/loongarch/cmodel-extreme-1.c   |  2 +-
+ .../gcc.target/loongarch/cmodel-extreme-2.c   |  2 +-
+ .../explicit-relocs-auto-extreme-tls-desc.c   | 10 +++
+ .../loongarch/explicit-relocs-auto-tls-desc.c | 10 +++
+ .../explicit-relocs-auto-tls-ld-gd.c          |  2 +-
+ .../explicit-relocs-extreme-tls-desc.c        | 16 +++++
+ ...icit-relocs-medium-call36-auto-tls-ld-gd.c |  2 +-
+ .../loongarch/explicit-relocs-tls-desc.c      | 13 ++++
+ .../gcc.target/loongarch/func-call-medium-1.c |  2 +-
+ .../gcc.target/loongarch/func-call-medium-2.c |  2 +-
+ .../gcc.target/loongarch/func-call-medium-3.c |  2 +-
+ .../gcc.target/loongarch/func-call-medium-4.c |  2 +-
+ .../gcc.target/loongarch/tls-extreme-macro.c  |  2 +-
+ .../gcc.target/loongarch/tls-gd-noplt.c       |  2 +-
+ 23 files changed, 228 insertions(+), 25 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-extreme-tls-desc.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-desc.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c
+
+diff --git a/src/gcc/config.gcc b/src/gcc/config.gcc
+index 29f99cfe0..46401fff2 100644
+--- a/src/gcc/config.gcc
++++ b/src/gcc/config.gcc
+@@ -5001,7 +5001,7 @@ case "${target}" in
+ 		;;
+ 
+ 	loongarch*-*)
+-		supported_defaults="abi arch tune fpu simd multilib-default strict-align-lib"
++		supported_defaults="abi arch tune fpu simd multilib-default strict-align-lib tls"
+ 
+ 		# Local variables
+ 		unset \
+@@ -5259,6 +5259,18 @@ case "${target}" in
+ 			with_multilib_list="${abi_base}/${abi_ext}"
+ 		fi
+ 
++		# Handle --with-tls.
++		case "$with_tls" in
++		"" \
++		| trad | desc)
++		    # OK
++		    ;;
++		*)
++		    echo "Unknown TLS method used in --with-tls=$with_tls" 1>&2
++		    exit 1
++		    ;;
++		esac
++
+ 		# Check if the configured default ABI combination is included in
+ 		# ${with_multilib_list}.
+ 		loongarch_multilib_list_sane=no
+@@ -5894,6 +5906,11 @@ case ${target} in
+ 		lasx)    tm_defines="$tm_defines DEFAULT_ISA_EXT_SIMD=ISA_EXT_SIMD_LASX" ;;
+ 		esac
+ 
++		case ${with_tls} in
++		"" | trad)	tm_defines="$tm_defines DEFAULT_TLS_TYPE=TLS_TRADITIONAL" ;;
++		desc)		tm_defines="$tm_defines DEFAULT_TLS_TYPE=TLS_DESCRIPTORS" ;;
++		esac
++
+ 		tmake_file="loongarch/t-loongarch $tmake_file"
+ 		;;
+ 
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index 9c6f59bb8..f3d53f03c 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -245,6 +245,20 @@ mpass-mrelax-to-as
+ Driver Var(la_pass_mrelax_to_as) Init(HAVE_AS_MRELAX_OPTION)
+ Pass -mrelax or -mno-relax option to the assembler.
+ 
++Enum
++Name(tls_type) Type(int)
++The possible TLS dialects:
++
++EnumValue
++Enum(tls_type) String(trad) Value(TLS_TRADITIONAL)
++
++EnumValue
++Enum(tls_type) String(desc) Value(TLS_DESCRIPTORS)
++
++mtls-dialect=
++Target RejectNegative Joined Enum(tls_type) Var(la_opt_tls_dialect) Init(M_OPT_UNSET) Save
++Specify TLS dialect.
++
+ -param=loongarch-vect-unroll-limit=
+ Target Joined UInteger Var(la_vect_unroll_limit) Init(6) IntegerRange(1, 64) Param
+ Used to limit unroll factor which indicates how much the autovectorizer may
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index b1423bcfe..2fe44da5a 100644
+--- a/src/gcc/config/loongarch/loongarch-def.h
++++ b/src/gcc/config/loongarch/loongarch-def.h
+@@ -180,6 +180,7 @@ struct loongarch_target
+   int cpu_arch;	    /* CPU_ */
+   int cpu_tune;	    /* same */
+   int cmodel;	    /* CMODEL_ */
++  int tls_dialect;  /* TLS_ */
+ };
+ 
+ /* CPU model */
+@@ -193,6 +194,12 @@ enum {
+   N_TUNE_TYPES	    = 5
+ };
+ 
++/* TLS types.  */
++enum {
++  TLS_TRADITIONAL = 0,
++  TLS_DESCRIPTORS = 1
++};
++
+ /* CPU model properties */
+ extern loongarch_def_array<const char *, N_ARCH_TYPES>
+   loongarch_cpu_strings;
+diff --git a/src/gcc/config/loongarch/loongarch-driver.cc b/src/gcc/config/loongarch/loongarch-driver.cc
+index b84a6eaf7..8551cf94d 100644
+--- a/src/gcc/config/loongarch/loongarch-driver.cc
++++ b/src/gcc/config/loongarch/loongarch-driver.cc
+@@ -45,7 +45,7 @@ la_driver_init (int argc ATTRIBUTE_UNUSED, const char **argv ATTRIBUTE_UNUSED)
+   /* Initialize all fields of la_target.  */
+   loongarch_init_target (&la_target, M_OPT_UNSET, M_OPT_UNSET, M_OPT_UNSET,
+ 			 M_OPT_UNSET, M_OPT_UNSET, M_OPT_UNSET, M_OPT_UNSET,
+-			 0, 0);
++			 M_OPT_UNSET, 0, 0);
+   return "";
+ }
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index 404642a9e..062d430c2 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -144,6 +144,7 @@ void
+ loongarch_init_target (struct loongarch_target *target,
+ 		       int cpu_arch, int cpu_tune, int fpu, int simd,
+ 		       int abi_base, int abi_ext, int cmodel,
++		       int tls_dialect,
+ 		       HOST_WIDE_INT isa_evolution,
+ 		       HOST_WIDE_INT isa_evolution_set)
+ {
+@@ -158,6 +159,7 @@ loongarch_init_target (struct loongarch_target *target,
+   target->abi.base = abi_base;
+   target->abi.ext = abi_ext;
+   target->cmodel = cmodel;
++  target->tls_dialect = tls_dialect;
+ }
+ 
+ 
+@@ -179,7 +181,8 @@ loongarch_config_target (struct loongarch_target *target,
+   obstack_init (&msg_obstack);
+ 
+   struct {
+-    int arch, tune, fpu, simd, abi_base, abi_ext, cmodel, abi_flt;
++    int arch, tune, fpu, simd, abi_base, abi_ext, cmodel,
++	tls_dialect, abi_flt;
+   } constrained = {
+       M_OPT_ABSENT (target->cpu_arch)	  ? 0 : 1,
+       M_OPT_ABSENT (target->cpu_tune)	  ? 0 : 1,
+@@ -188,6 +191,7 @@ loongarch_config_target (struct loongarch_target *target,
+       M_OPT_ABSENT (target->abi.base)	  ? 0 : 1,
+       M_OPT_ABSENT (target->abi.ext)	  ? 0 : 1,
+       M_OPT_ABSENT (target->cmodel)	  ? 0 : 1,
++      M_OPT_ABSENT (target->tls_dialect)  ? 0 : 1,
+       M_OPT_ABSENT (target->abi.base)	  ? 0 : 1,
+   };
+ 
+@@ -556,6 +560,9 @@ fallback:
+       gcc_unreachable ();
+     }
+ 
++  t.tls_dialect = constrained.tls_dialect ? target->tls_dialect
++	  : DEFAULT_TLS_TYPE;
++
+   /* Cleanup and return.  */
+   obstack_free (&msg_obstack, NULL);
+   *target = t;
+@@ -791,6 +798,9 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+   /* status of -mcmodel */
+   opts->x_la_opt_cmodel = target->cmodel;
+ 
++  /* status of -mtls-dialect */
++  opts->x_la_opt_tls_dialect = target->tls_dialect;
++
+   /* status of -mfpu */
+   opts->x_la_opt_fpu = target->isa.fpu;
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index 177d587da..a3b467f4c 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -39,6 +39,7 @@ void
+ loongarch_init_target (struct loongarch_target *target,
+ 		       int cpu_arch, int cpu_tune, int fpu, int simd,
+ 		       int abi_base, int abi_ext, int cmodel,
++		       int tls_dialect,
+ 		       HOST_WIDE_INT isa_evolutions,
+ 		       HOST_WIDE_INT isa_evolutions_set);
+ 
+@@ -105,6 +106,8 @@ struct loongarch_flags {
+ #define TARGET_64BIT		  (la_target.isa.base == ISA_BASE_LA64)
+ #define TARGET_ABI_LP64		  ABI_LP64_P(la_target.abi.base)
+ 
++#define TARGET_TLS_DESC		  (la_target.tls_dialect == TLS_DESCRIPTORS)
++
+ #define ISA_HAS_LSX \
+   (la_target.isa.simd == ISA_EXT_SIMD_LSX \
+    || la_target.isa.simd == ISA_EXT_SIMD_LASX)
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index e7ac44060..fbf679796 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -2029,7 +2029,7 @@ loongarch_symbol_insns (enum loongarch_symbol_type type, machine_mode mode)
+ 
+     case SYMBOL_TLSGD:
+     case SYMBOL_TLSLDM:
+-      return 3;
++      return TARGET_TLS_DESC ? 4 : 3;
+ 
+     case SYMBOL_PCREL64:
+       return 5;
+@@ -2930,24 +2930,43 @@ loongarch_call_tls_get_addr (rtx sym, enum loongarch_symbol_type type, rtx v0)
+ static rtx
+ loongarch_legitimize_tls_address (rtx loc)
+ {
+-  rtx dest, tp, tmp, tmp1, tmp2, tmp3;
++  rtx dest, tp, tmp, tmp1, tmp2, tmp3, a0;
+   enum tls_model model = SYMBOL_REF_TLS_MODEL (loc);
+   rtx_insn *insn;
+ 
+   switch (model)
+     {
+     case TLS_MODEL_LOCAL_DYNAMIC:
+-      tmp = gen_rtx_REG (Pmode, GP_RETURN);
+-      dest = gen_reg_rtx (Pmode);
+-      insn = loongarch_call_tls_get_addr (loc, SYMBOL_TLSLDM, tmp);
+-      emit_libcall_block (insn, dest, tmp, loc);
+-      break;
+-
++      if (!TARGET_TLS_DESC)
++	{
++	  tmp = gen_rtx_REG (Pmode, GP_RETURN);
++	  dest = gen_reg_rtx (Pmode);
++	  insn = loongarch_call_tls_get_addr (loc, SYMBOL_TLSLDM, tmp);
++	  emit_libcall_block (insn, dest, tmp, loc);
++	  break;
++	}
++      /* Fall through.  */
+     case TLS_MODEL_GLOBAL_DYNAMIC:
+-      tmp = gen_rtx_REG (Pmode, GP_RETURN);
+-      dest = gen_reg_rtx (Pmode);
+-      insn = loongarch_call_tls_get_addr (loc, SYMBOL_TLSGD, tmp);
+-      emit_libcall_block (insn, dest, tmp, loc);
++      if (TARGET_TLS_DESC)
++	{
++	  a0 = gen_rtx_REG (Pmode, GP_ARG_FIRST);
++	  dest = gen_reg_rtx (Pmode);
++	  tp = gen_rtx_REG (Pmode, THREAD_POINTER_REGNUM);
++
++	  if (TARGET_CMODEL_EXTREME)
++	    emit_insn (gen_got_load_tls_desc_off64 (loc, gen_reg_rtx (DImode)));
++	  else
++	    emit_insn (gen_got_load_tls_desc (Pmode, loc));
++
++	  emit_insn (gen_add3_insn (dest, a0, tp));
++	}
++      else
++	{
++	  tmp = gen_rtx_REG (Pmode, GP_RETURN);
++	  dest = gen_reg_rtx (Pmode);
++	  insn = loongarch_call_tls_get_addr (loc, SYMBOL_TLSGD, tmp);
++	  emit_libcall_block (insn, dest, tmp, loc);
++	}
+       break;
+ 
+     case TLS_MODEL_INITIAL_EXEC:
+@@ -7649,6 +7668,7 @@ loongarch_option_override_internal (struct loongarch_target *target,
+ 			 opts->x_la_opt_abi_base,
+ 			 opts->x_la_opt_abi_ext,
+ 			 opts->x_la_opt_cmodel,
++			 opts->x_la_opt_tls_dialect,
+ 			 opts->x_la_isa_evolution,
+ 			 opts_set->x_la_isa_evolution);
+ 
+@@ -7695,6 +7715,7 @@ loongarch_option_restore (struct gcc_options *,
+   la_target.isa.evolution = ptr->x_la_isa_evolution;
+ 
+   la_target.cmodel = ptr->x_la_opt_cmodel;
++  la_target.tls_dialect = ptr->x_la_opt_tls_dialect;
+ }
+ 
+ /* Implement TARGET_CONDITIONAL_REGISTER_USAGE.  */
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 1b3525dde..95beb88fe 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -52,6 +52,8 @@
+ 
+   ;; TLS
+   UNSPEC_TLS
++  UNSPEC_TLS_DESC
++  UNSPEC_TLS_DESC_OFF64
+ 
+   ;; Stack tie
+   UNSPEC_TIE
+@@ -127,6 +129,15 @@
+    (T1_REGNUM			13)
+    (S0_REGNUM			23)
+ 
++   (FCC0_REGNUM			64)
++   (FCC1_REGNUM			65)
++   (FCC2_REGNUM			66)
++   (FCC3_REGNUM			67)
++   (FCC4_REGNUM			68)
++   (FCC5_REGNUM			69)
++   (FCC6_REGNUM			70)
++   (FCC7_REGNUM			71)
++
+    ;; Return path styles
+    (NORMAL_RETURN		0)
+    (SIBCALL_RETURN		1)
+@@ -2759,6 +2770,63 @@
+ 
+ ;; Thread-Local Storage
+ 
++(define_insn "@got_load_tls_desc<mode>"
++  [(set (reg:P 4)
++	(unspec:P
++	    [(match_operand:P 0 "symbolic_operand" "")]
++	    UNSPEC_TLS_DESC))
++    (clobber (reg:SI FCC0_REGNUM))
++    (clobber (reg:SI FCC1_REGNUM))
++    (clobber (reg:SI FCC2_REGNUM))
++    (clobber (reg:SI FCC3_REGNUM))
++    (clobber (reg:SI FCC4_REGNUM))
++    (clobber (reg:SI FCC5_REGNUM))
++    (clobber (reg:SI FCC6_REGNUM))
++    (clobber (reg:SI FCC7_REGNUM))
++    (clobber (reg:SI RETURN_ADDR_REGNUM))]
++  "TARGET_TLS_DESC"
++{
++  return TARGET_EXPLICIT_RELOCS
++    ? "pcalau12i\t$r4,%%desc_pc_hi20(%0)\n\t"
++      "addi.d\t$r4,$r4,%%desc_pc_lo12(%0)\n\t"
++      "ld.d\t$r1,$r4,%%desc_ld(%0)\n\t"
++      "jirl\t$r1,$r1,%%desc_call(%0)"
++    : "la.tls.desc\t$r4,%0";
++}
++  [(set_attr "got" "load")
++   (set_attr "mode" "<MODE>")
++   (set_attr "length" "16")])
++
++(define_insn "got_load_tls_desc_off64"
++  [(set (reg:DI 4)
++	(unspec:DI
++	    [(match_operand:DI 0 "symbolic_operand" "")]
++	    UNSPEC_TLS_DESC_OFF64))
++    (clobber (reg:SI FCC0_REGNUM))
++    (clobber (reg:SI FCC1_REGNUM))
++    (clobber (reg:SI FCC2_REGNUM))
++    (clobber (reg:SI FCC3_REGNUM))
++    (clobber (reg:SI FCC4_REGNUM))
++    (clobber (reg:SI FCC5_REGNUM))
++    (clobber (reg:SI FCC6_REGNUM))
++    (clobber (reg:SI FCC7_REGNUM))
++    (clobber (reg:SI RETURN_ADDR_REGNUM))
++    (clobber (match_operand:DI 1 "register_operand" "=&r"))]
++  "TARGET_TLS_DESC && TARGET_CMODEL_EXTREME"
++{
++  return TARGET_EXPLICIT_RELOCS
++    ? "pcalau12i\t$r4,%%desc_pc_hi20(%0)\n\t"
++      "addi.d\t%1,$r0,%%desc_pc_lo12(%0)\n\t"
++      "lu32i.d\t%1,%%desc64_pc_lo20(%0)\n\t"
++      "lu52i.d\t%1,%1,%%desc64_pc_hi12(%0)\n\t"
++      "add.d\t$r4,$r4,%1\n\t"
++      "ld.d\t$r1,$r4,%%desc_ld(%0)\n\t"
++      "jirl\t$r1,$r1,%%desc_call(%0)"
++    : "la.tls.desc\t$r4,%1,%0";
++}
++  [(set_attr "got" "load")
++   (set_attr "length" "28")])
++
+ (define_insn "@load_tls<mode>"
+   [(set (match_operand:P 0 "register_operand" "=r")
+ 	(unspec:P
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index ea848cd76..6f730d886 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -253,6 +253,20 @@ mpass-mrelax-to-as
+ Driver Var(la_pass_mrelax_to_as) Init(HAVE_AS_MRELAX_OPTION)
+ Pass -mrelax or -mno-relax option to the assembler.
+ 
++Enum
++Name(tls_type) Type(int)
++The possible TLS dialects:
++
++EnumValue
++Enum(tls_type) String(trad) Value(TLS_TRADITIONAL)
++
++EnumValue
++Enum(tls_type) String(desc) Value(TLS_DESCRIPTORS)
++
++mtls-dialect=
++Target RejectNegative Joined Enum(tls_type) Var(la_opt_tls_dialect) Init(M_OPT_UNSET) Save
++Specify TLS dialect.
++
+ -param=loongarch-vect-unroll-limit=
+ Target Joined UInteger Var(la_vect_unroll_limit) Init(6) IntegerRange(1, 64) Param
+ Used to limit unroll factor which indicates how much the autovectorizer may
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-1.c b/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-1.c
+index 564ee4017..6269607e7 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-1.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=always -fdump-rtl-final" } */
++/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -mtls-dialect=trad -fno-plt -mexplicit-relocs=always -fdump-rtl-final" } */
+ 
+ int a;
+ extern int b;
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-2.c b/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-2.c
+index ce834805f..35f6ee0bb 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-2.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=auto -fdump-rtl-final" } */
++/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -mtls-dialect=trad -fno-plt -mexplicit-relocs=auto -fdump-rtl-final" } */
+ 
+ #include "cmodel-extreme-1.c"
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-extreme-tls-desc.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-extreme-tls-desc.c
+new file mode 100644
+index 000000000..0fc7a1a51
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-extreme-tls-desc.c
+@@ -0,0 +1,10 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -fPIC -mcmodel=extreme -mexplicit-relocs=auto -mtls-dialect=desc" } */
++
++__thread int a __attribute__((visibility("hidden")));
++extern __thread int b __attribute__((visibility("default")));
++
++int test() { return a + b; }
++
++/* { dg-final { scan-assembler "la\\.tls\\.desc\t\\\$r4,\\\$r12,\\.LANCHOR0" { target tls_native } } } */
++/* { dg-final { scan-assembler "la\\.tls\\.desc\t\\\$r4,\\\$r12,\\.LANCHOR0" { target tls_native } } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-desc.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-desc.c
+new file mode 100644
+index 000000000..37947ecfd
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-desc.c
+@@ -0,0 +1,10 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -fPIC -mexplicit-relocs=auto -mtls-dialect=desc" } */
++
++__thread int a __attribute__((visibility("hidden")));
++extern __thread int b __attribute__((visibility("default")));
++
++int test() { return a + b; }
++
++/* { dg-final { scan-assembler "la\\.tls\\.desc\t\\\$r4,\\.LANCHOR0" { target tls_native } } } */
++/* { dg-final { scan-assembler "la\\.tls\\.desc\t\\\$r4,\\.LANCHOR0" { target tls_native } } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c
+index ca55fcfc5..b47e37c82 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -fPIC -mexplicit-relocs=auto" } */
++/* { dg-options "-O2 -fPIC -mexplicit-relocs=auto -mtls-dialect=trad" } */
+ 
+ __thread int a __attribute__((visibility("hidden")));
+ extern __thread int b __attribute__((visibility("default")));
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c
+new file mode 100644
+index 000000000..3797556e1
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c
+@@ -0,0 +1,16 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -fPIC -mexplicit-relocs -mtls-dialect=desc -mcmodel=extreme" } */
++
++__thread int a __attribute__((visibility("hidden")));
++extern __thread int b __attribute__((visibility("default")));
++
++int test() { return a + b; }
++
++/* { dg-final { scan-assembler "pcalau12i\t\\\$r4,%desc_pc_hi20\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "addi.d\t\\\$r12,\\\$r0,%desc_pc_lo12\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "lu32i.d\t\\\$r12,%desc64_pc_lo20\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "lu52i.d\t\\\$r12,\\\$r12,%desc64_pc_hi12\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "add.d\t\\\$r4,\\\$r4,\\\$r12" { target tls_native } } } */
++/* { dg-final { scan-assembler "ld.d\t\\\$r1,\\\$r4,%desc_ld\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "jirl\t\\\$r1,\\\$r1,%desc_call\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "add.d\t\\\$r12,\\\$r4,\\\$r2" { target tls_native } } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-medium-call36-auto-tls-ld-gd.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-medium-call36-auto-tls-ld-gd.c
+index d1a482083..cfb855323 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-medium-call36-auto-tls-ld-gd.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-medium-call36-auto-tls-ld-gd.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -fPIC -mexplicit-relocs=auto -mcmodel=medium -fplt" } */
++/* { dg-options "-O2 -fPIC -mexplicit-relocs=auto -mtls-dialect=trad -mcmodel=medium -fplt" } */
+ /* { dg-final { scan-assembler "pcaddu18i\t\\\$r1,%call36\\\(__tls_get_addr\\\)" { target { tls_native && loongarch_call36_support } } } } */
+ 
+ #include "./explicit-relocs-auto-tls-ld-gd.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c
+new file mode 100644
+index 000000000..f66903091
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c
+@@ -0,0 +1,13 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -fPIC -mexplicit-relocs -mtls-dialect=desc" } */
++
++__thread int a __attribute__((visibility("hidden")));
++extern __thread int b __attribute__((visibility("default")));
++
++int test() { return a + b; }
++
++/* { dg-final { scan-assembler "pcalau12i\t\\\$r4,%desc_pc_hi20\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "addi.d\t\\\$r4,\\\$r4,%desc_pc_lo12\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "ld.d\t\\\$r1,\\\$r4,%desc_ld\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "jirl\t\\\$r1,\\\$r1,%desc_call\\\(\\.LANCHOR0\\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "add.d\t\\\$r12,\\\$r4,\\\$r2" { target tls_native } } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c
+index 6339e832f..5e81df552 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O0 -fpic -fplt -mno-explicit-relocs -mcmodel=medium" } */
++/* { dg-options "-mabi=lp64d -O0 -fpic -fplt -mno-explicit-relocs -mtls-dialect=trad -mcmodel=medium" } */
+ /* { dg-final { scan-assembler "test:.*la\.global\t.*g\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*la\.global\t.*f\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*la\.local\t.*l\n\tjirl" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c
+index a53e75e0b..d73df2dd8 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O0 -fno-pic -fplt -mno-explicit-relocs -mcmodel=medium" } */
++/* { dg-options "-mabi=lp64d -O0 -fno-pic -fplt -mno-explicit-relocs -mtls-dialect=trad -mcmodel=medium" } */
+ /* { dg-final { scan-assembler "test:.*la\.global\t.*g\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*la\.local\t.*f\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*la\.local\t.*l\n\tjirl" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c
+index 0da7bf98e..88a667450 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O0 -fpic -fno-plt -mno-explicit-relocs -mcmodel=medium" } */
++/* { dg-options "-mabi=lp64d -O0 -fpic -fno-plt -mno-explicit-relocs -mtls-dialect=trad -mcmodel=medium" } */
+ /* { dg-final { scan-assembler "test:.*la\.global\t.*g\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*la\.global\t.*f\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*la\.local\t.*l\n\tjirl" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c
+index 0219688ae..f9dc12fea 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O0 -fno-pic -fno-plt -mno-explicit-relocs -mcmodel=medium" } */
++/* { dg-options "-mabi=lp64d -O0 -fno-pic -fno-plt -mno-explicit-relocs -mtls-dialect=trad -mcmodel=medium" } */
+ /* { dg-final { scan-assembler "test:.*la\.global\t.*g\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*la\.local\t.*f\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*la\.local\t.*l\n\tjirl" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/tls-extreme-macro.c b/src/gcc/testsuite/gcc.target/loongarch/tls-extreme-macro.c
+index 4341f8212..4adda4202 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/tls-extreme-macro.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/tls-extreme-macro.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=none" } */
++/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -mtls-dialect=trad -fno-plt -mexplicit-relocs=none" } */
+ /* { dg-final { scan-assembler "test_le:.*la.tls.le\t\\\$r\[0-9\]+,\\\.L" { target tls_native } } } */
+ /* { dg-final { scan-assembler "test_ie:.*la.tls.ie\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,\\\.L" { target tls_native } } } */
+ /* { dg-final { scan-assembler "test_ld:.*la.tls.ld\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,\\\.L.*la.global\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,__tls_get_addr" { target tls_native } } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c b/src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c
+index 9432c477e..dfa1bf53c 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O0 -fno-plt -mcmodel=normal -mexplicit-relocs" } */
++/* { dg-options "-O0 -fno-plt -mcmodel=normal -mtls-dialect=trad -mexplicit-relocs" } */
+ /* { dg-final { scan-assembler "pcalau12i\t.*%got_pc_hi20\\(__tls_get_addr\\)\n\tld\.d.*%got_pc_lo12\\(__tls_get_addr\\)" { target tls_native } } } */
+ 
+ __attribute__ ((tls_model ("global-dynamic"))) __thread int a;
+-- 
+2.45.2
+

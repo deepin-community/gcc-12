@@ -1,0 +1,68 @@
+From 79d82246c956e52d451e458ad84f6b80b8f34067 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 6 Feb 2024 17:49:50 +0800
+Subject: [PATCH 268/301] testsuite: Add a test case for negating FP vectors
+ containing zeros
+
+Recently I've fixed two wrong FP vector negate implementation which
+caused wrong sign bits in zeros in targets (r14-8786 and r14-8801).  To
+prevent a similar issue from happening again, add a test case.
+
+Tested on x86_64 (with SSE2, AVX, AVX2, and AVX512F), AArch64, MIPS
+(with MSA), LoongArch (with LSX and LASX).
+
+gcc/testsuite:
+
+	* gcc.dg/vect/vect-neg-zero.c: New test.
+---
+ src/gcc/testsuite/gcc.dg/vect/vect-neg-zero.c | 38 +++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.dg/vect/vect-neg-zero.c
+
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-neg-zero.c b/src/gcc/testsuite/gcc.dg/vect/vect-neg-zero.c
+new file mode 100644
+index 000000000..21fa00cfa
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-neg-zero.c
+@@ -0,0 +1,38 @@
++/* { dg-add-options ieee } */
++/* { dg-additional-options "-fno-associative-math -fsigned-zeros" } */
++
++double x[4] = {-0.0, 0.0, -0.0, 0.0};
++float y[8] = {-0.0, 0.0, -0.0, 0.0, -0.0, -0.0, 0.0, 0.0};
++
++static __attribute__ ((always_inline)) inline void
++test (int factor)
++{
++  double a[4];
++  float b[8];
++
++  asm ("" ::: "memory");
++
++  for (int i = 0; i < 2 * factor; i++)
++    a[i] = -x[i];
++
++  for (int i = 0; i < 4 * factor; i++)
++    b[i] = -y[i];
++
++#pragma GCC novector
++  for (int i = 0; i < 2 * factor; i++)
++    if (__builtin_signbit (a[i]) == __builtin_signbit (x[i]))
++      __builtin_abort ();
++
++#pragma GCC novector
++  for (int i = 0; i < 4 * factor; i++)
++    if (__builtin_signbit (b[i]) == __builtin_signbit (y[i]))
++      __builtin_abort ();
++}
++
++int
++main (void)
++{
++  test (1);
++  test (2);
++  return 0;
++}
+-- 
+2.45.2
+

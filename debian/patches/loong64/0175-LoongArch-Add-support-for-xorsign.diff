@@ -1,0 +1,412 @@
+From 80059e8c1e3a38dccb66ab2822dbb99231f861c2 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Fri, 17 Nov 2023 17:00:21 +0800
+Subject: [PATCH 175/301] LoongArch: Add support for xorsign.
+
+This patch adds support for xorsign pattern to scalar fp and vector. With the
+new expands, uniformly using vector bitwise logical operations to handle xorsign.
+
+On LoongArch64, floating-point registers and vector registers share the same register,
+so this patch also allows conversion between LSX vector mode and scalar fp mode to
+avoid unnecessary instruction generation.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (xorsign<mode>3): New expander.
+	* config/loongarch/loongarch.cc (loongarch_can_change_mode_class): Allow
+	conversion between LSX vector mode and scalar fp mode.
+	* config/loongarch/loongarch.md (@xorsign<mode>3): New expander.
+	* config/loongarch/lsx.md (@xorsign<mode>3): Ditto.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-xorsign-run.c: New test.
+	* gcc.target/loongarch/vector/lasx/lasx-xorsign.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-xorsign-run.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-xorsign.c: New test.
+	* gcc.target/loongarch/xorsign-run.c: New test.
+	* gcc.target/loongarch/xorsign.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 22 +++++--
+ src/gcc/config/loongarch/loongarch.cc         |  5 ++
+ src/gcc/config/loongarch/loongarch.md         | 17 ++++++
+ src/gcc/config/loongarch/lsx.md               | 23 +++++--
+ .../loongarch/vector/lasx/lasx-xorsign-run.c  | 60 +++++++++++++++++++
+ .../loongarch/vector/lasx/lasx-xorsign.c      | 19 ++++++
+ .../loongarch/vector/lsx/lsx-xorsign-run.c    | 60 +++++++++++++++++++
+ .../loongarch/vector/lsx/lsx-xorsign.c        | 19 ++++++
+ .../gcc.target/loongarch/xorsign-run.c        | 25 ++++++++
+ .../testsuite/gcc.target/loongarch/xorsign.c  | 18 ++++++
+ 10 files changed, 260 insertions(+), 8 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xorsign-run.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xorsign.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-xorsign-run.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-xorsign.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/xorsign-run.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/xorsign.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 116b30c07..de7c88f14 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -1065,10 +1065,10 @@
+    (set_attr "mode" "<MODE>")])
+ 
+ (define_insn "xor<mode>3"
+-  [(set (match_operand:ILASX 0 "register_operand" "=f,f,f")
+-	(xor:ILASX
+-	  (match_operand:ILASX 1 "register_operand" "f,f,f")
+-	  (match_operand:ILASX 2 "reg_or_vector_same_val_operand" "f,YC,Urv8")))]
++  [(set (match_operand:LASX 0 "register_operand" "=f,f,f")
++	(xor:LASX
++	  (match_operand:LASX 1 "register_operand" "f,f,f")
++	  (match_operand:LASX 2 "reg_or_vector_same_val_operand" "f,YC,Urv8")))]
+   "ISA_HAS_LASX"
+   "@
+    xvxor.v\t%u0,%u1,%u2
+@@ -3061,6 +3061,20 @@
+   operands[5] = gen_reg_rtx (<MODE>mode);
+ })
+ 
++(define_expand "xorsign<mode>3"
++  [(set (match_dup 4)
++    (and:FLASX (match_dup 3)
++        (match_operand:FLASX 2 "register_operand")))
++   (set (match_operand:FLASX 0 "register_operand")
++    (xor:FLASX (match_dup 4)
++         (match_operand:FLASX 1 "register_operand")))]
++  "ISA_HAS_LASX"
++{
++  operands[3] = loongarch_build_signbit_mask (<MODE>mode, 1, 0);
++
++  operands[4] = gen_reg_rtx (<MODE>mode);
++})
++
+ 
+ (define_insn "absv4df2"
+   [(set (match_operand:V4DF 0 "register_operand" "=f")
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 356554a5a..1fa060cb7 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -6701,6 +6701,11 @@ loongarch_can_change_mode_class (machine_mode from, machine_mode to,
+   if (LSX_SUPPORTED_MODE_P (from) && LSX_SUPPORTED_MODE_P (to))
+     return true;
+ 
++  /* Allow conversion between LSX vector mode and scalar fp mode. */
++  if ((LSX_SUPPORTED_MODE_P (from) && SCALAR_FLOAT_MODE_P (to))
++      || ((SCALAR_FLOAT_MODE_P (from) && LSX_SUPPORTED_MODE_P (to))))
++    return true;
++
+   return !reg_classes_intersect_p (FP_REGS, rclass);
+ }
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index cfd7a8ec6..afc3c591f 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -1164,6 +1164,23 @@
+   "fcopysign.<fmt>\t%0,%1,%2"
+   [(set_attr "type" "fcopysign")
+    (set_attr "mode" "<UNITMODE>")])
++
++(define_expand "@xorsign<mode>3"
++  [(match_operand:ANYF 0 "register_operand")
++   (match_operand:ANYF 1 "register_operand")
++   (match_operand:ANYF 2 "register_operand")]
++  "ISA_HAS_LSX"
++{
++  machine_mode lsx_mode
++    = <MODE>mode == SFmode ? V4SFmode : V2DFmode;
++  rtx tmp = gen_reg_rtx (lsx_mode);
++  rtx op1 = lowpart_subreg (lsx_mode, operands[1], <MODE>mode);
++  rtx op2 = lowpart_subreg (lsx_mode, operands[2], <MODE>mode);
++  emit_insn (gen_xorsign3 (lsx_mode, tmp, op1, op2));
++  emit_move_insn (operands[0],
++          lowpart_subreg (<MODE>mode, tmp, lsx_mode));
++  DONE;
++})
+ 
+ ;;
+ ;;  ....................
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 232399934..ce6ec6d69 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -957,10 +957,10 @@
+    (set_attr "mode" "<MODE>")])
+ 
+ (define_insn "xor<mode>3"
+-  [(set (match_operand:ILSX 0 "register_operand" "=f,f,f")
+-	(xor:ILSX
+-	  (match_operand:ILSX 1 "register_operand" "f,f,f")
+-	  (match_operand:ILSX 2 "reg_or_vector_same_val_operand" "f,YC,Urv8")))]
++  [(set (match_operand:LSX 0 "register_operand" "=f,f,f")
++	(xor:LSX
++	  (match_operand:LSX 1 "register_operand" "f,f,f")
++	  (match_operand:LSX 2 "reg_or_vector_same_val_operand" "f,YC,Urv8")))]
+   "ISA_HAS_LSX"
+   "@
+    vxor.v\t%w0,%w1,%w2
+@@ -2786,6 +2786,21 @@
+   operands[5] = gen_reg_rtx (<MODE>mode);
+ })
+ 
++(define_expand "@xorsign<mode>3"
++  [(set (match_dup 4)
++    (and:FLSX (match_dup 3)
++        (match_operand:FLSX 2 "register_operand")))
++   (set (match_operand:FLSX 0 "register_operand")
++    (xor:FLSX (match_dup 4)
++         (match_operand:FLSX 1 "register_operand")))]
++  "ISA_HAS_LSX"
++{
++  operands[3] = loongarch_build_signbit_mask (<MODE>mode, 1, 0);
++
++  operands[4] = gen_reg_rtx (<MODE>mode);
++})
++
++
+ (define_insn "absv2df2"
+   [(set (match_operand:V2DF 0 "register_operand" "=f")
+ 	(abs:V2DF (match_operand:V2DF 1 "register_operand" "f")))]
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xorsign-run.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xorsign-run.c
+new file mode 100644
+index 000000000..2295503d4
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xorsign-run.c
+@@ -0,0 +1,60 @@
++/* { dg-do run } */
++/* { dg-options "-O2 -ftree-vectorize -mlasx" } */
++/* { dg-require-effective-target loongarch_asx_hw } */
++
++#include "lasx-xorsign.c"
++
++extern void abort ();
++
++#define N 16
++float a[N] = {-0.1f, -3.2f, -6.3f, -9.4f,
++              -12.5f, -15.6f, -18.7f, -21.8f,
++              24.9f, 27.1f, 30.2f, 33.3f,
++              36.4f, 39.5f, 42.6f, 45.7f};
++float b[N] = {-1.2f, 3.4f, -5.6f, 7.8f,
++              -9.0f, 1.0f, -2.0f, 3.0f,
++              -4.0f, -5.0f, 6.0f, 7.0f,
++              -8.0f, -9.0f, 10.0f, 11.0f};
++float r[N];
++
++double ad[N] = {-0.1d,  -3.2d,  -6.3d,  -9.4d,
++                -12.5d, -15.6d, -18.7d, -21.8d,
++                 24.9d,  27.1d,  30.2d,  33.3d,
++                 36.4d,  39.5d,  42.6d, 45.7d};
++double bd[N] = {-1.2d,  3.4d, -5.6d,  7.8d,
++                -9.0d,  1.0d, -2.0d,  3.0d,
++                -4.0d, -5.0d,  6.0d,  7.0d,
++                -8.0d, -9.0d, 10.0d, 11.0d};
++double rd[N];
++
++void
++__attribute__ ((optimize ("-O0")))
++check_xorsignf (void)
++{
++  for (int i = 0; i < N; i++)
++    if (r[i] != a[i] * __builtin_copysignf (1.0f, b[i]))
++      abort ();
++}
++
++void
++__attribute__ ((optimize ("-O0")))
++check_xorsign (void)
++{
++  for (int i = 0; i < N; i++)
++    if (rd[i] != ad[i] * __builtin_copysign (1.0d, bd[i]))
++      abort ();
++}
++
++int
++main (void)
++{
++  my_xorsignf (r, a, b, N); 
++  /* check results:  */
++  check_xorsignf ();
++
++  my_xorsign (rd, ad, bd, N);
++  /* check results:  */
++  check_xorsign ();
++
++  return 0;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xorsign.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xorsign.c
+new file mode 100644
+index 000000000..190a9239b
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xorsign.c
+@@ -0,0 +1,19 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ftree-vectorize -mlasx" } */
++/* { dg-final { scan-assembler "xvand\\.v" } } */
++/* { dg-final { scan-assembler "xvxor\\.v" } } */
++/* { dg-final { scan-assembler-not "xvfmul" } } */
++
++double
++my_xorsign (double *restrict a, double *restrict b, double *restrict c, int n)
++{
++  for (int i = 0; i < n; i++)
++    a[i] = b[i] * __builtin_copysign (1.0d, c[i]);
++}
++
++float
++my_xorsignf (float *restrict a, float *restrict b, float *restrict c, int n)
++{
++  for (int i = 0; i < n; i++)
++    a[i] = b[i] * __builtin_copysignf (1.0f, c[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-xorsign-run.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-xorsign-run.c
+new file mode 100644
+index 000000000..22c5c03cc
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-xorsign-run.c
+@@ -0,0 +1,60 @@
++/* { dg-do run } */
++/* { dg-options "-O2 -ftree-vectorize -mlsx" } */
++/* { dg-require-effective-target loongarch_sx_hw } */
++
++#include "lsx-xorsign.c"
++
++extern void abort ();
++
++#define N 16
++float a[N] = {-0.1f, -3.2f, -6.3f, -9.4f,
++              -12.5f, -15.6f, -18.7f, -21.8f,
++              24.9f, 27.1f, 30.2f, 33.3f,
++              36.4f, 39.5f, 42.6f, 45.7f};
++float b[N] = {-1.2f, 3.4f, -5.6f, 7.8f,
++              -9.0f, 1.0f, -2.0f, 3.0f,
++              -4.0f, -5.0f, 6.0f, 7.0f,
++              -8.0f, -9.0f, 10.0f, 11.0f};
++float r[N];
++
++double ad[N] = {-0.1d,  -3.2d,  -6.3d,  -9.4d,
++                -12.5d, -15.6d, -18.7d, -21.8d,
++                 24.9d,  27.1d,  30.2d,  33.3d,
++                 36.4d,  39.5d,  42.6d, 45.7d};
++double bd[N] = {-1.2d,  3.4d, -5.6d,  7.8d,
++                -9.0d,  1.0d, -2.0d,  3.0d,
++                -4.0d, -5.0d,  6.0d,  7.0d,
++                -8.0d, -9.0d, 10.0d, 11.0d};
++double rd[N];
++
++void
++__attribute__ ((optimize ("-O0")))
++check_xorsignf (void)
++{
++  for (int i = 0; i < N; i++)
++    if (r[i] != a[i] * __builtin_copysignf (1.0f, b[i]))
++      abort ();
++}
++
++void
++__attribute__ ((optimize ("-O0")))
++check_xorsign (void)
++{
++  for (int i = 0; i < N; i++)
++    if (rd[i] != ad[i] * __builtin_copysign (1.0d, bd[i]))
++      abort ();
++}
++
++int
++main (void)
++{
++  my_xorsignf (r, a, b, N);
++  /* check results:  */
++  check_xorsignf ();
++
++  my_xorsign (rd, ad, bd, N);
++  /* check results:  */
++  check_xorsign ();
++
++  return 0;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-xorsign.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-xorsign.c
+new file mode 100644
+index 000000000..c2694c11e
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-xorsign.c
+@@ -0,0 +1,19 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ftree-vectorize -mlsx" } */
++/* { dg-final { scan-assembler "vand\\.v" } } */
++/* { dg-final { scan-assembler "vxor\\.v" } } */
++/* { dg-final { scan-assembler-not "vfmul" } } */
++
++double
++my_xorsign (double *restrict a, double *restrict b, double *restrict c, int n)
++{
++  for (int i = 0; i < n; i++)
++    a[i] = b[i] * __builtin_copysign (1.0d, c[i]);
++}
++
++float
++my_xorsignf (float *restrict a, float *restrict b, float *restrict c, int n)
++{
++  for (int i = 0; i < n; i++)
++    a[i] = b[i] * __builtin_copysignf (1.0f, c[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/xorsign-run.c b/src/gcc/testsuite/gcc.target/loongarch/xorsign-run.c
+new file mode 100644
+index 000000000..b4f28adf8
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/xorsign-run.c
+@@ -0,0 +1,25 @@
++/* { dg-do run } */
++/* { dg-options "-O2 -mlsx" } */
++/* { dg-require-effective-target loongarch_sx_hw } */
++
++extern void abort(void);
++
++static double x = 2.0;
++static float  y = 2.0;
++
++int main()
++{
++  if ((2.5 * __builtin_copysign(1.0d, x)) != 2.5)
++     abort();
++
++  if ((2.5 * __builtin_copysign(1.0f, y)) != 2.5)
++     abort();
++
++  if ((2.5 * __builtin_copysignf(1.0d, -x)) != -2.5)
++     abort();
++
++  if ((2.5 * __builtin_copysignf(1.0f, -y)) != -2.5)
++     abort();
++
++  return 0;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/xorsign.c b/src/gcc/testsuite/gcc.target/loongarch/xorsign.c
+new file mode 100644
+index 000000000..ca80603d4
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/xorsign.c
+@@ -0,0 +1,18 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx" } */
++/* { dg-final { scan-assembler "vand\\.v" } } */
++/* { dg-final { scan-assembler "vxor\\.v" } } */
++/* { dg-final { scan-assembler-not "fcopysign" } } */
++/* { dg-final { scan-assembler-not "fmul" } } */
++
++double
++my_xorsign (double a, double b)
++{
++  return a * __builtin_copysign (1.0d, b);
++}
++
++float
++my_xorsignf (float a, float b)
++{
++  return a * __builtin_copysignf (1.0f, b);
++}
+-- 
+2.45.2
+

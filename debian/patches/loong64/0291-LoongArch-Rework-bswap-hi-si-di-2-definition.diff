@@ -1,0 +1,224 @@
+From d42f912753e14a1051163b3e9b1d632e9df10959 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 28 Jul 2024 19:57:02 +0800
+Subject: [PATCH 291/301] LoongArch: Rework bswap{hi,si,di}2 definition
+
+Per a gcc-help thread we are generating sub-optimal code for
+__builtin_bswap{32,64}.  To fix it:
+
+- Use a single revb.d instruction for bswapdi2.
+- Use a single revb.2w instruction for bswapsi2 for TARGET_64BIT,
+  revb.2h + rotri.w for !TARGET_64BIT.
+- Use a single revb.2h instruction for bswapsi2 (x) r>> 16, and a single
+  revb.2w instruction for bswapdi2 (x) r>> 32.
+
+Unfortunately I cannot figure out a way to make the compiler generate
+revb.4h or revh.{2w,d} instructions.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (UNSPEC_REVB_2H, UNSPEC_REVB_4H,
+	UNSPEC_REVH_D): Remove UNSPECs.
+	(revb_4h, revh_d): Remove define_insn.
+	(revb_2h): Define as (rotatert:SI (bswap:SI x) 16) instead of
+	an UNSPEC.
+	(revb_2h_extend, revb_2w, *bswapsi2, bswapdi2): New define_insn.
+	(bswapsi2): Change to define_expand.  Only expand to revb.2h +
+	rotri.w if !TARGET_64BIT.
+	(bswapdi2): Change to define_insn of which the output is just a
+	revb.d instruction.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/revb.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.md         | 79 ++++++++++---------
+ src/gcc/testsuite/gcc.target/loongarch/revb.c | 61 ++++++++++++++
+ 2 files changed, 104 insertions(+), 36 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/revb.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 1ebcfa0c7..b1c828dba 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -20,11 +20,6 @@
+ ;; <http://www.gnu.org/licenses/>.
+ 
+ (define_c_enum "unspec" [
+-  ;; Integer operations that are too cumbersome to describe directly.
+-  UNSPEC_REVB_2H
+-  UNSPEC_REVB_4H
+-  UNSPEC_REVH_D
+-
+   ;; Floating-point moves.
+   UNSPEC_LOAD_LOW
+   UNSPEC_LOAD_HIGH
+@@ -3151,55 +3146,67 @@
+ 
+ ;; Reverse the order of bytes of operand 1 and store the result in operand 0.
+ 
+-(define_insn "bswaphi2"
+-  [(set (match_operand:HI 0 "register_operand" "=r")
+-	(bswap:HI (match_operand:HI 1 "register_operand" "r")))]
++(define_insn "revb_2h"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(rotatert:SI (bswap:SI (match_operand:SI 1 "register_operand" "r"))
++		     (const_int 16)))]
+   ""
+   "revb.2h\t%0,%1"
+   [(set_attr "type" "shift")])
+ 
+-(define_insn_and_split "bswapsi2"
+-  [(set (match_operand:SI 0 "register_operand" "=r")
+-	(bswap:SI (match_operand:SI 1 "register_operand" "r")))]
+-  ""
+-  "#"
+-  ""
+-  [(set (match_dup 0) (unspec:SI [(match_dup 1)] UNSPEC_REVB_2H))
+-   (set (match_dup 0) (rotatert:SI (match_dup 0) (const_int 16)))]
+-  ""
+-  [(set_attr "insn_count" "2")])
+-
+-(define_insn_and_split "bswapdi2"
++(define_insn "revb_2h_extend"
+   [(set (match_operand:DI 0 "register_operand" "=r")
+-	(bswap:DI (match_operand:DI 1 "register_operand" "r")))]
++	(sign_extend:DI
++	  (rotatert:SI
++	    (bswap:SI (match_operand:SI 1 "register_operand" "r"))
++	    (const_int 16))))]
+   "TARGET_64BIT"
+-  "#"
+-  ""
+-  [(set (match_dup 0) (unspec:DI [(match_dup 1)] UNSPEC_REVB_4H))
+-   (set (match_dup 0) (unspec:DI [(match_dup 0)] UNSPEC_REVH_D))]
+-  ""
+-  [(set_attr "insn_count" "2")])
++  "revb.2h\t%0,%1"
++  [(set_attr "type" "shift")])
+ 
+-(define_insn "revb_2h"
+-  [(set (match_operand:SI 0 "register_operand" "=r")
+-	(unspec:SI [(match_operand:SI 1 "register_operand" "r")] UNSPEC_REVB_2H))]
++(define_insn "bswaphi2"
++  [(set (match_operand:HI 0 "register_operand" "=r")
++	(bswap:HI (match_operand:HI 1 "register_operand" "r")))]
+   ""
+   "revb.2h\t%0,%1"
+   [(set_attr "type" "shift")])
+ 
+-(define_insn "revb_4h"
++(define_insn "revb_2w"
+   [(set (match_operand:DI 0 "register_operand" "=r")
+-	(unspec:DI [(match_operand:DI 1 "register_operand" "r")] UNSPEC_REVB_4H))]
++	(rotatert:DI (bswap:DI (match_operand:DI 1 "register_operand" "r"))
++		     (const_int 32)))]
+   "TARGET_64BIT"
+-  "revb.4h\t%0,%1"
++  "revb.2w\t%0,%1"
+   [(set_attr "type" "shift")])
+ 
+-(define_insn "revh_d"
++(define_insn "*bswapsi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(bswap:SI (match_operand:SI 1 "register_operand" "r")))]
++  "TARGET_64BIT"
++  "revb.2w\t%0,%1"
++  [(set_attr "type" "shift")])
++
++(define_expand "bswapsi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(bswap:SI (match_operand:SI 1 "register_operand" "r")))]
++  ""
++{
++  if (!TARGET_64BIT)
++    {
++      rtx t = gen_reg_rtx (SImode);
++      emit_insn (gen_revb_2h (t, operands[1]));
++      emit_insn (gen_rotrsi3 (operands[0], t, GEN_INT (16)));
++      DONE;
++    }
++})
++
++(define_insn "bswapdi2"
+   [(set (match_operand:DI 0 "register_operand" "=r")
+-	(unspec:DI [(match_operand:DI 1 "register_operand" "r")] UNSPEC_REVH_D))]
++	(bswap:DI (match_operand:DI 1 "register_operand" "r")))]
+   "TARGET_64BIT"
+-  "revh.d\t%0,%1"
++  "revb.d\t%0,%1"
+   [(set_attr "type" "shift")])
++
+ 
+ ;;
+ ;;  ....................
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/revb.c b/src/gcc/testsuite/gcc.target/loongarch/revb.c
+new file mode 100644
+index 000000000..27a5d0fc7
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/revb.c
+@@ -0,0 +1,61 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d" } */
++/* { dg-final { check-function-bodies "**" "" } } */
++
++/*
++**t1:
++**	revb.2w	\$r4,\$r4
++**	slli.w	\$r4,\$r4,0
++**	jr	\$r1
++*/
++unsigned int
++t1 (unsigned int x)
++{
++  return __builtin_bswap32 (x);
++}
++
++/*
++**t2:
++**	revb.d	\$r4,\$r4
++**	jr	\$r1
++*/
++unsigned long
++t2 (unsigned long x)
++{
++  return __builtin_bswap64 (x);
++}
++
++/*
++**t3:
++**	revb.2h	\$r4,\$r4
++**	jr	\$r1
++*/
++unsigned int
++t3 (unsigned int x)
++{
++  return (x >> 8) & 0xff00ff | (x << 8) & 0xff00ff00;
++}
++
++/*
++**t4:
++**	revb.2w	\$r4,\$r4
++**	jr	\$r1
++*/
++unsigned long
++t4 (unsigned long x)
++{
++  x = __builtin_bswap64 (x);
++  return x << 32 | x >> 32;
++}
++
++/*
++**t5:
++**	revb.2h	\$r4,\$r4
++**	bstrpick.w	\$r4,\$r4,15,0
++**	jr	\$r1
++*/
++unsigned short
++t5 (unsigned short x)
++{
++  return __builtin_bswap16 (x);
++}
+-- 
+2.45.2
+

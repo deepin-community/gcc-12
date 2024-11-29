@@ -1,0 +1,44 @@
+From f703c4f02e48d5bc8375e2e152dad7de34f918dc Mon Sep 17 00:00:00 2001
+From: Peng Fan <fanpeng@loongson.cn>
+Date: Fri, 28 Jul 2023 09:58:05 +0800
+Subject: [PATCH 118/301] libjccjit: do not link objects contained same element
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/jit/Make-lang.in | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/jit/Make-lang.in b/src/gcc/jit/Make-lang.in
+index 05033d1f1..c820c9174 100644
+--- a/src/gcc/jit/Make-lang.in
++++ b/src/gcc/jit/Make-lang.in
+@@ -160,18 +160,23 @@ LIBGCCJIT_EXTRA_OPTS = $(LIBGCCJIT_VERSION_SCRIPT_OPTION) \
+ endif
+ endif
+ 
++# Only link objects from $(EXTRA_GCC_OBJS) that's not already
++# included in libbackend.a ($(EXTRA_OBJS)).
++EXTRA_GCC_OBJS_EXCLUSIVE = $(foreach _obj1, $(EXTRA_GCC_OBJS), \
++       $(if $(filter $(_obj1), $(EXTRA_OBJS)),, $(_obj1)))
++
+ # We avoid using $(BACKEND) from Makefile.in in order to avoid pulling
+ # in main.o
+ $(LIBGCCJIT_FILENAME): $(jit_OBJS) \
+ 	libbackend.a libcommon-target.a libcommon.a \
+ 	$(CPPLIB) $(LIBDECNUMBER) \
+ 	$(LIBDEPS) $(srcdir)/jit/libgccjit.map \
+-	$(EXTRA_GCC_OBJS) $(jit.prev)
++	$(EXTRA_GCC_OBJS_EXCLUSIVE) $(jit.prev)
+ 	@$(call LINK_PROGRESS,$(INDEX.jit),start)
+ 	+$(LLINKER) $(ALL_LINKERFLAGS) $(LDFLAGS) -o $@ -shared \
+ 	     $(jit_OBJS) libbackend.a libcommon-target.a libcommon.a \
+ 	     $(CPPLIB) $(LIBDECNUMBER) $(EXTRA_GCC_LIBS) $(LIBS) $(BACKENDLIBS) \
+-	     $(EXTRA_GCC_OBJS) \
++		 $(EXTRA_GCC_OBJS_EXCLUSIVE) \
+ 	     $(LIBGCCJIT_EXTRA_OPTS)
+ 	@$(call LINK_PROGRESS,$(INDEX.jit),end)
+ 
+-- 
+2.45.2
+

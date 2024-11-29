@@ -1,0 +1,37 @@
+From 1bbd60c71412021df11534714ea9902d4f0a907d Mon Sep 17 00:00:00 2001
+From: Xiaolong Chen <chenxiaolong@loongson.cn>
+Date: Mon, 11 Sep 2023 09:35:24 +0800
+Subject: [PATCH 068/301] LoongArch: Add tests of -mstrict-align option.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/strict-align.c: New test.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ .../testsuite/gcc.target/loongarch/strict-align.c    | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/strict-align.c
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/strict-align.c b/src/gcc/testsuite/gcc.target/loongarch/strict-align.c
+new file mode 100644
+index 000000000..040d84958
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/strict-align.c
+@@ -0,0 +1,12 @@
++/* { dg-do compile } */
++/* { dg-options "-Ofast -mstrict-align -mlasx" } */
++/* { dg-final { scan-assembler-not "vfadd.s" } } */
++
++void
++foo (float *restrict x, float *restrict y)
++{
++  x[0] = x[0] + y[0];
++  x[1] = x[1] + y[1];
++  x[2] = x[2] + y[2];
++  x[3] = x[3] + y[3];
++}
+-- 
+2.45.2
+

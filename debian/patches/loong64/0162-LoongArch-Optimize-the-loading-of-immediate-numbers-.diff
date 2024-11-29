@@ -1,0 +1,112 @@
+From f14948e36c802eed8fc3969f9a67eb380dd3be45 Mon Sep 17 00:00:00 2001
+From: Guo Jie <guojie@loongson.cn>
+Date: Thu, 23 Nov 2023 11:04:17 +0800
+Subject: [PATCH 162/301] LoongArch: Optimize the loading of immediate numbers
+ with the same high and low 32-bit values
+
+For the following immediate load operation in gcc/testsuite/gcc.target/loongarch/imm-load1.c:
+
+	long long r = 0x0101010101010101;
+
+Before this patch:
+
+	lu12i.w	    $r15,16842752>>12
+	ori	    $r15,$r15,257
+	lu32i.d	    $r15,0x1010100000000>>32
+	lu52i.d	    $r15,$r15,0x100000000000000>>52
+
+After this patch:
+
+	lu12i.w     $r15,16842752>>12
+	ori         $r15,$r15,257
+	bstrins.d   $r15,$r15,63,32
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc
+	(enum loongarch_load_imm_method): Add new method.
+	(loongarch_build_integer): Add relevant implementations for
+	new method.
+	(loongarch_move_integer): Ditto.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/imm-load1.c: Change old check.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 22 ++++++++++++++++++-
+ .../gcc.target/loongarch/imm-load1.c          |  3 ++-
+ 2 files changed, 23 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 320c1ffea..02dba0bbd 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -142,12 +142,16 @@ struct loongarch_address_info
+ 
+    METHOD_LU52I:
+      Load 52-63 bit of the immediate number.
++
++   METHOD_MIRROR:
++     Copy 0-31 bit of the immediate number to 32-63bit.
+ */
+ enum loongarch_load_imm_method
+ {
+   METHOD_NORMAL,
+   METHOD_LU32I,
+-  METHOD_LU52I
++  METHOD_LU52I,
++  METHOD_MIRROR
+ };
+ 
+ struct loongarch_integer_op
+@@ -1553,11 +1557,23 @@ loongarch_build_integer (struct loongarch_integer_op *codes,
+ 
+       int sign31 = (value & (HOST_WIDE_INT_1U << 31)) >> 31;
+       int sign51 = (value & (HOST_WIDE_INT_1U << 51)) >> 51;
++
++      uint32_t hival = (uint32_t) (value >> 32);
++      uint32_t loval = (uint32_t) value;
++
+       /* Determine whether the upper 32 bits are sign-extended from the lower
+ 	 32 bits. If it is, the instructions to load the high order can be
+ 	 ommitted.  */
+       if (lu32i[sign31] && lu52i[sign31])
+ 	return cost;
++      /* If the lower 32 bits are the same as the upper 32 bits, just copy
++	 the lower 32 bits to the upper 32 bits.  */
++      else if (loval == hival)
++	{
++	  codes[cost].method = METHOD_MIRROR;
++	  codes[cost].curr_value = value;
++	  return cost + 1;
++	}
+       /* Determine whether bits 32-51 are sign-extended from the lower 32
+ 	 bits. If so, directly load 52-63 bits.  */
+       else if (lu32i[sign31])
+@@ -3230,6 +3246,10 @@ loongarch_move_integer (rtx temp, rtx dest, unsigned HOST_WIDE_INT value)
+ 			   gen_rtx_AND (DImode, x, GEN_INT (0xfffffffffffff)),
+ 			   GEN_INT (codes[i].value));
+ 	  break;
++	case METHOD_MIRROR:
++	  gcc_assert (mode == DImode);
++	  emit_insn (gen_insvdi (x, GEN_INT (32), GEN_INT (32), x));
++	  break;
+ 	default:
+ 	  gcc_unreachable ();
+ 	}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/imm-load1.c b/src/gcc/testsuite/gcc.target/loongarch/imm-load1.c
+index 2ff029712..f64cc2956 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/imm-load1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/imm-load1.c
+@@ -1,6 +1,7 @@
+ /* { dg-do compile } */
+ /* { dg-options "-mabi=lp64d -O2" } */
+-/* { dg-final { scan-assembler "test:.*lu52i\.d.*\n\taddi\.w.*\n\.L2:" } } */
++/* { dg-final { scan-assembler-not "test:.*lu52i\.d.*\n\taddi\.w.*\n\.L2:" } } */
++/* { dg-final { scan-assembler "test:.*lu12i\.w.*\n\tbstrins\.d.*\n\.L2:" } } */
+ 
+ 
+ extern long long b[10];
+-- 
+2.45.2
+

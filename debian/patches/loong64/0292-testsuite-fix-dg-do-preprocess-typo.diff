@@ -1,0 +1,26 @@
+From 337d968332ede25941c275d54553ec8912063919 Mon Sep 17 00:00:00 2001
+From: Sam James <sam@gentoo.org>
+Date: Tue, 30 Jul 2024 21:46:29 +0100
+Subject: [PATCH 292/301] testsuite: fix 'dg-do-preprocess' typo
+
+We want 'dg-do preprocess', not 'dg-do-preprocess'. Fix that.
+
+	PR target/106828
+	* g++.target/loongarch/pr106828.C: Fix 'dg-do compile' typo.
+---
+ src/gcc/testsuite/g++.target/loongarch/pr106828.C | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/testsuite/g++.target/loongarch/pr106828.C b/src/gcc/testsuite/g++.target/loongarch/pr106828.C
+index 190c1db71..0d13cbbd5 100644
+--- a/src/gcc/testsuite/g++.target/loongarch/pr106828.C
++++ b/src/gcc/testsuite/g++.target/loongarch/pr106828.C
+@@ -1,4 +1,4 @@
+-/* { dg-do-preprocess } */
++/* { dg-do preprocess } */
+ /* { dg-options "-mabi=lp64d -fsanitize=address" } */
+ 
+ /* Tests whether the compiler supports compile option '-fsanitize=address'.  */
+-- 
+2.45.2
+

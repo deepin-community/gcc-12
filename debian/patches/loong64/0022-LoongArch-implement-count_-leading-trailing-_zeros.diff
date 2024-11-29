@@ -1,0 +1,50 @@
+From 1aab66d923ab8451c070710786b39055be5f0c54 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 12 Oct 2022 22:06:07 +0800
+Subject: [PATCH 022/301] LoongArch: implement count_{leading,trailing}_zeros
+
+LoongArch always support clz and ctz instructions, so we can always use
+__builtin_{clz,ctz} for count_{leading,trailing}_zeros.  This improves
+the code of libgcc, and also benefits Glibc once we merge longlong.h
+there.
+
+Bootstrapped and regtested on loongarch64-linux-gnu.
+
+include/ChangeLog:
+
+	* longlong.h [__loongarch__] (count_leading_zeros): Define.
+	[__loongarch__] (count_trailing_zeros): Likewise.
+	[__loongarch__] (COUNT_LEADING_ZEROS_0): Likewise.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/include/longlong.h | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/include/longlong.h b/src/include/longlong.h
+index 64a7b10f9..c3a6f1e7e 100644
+--- a/src/include/longlong.h
++++ b/src/include/longlong.h
+@@ -593,6 +593,18 @@ extern UDItype __umulsidi3 (USItype, USItype);
+ #define UMUL_TIME 14
+ #endif
+ 
++#ifdef __loongarch__
++# if W_TYPE_SIZE == 32
++#  define count_leading_zeros(count, x)  ((count) = __builtin_clz (x))
++#  define count_trailing_zeros(count, x) ((count) = __builtin_ctz (x))
++#  define COUNT_LEADING_ZEROS_0 32
++# elif W_TYPE_SIZE == 64
++#  define count_leading_zeros(count, x)  ((count) = __builtin_clzll (x))
++#  define count_trailing_zeros(count, x) ((count) = __builtin_ctzll (x))
++#  define COUNT_LEADING_ZEROS_0 64
++# endif
++#endif
++
+ #if defined (__M32R__) && W_TYPE_SIZE == 32
+ #define add_ssaaaa(sh, sl, ah, al, bh, bl) \
+   /* The cmp clears the condition bit.  */ \
+-- 
+2.45.2
+

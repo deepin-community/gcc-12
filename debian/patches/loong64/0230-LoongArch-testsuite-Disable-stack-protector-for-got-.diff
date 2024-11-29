@@ -1,0 +1,35 @@
+From 5d2e198f42a5e296bed20d14f720bea41a346b21 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 23 Jan 2024 19:32:38 +0800
+Subject: [PATCH 230/301] LoongArch: testsuite: Disable stack protector for
+ got-load.C
+
+When building GCC with --enable-default-ssp, the stack protector is
+enabled for got-load.C, causing additional GOT loads for
+__stack_chk_guard.  So mem/u will be matched more than 2 times and the
+test will fail.
+
+Disable stack protector to fix this issue.
+
+gcc/testsuite:
+
+	* g++.target/loongarch/got-load.C (dg-options): Add
+	-fno-stack-protector.
+---
+ src/gcc/testsuite/g++.target/loongarch/got-load.C | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/testsuite/g++.target/loongarch/got-load.C b/src/gcc/testsuite/g++.target/loongarch/got-load.C
+index 20924c739..17870176a 100644
+--- a/src/gcc/testsuite/g++.target/loongarch/got-load.C
++++ b/src/gcc/testsuite/g++.target/loongarch/got-load.C
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O2 -mexplicit-relocs -mcmodel=normal -fdump-rtl-expand" } */
++/* { dg-options "-mabi=lp64d -O2 -mexplicit-relocs -mcmodel=normal -fdump-rtl-expand -fno-stack-protector" } */
+ /* { dg-final { scan-rtl-dump-times "mem/u" 2 "expand" } } */
+ 
+ #include <bits/stdc++.h>
+-- 
+2.45.2
+

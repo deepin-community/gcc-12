@@ -1,0 +1,173 @@
+From 795988ea3919b009c803eb6e862d171c7671f2b5 Mon Sep 17 00:00:00 2001
+From: Li Wei <liwei@loongson.cn>
+Date: Fri, 26 Jan 2024 16:41:11 +0800
+Subject: [PATCH 242/301] LoongArch: Adjust cost of vector_stmt that match
+ multiply-add pattern.
+
+We found that when only 128-bit vectorization was enabled, 549.fotonik3d_r
+failed to vectorize effectively. For this reason, we adjust the cost of
+128-bit vector_stmt that match the multiply-add pattern to facilitate 128-bit
+vectorization.
+The experimental results show that after the modification, 549.fotonik3d_r
+performance can be improved by 9.77% under the 128-bit vectorization option.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_multiply_add_p): New.
+	(loongarch_vector_costs::add_stmt_cost): Adjust.
+
+gcc/testsuite/ChangeLog:
+
+	* gfortran.dg/vect/vect-10.f90: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 48 +++++++++++++
+ .../testsuite/gfortran.dg/vect/vect-10.f90    | 71 +++++++++++++++++++
+ 2 files changed, 119 insertions(+)
+ create mode 100644 src/gcc/testsuite/gfortran.dg/vect/vect-10.f90
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 4cd2a038b..1e1f8706a 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -4153,6 +4153,37 @@ loongarch_vector_costs::determine_suggested_unroll_factor (loop_vec_info loop_vi
+   return 1 << ceil_log2 (uf);
+ }
+ 
++/* Check if assign stmt rhs op comes from a multiply-add operation.  */
++static bool
++loongarch_multiply_add_p (vec_info *vinfo, stmt_vec_info stmt_info)
++{
++  gassign *assign = dyn_cast<gassign *> (stmt_info->stmt);
++  if (!assign)
++    return false;
++  tree_code code = gimple_assign_rhs_code (assign);
++  if (code != PLUS_EXPR && code != MINUS_EXPR)
++    return false;
++
++  auto is_mul_result = [&](int i)
++    {
++      tree rhs = gimple_op (assign, i);
++      if (TREE_CODE (rhs) != SSA_NAME)
++	return false;
++
++      stmt_vec_info def_stmt_info = vinfo->lookup_def (rhs);
++      if (!def_stmt_info
++	  || STMT_VINFO_DEF_TYPE (def_stmt_info) != vect_internal_def)
++	return false;
++      gassign *rhs_assign = dyn_cast<gassign *> (def_stmt_info->stmt);
++      if (!rhs_assign || gimple_assign_rhs_code (rhs_assign) != MULT_EXPR)
++	return false;
++
++      return true;
++    };
++
++  return is_mul_result (1) || is_mul_result (2);
++}
++
+ unsigned
+ loongarch_vector_costs::add_stmt_cost (int count, vect_cost_for_stmt kind,
+ 				       stmt_vec_info stmt_info, slp_tree,
+@@ -4165,6 +4196,23 @@ loongarch_vector_costs::add_stmt_cost (int count, vect_cost_for_stmt kind,
+     {
+       int stmt_cost = loongarch_builtin_vectorization_cost (kind, vectype,
+ 							    misalign);
++      if (vectype && stmt_info)
++	{
++	  gassign *assign = dyn_cast<gassign *> (STMT_VINFO_STMT (stmt_info));
++	  machine_mode mode = TYPE_MODE (vectype);
++
++	  /* We found through testing that this strategy (the stmt that
++	     matches the multiply-add pattern) has positive returns only
++	     when applied to the 128-bit vector stmt, so this restriction
++	     is currently made.  */
++	  if (kind == vector_stmt && GET_MODE_SIZE (mode) == 16 && assign)
++	    {
++	      if (!vect_is_reduction (stmt_info)
++		  && loongarch_multiply_add_p (m_vinfo, stmt_info))
++		stmt_cost = 0;
++	    }
++	}
++
+       retval = adjust_cost_for_freq (stmt_info, where, count * stmt_cost);
+       m_costs[where] += retval;
+ 
+diff --git a/src/gcc/testsuite/gfortran.dg/vect/vect-10.f90 b/src/gcc/testsuite/gfortran.dg/vect/vect-10.f90
+new file mode 100644
+index 000000000..b85bc2702
+--- /dev/null
++++ b/src/gcc/testsuite/gfortran.dg/vect/vect-10.f90
+@@ -0,0 +1,71 @@
++! { dg-do compile }
++! { dg-additional-options "-Ofast -mlsx -fvect-cost-model=dynamic" { target loongarch64*-*-* } }
++
++MODULE material_mod
++
++IMPLICIT NONE
++
++integer, parameter :: dfp = selected_real_kind (13, 99)
++integer, parameter :: rfp = dfp
++
++PUBLIC Mat_updateE, iepx, iepy, iepz
++
++PRIVATE
++
++integer, dimension (:, :, :), allocatable :: iepx, iepy, iepz
++real (kind = rfp), dimension (:), allocatable :: Dbdx, Dbdy, Dbdz
++integer :: imin, jmin, kmin
++integer, dimension (6) :: Exsize
++integer, dimension (6) :: Eysize
++integer, dimension (6) :: Ezsize
++integer, dimension (6) :: Hxsize
++integer, dimension (6) :: Hysize
++integer, dimension (6) :: Hzsize
++
++CONTAINS
++
++SUBROUTINE mat_updateE (nx, ny, nz, Hx, Hy, Hz, Ex, Ey, Ez)
++
++integer, intent (in) :: nx, ny, nz
++
++real (kind = rfp), intent (inout),                                         &
++  dimension (Exsize (1) : Exsize (2), Exsize (3) : Exsize (4), Exsize (5) : Exsize (6)) :: Ex
++real (kind = rfp), intent (inout),                                         &
++  dimension (Eysize (1) : Eysize (2), Eysize (3) : Eysize (4), Eysize (5) : Eysize (6)) :: Ey
++real (kind = rfp), intent (inout),                                         &
++  dimension (Ezsize (1) : Ezsize (2), Ezsize (3) : Ezsize (4), Ezsize (5) : Ezsize (6)) :: Ez
++real (kind = rfp), intent (in),                                            &
++  dimension (Hxsize (1) : Hxsize (2), Hxsize (3) : Hxsize (4), Hxsize (5) : Hxsize (6)) :: Hx
++real (kind = rfp), intent (in),                                            &
++  dimension (Hysize (1) : Hysize (2), Hysize (3) : Hysize (4), Hysize (5) : Hysize (6)) :: Hy
++real (kind = rfp), intent (in),                                            &
++  dimension (Hzsize (1) : Hzsize (2), Hzsize (3) : Hzsize (4), Hzsize (5) : Hzsize (6)) :: Hz
++
++integer :: i, j, k, mp
++
++do k = kmin, nz
++  do j = jmin, ny
++    do i = imin, nx
++      mp = iepx (i, j, k)
++      Ex (i, j, k) = Ex (i, j, k) +                                        &
++                  Dbdy (mp) * (Hz (i, j, k  ) - Hz (i, j-1, k)) +          &
++                  Dbdz (mp) * (Hy (i, j, k-1) - Hy (i, j  , k))
++
++      mp = iepy (i, j, k)
++      Ey (i, j, k) = Ey (i, j, k) +                                        &
++                  Dbdz (mp) * (Hx (i  , j, k) - Hx (i, j, k-1)) +          &
++                  Dbdx (mp) * (Hz (i-1, j, k) - Hz (i, j, k  ))
++
++      mp = iepz (i, j, k)
++      Ez (i, j, k) = Ez (i, j, k) +                                        &
++                  Dbdx (mp) * (Hy (i, j  , k) - Hy (i-1, j, k)) +          &
++                  Dbdy (mp) * (Hx (i, j-1, k) - Hx (i  , j, k))
++    end do
++  end do
++end do
++
++END SUBROUTINE mat_updateE
++
++END MODULE material_mod
++
++! { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target loongarch64*-*-* } } }
+-- 
+2.45.2
+

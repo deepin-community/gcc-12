@@ -1,0 +1,305 @@
+From 2d361f9ff6d8711d276996394edb7ca0ab60a7d0 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 12 Dec 2023 04:54:21 +0800
+Subject: [PATCH 204/301] LoongArch: Replace -mexplicit-relocs=auto simple-used
+ address peephole2 with combine
+
+The problem with peephole2 is it uses a naive sliding-window algorithm
+and misses many cases.  For example:
+
+    float a[10000];
+    float t() { return a[0] + a[8000]; }
+
+is compiled to:
+
+    la.local    $r13,a
+    la.local    $r12,a+32768
+    fld.s       $f1,$r13,0
+    fld.s       $f0,$r12,-768
+    fadd.s      $f0,$f1,$f0
+
+by trunk.  But as we've explained in r14-4851, the following would be
+better with -mexplicit-relocs=auto:
+
+    pcalau12i   $r13,%pc_hi20(a)
+    pcalau12i   $r12,%pc_hi20(a+32000)
+    fld.s       $f1,$r13,%pc_lo12(a)
+    fld.s       $f0,$r12,%pc_lo12(a+32000)
+    fadd.s      $f0,$f1,$f0
+
+However the sliding-window algorithm just won't detect the pcalau12i/fld
+pair to be optimized.  Use a define_insn_and_rewrite in combine pass
+will work around the issue.
+
+gcc/ChangeLog:
+
+	* config/loongarch/predicates.md
+	(symbolic_pcrel_offset_operand): New define_predicate.
+	(mem_simple_ldst_operand): Likewise.
+	* config/loongarch/loongarch-protos.h
+	(loongarch_rewrite_mem_for_simple_ldst): Declare.
+	* config/loongarch/loongarch.cc
+	(loongarch_rewrite_mem_for_simple_ldst): Implement.
+	* config/loongarch/loongarch.md (simple_load<mode>): New
+	define_insn_and_rewrite.
+	(simple_load_<su>ext<SUBDI:mode><GPR:mode>): Likewise.
+	(simple_store<mode>): Likewise.
+	(define_peephole2): Remove la.local/[f]ld peepholes.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/explicit-relocs-auto-single-load-store-2.c:
+	New test.
+	* gcc.target/loongarch/explicit-relocs-auto-single-load-store-3.c:
+	New test.
+---
+ src/gcc/config/loongarch/loongarch-protos.h   |   1 +
+ src/gcc/config/loongarch/loongarch.cc         |  16 +++
+ src/gcc/config/loongarch/loongarch.md         | 114 +++++-------------
+ src/gcc/config/loongarch/predicates.md        |  13 ++
+ ...explicit-relocs-auto-single-load-store-2.c |  11 ++
+ ...explicit-relocs-auto-single-load-store-3.c |  18 +++
+ 6 files changed, 86 insertions(+), 87 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-2.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-3.c
+
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index 2067e50c3..5060efbb6 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -163,6 +163,7 @@ extern bool loongarch_use_ins_ext_p (rtx, HOST_WIDE_INT, HOST_WIDE_INT);
+ extern bool loongarch_check_zero_div_p (void);
+ extern bool loongarch_pre_reload_split (void);
+ extern int loongarch_use_bstrins_for_ior_with_mask (machine_mode, rtx *);
++extern rtx loongarch_rewrite_mem_for_simple_ldst (rtx);
+ 
+ union loongarch_gen_fn_ptrs
+ {
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index d4c32420e..ddf17a2b0 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -5713,6 +5713,22 @@ loongarch_use_bstrins_for_ior_with_mask (machine_mode mode, rtx *op)
+   return 0;
+ }
+ 
++/* Rewrite a MEM for simple load/store under -mexplicit-relocs=auto
++   -mcmodel={normal/medium}.  */
++rtx
++loongarch_rewrite_mem_for_simple_ldst (rtx mem)
++{
++  rtx addr = XEXP (mem, 0);
++  rtx hi = gen_rtx_UNSPEC (Pmode, gen_rtvec (1, addr),
++			   UNSPEC_PCALAU12I_GR);
++  rtx new_mem;
++
++  addr = gen_rtx_LO_SUM (Pmode, force_reg (Pmode, hi), addr);
++  new_mem = gen_rtx_MEM (GET_MODE (mem), addr);
++  MEM_COPY_ATTRIBUTES (new_mem, mem);
++  return new_mem;
++}
++
+ /* Print the text for PRINT_OPERAND punctation character CH to FILE.
+    The punctuation characters are:
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index ed4d4b906..3c61a0cf4 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -4135,101 +4135,41 @@
+ ;;
+ ;; And if the pseudo op cannot be relaxed, we'll get a worse result (with
+ ;; 3 instructions).
+-(define_peephole2
+-  [(set (match_operand:P 0 "register_operand")
+-	(match_operand:P 1 "symbolic_pcrel_operand"))
+-   (set (match_operand:LD_AT_LEAST_32_BIT 2 "register_operand")
+-	(mem:LD_AT_LEAST_32_BIT (match_dup 0)))]
+-  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
+-   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
+-   && (peep2_reg_dead_p (2, operands[0]) \
+-       || REGNO (operands[0]) == REGNO (operands[2]))"
+-  [(set (match_dup 2)
+-	(mem:LD_AT_LEAST_32_BIT (lo_sum:P (match_dup 0) (match_dup 1))))]
+-  {
+-    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
+-  })
+-
+-(define_peephole2
+-  [(set (match_operand:P 0 "register_operand")
+-	(match_operand:P 1 "symbolic_pcrel_operand"))
+-   (set (match_operand:LD_AT_LEAST_32_BIT 2 "register_operand")
+-	(mem:LD_AT_LEAST_32_BIT (plus (match_dup 0)
+-				(match_operand 3 "const_int_operand"))))]
+-  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
+-   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
+-   && (peep2_reg_dead_p (2, operands[0]) \
+-       || REGNO (operands[0]) == REGNO (operands[2]))"
+-  [(set (match_dup 2)
+-	(mem:LD_AT_LEAST_32_BIT (lo_sum:P (match_dup 0) (match_dup 1))))]
+-  {
+-    operands[1] = plus_constant (Pmode, operands[1], INTVAL (operands[3]));
+-    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
+-  })
+-
+-(define_peephole2
+-  [(set (match_operand:P 0 "register_operand")
+-	(match_operand:P 1 "symbolic_pcrel_operand"))
+-   (set (match_operand:GPR 2 "register_operand")
+-	(any_extend:GPR (mem:SUBDI (match_dup 0))))]
+-  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
+-   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
+-   && (peep2_reg_dead_p (2, operands[0]) \
+-       || REGNO (operands[0]) == REGNO (operands[2]))"
+-  [(set (match_dup 2)
+-	(any_extend:GPR (mem:SUBDI (lo_sum:P (match_dup 0)
+-					     (match_dup 1)))))]
++(define_insn_and_rewrite "simple_load<mode>"
++  [(set (match_operand:LD_AT_LEAST_32_BIT 0 "register_operand" "=r,f")
++	(match_operand:LD_AT_LEAST_32_BIT 1 "mem_simple_ldst_operand" ""))]
++  "loongarch_pre_reload_split ()
++   && la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM)"
++  "#"
++  "&& true"
+   {
+-    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++    operands[1] = loongarch_rewrite_mem_for_simple_ldst (operands[1]);
+   })
+ 
+-(define_peephole2
+-  [(set (match_operand:P 0 "register_operand")
+-	(match_operand:P 1 "symbolic_pcrel_operand"))
+-   (set (match_operand:GPR 2 "register_operand")
++(define_insn_and_rewrite "simple_load_<su>ext<SUBDI:mode><GPR:mode>"
++  [(set (match_operand:GPR 0 "register_operand" "=r")
+ 	(any_extend:GPR
+-	  (mem:SUBDI (plus (match_dup 0)
+-			   (match_operand 3 "const_int_operand")))))]
+-  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
+-   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
+-   && (peep2_reg_dead_p (2, operands[0]) \
+-       || REGNO (operands[0]) == REGNO (operands[2]))"
+-  [(set (match_dup 2)
+-	(any_extend:GPR (mem:SUBDI (lo_sum:P (match_dup 0)
+-					     (match_dup 1)))))]
+-  {
+-    operands[1] = plus_constant (Pmode, operands[1], INTVAL (operands[3]));
+-    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
+-  })
+-
+-(define_peephole2
+-  [(set (match_operand:P 0 "register_operand")
+-	(match_operand:P 1 "symbolic_pcrel_operand"))
+-   (set (mem:ST_ANY (match_dup 0))
+-	(match_operand:ST_ANY 2 "register_operand"))]
+-  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
+-   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
+-   && (peep2_reg_dead_p (2, operands[0])) \
+-   && REGNO (operands[0]) != REGNO (operands[2])"
+-  [(set (mem:ST_ANY (lo_sum:P (match_dup 0) (match_dup 1))) (match_dup 2))]
++	  (match_operand:SUBDI 1 "mem_simple_ldst_operand" "")))]
++  "loongarch_pre_reload_split ()
++   && la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM)"
++  "#"
++  "&& true"
+   {
+-    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++    operands[1] = loongarch_rewrite_mem_for_simple_ldst (operands[1]);
+   })
+ 
+-(define_peephole2
+-  [(set (match_operand:P 0 "register_operand")
+-	(match_operand:P 1 "symbolic_pcrel_operand"))
+-   (set (mem:ST_ANY (plus (match_dup 0)
+-			  (match_operand 3 "const_int_operand")))
+-	(match_operand:ST_ANY 2 "register_operand"))]
+-  "la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO \
+-   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM) \
+-   && (peep2_reg_dead_p (2, operands[0])) \
+-   && REGNO (operands[0]) != REGNO (operands[2])"
+-  [(set (mem:ST_ANY (lo_sum:P (match_dup 0) (match_dup 1))) (match_dup 2))]
++(define_insn_and_rewrite "simple_store<mode>"
++  [(set (match_operand:ST_ANY 0 "mem_simple_ldst_operand" "")
++	(match_operand:ST_ANY 1 "reg_or_0_operand" "r,f"))]
++  "loongarch_pre_reload_split ()
++   && la_opt_explicit_relocs == EXPLICIT_RELOCS_AUTO
++   && (TARGET_CMODEL_NORMAL || TARGET_CMODEL_MEDIUM)"
++  "#"
++  "&& true"
+   {
+-    operands[1] = plus_constant (Pmode, operands[1], INTVAL (operands[3]));
+-    emit_insn (gen_pcalau12i_gr<P:mode> (operands[0], operands[1]));
++    operands[0] = loongarch_rewrite_mem_for_simple_ldst (operands[0]);
+   })
+ 
+ ;; Synchronization instructions.
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 58f9a7826..3698b9103 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -579,6 +579,19 @@
+   return loongarch_symbolic_constant_p (op, &type) && type == SYMBOL_PCREL;
+ })
+ 
++(define_predicate "symbolic_pcrel_offset_operand"
++  (and (match_code "plus")
++       (match_operand 0 "symbolic_pcrel_operand")
++       (match_operand 1 "const_int_operand")))
++
++(define_predicate "mem_simple_ldst_operand"
++  (match_code "mem")
++{
++  op = XEXP (op, 0);
++  return (symbolic_pcrel_operand (op, Pmode)
++	  || symbolic_pcrel_offset_operand (op, Pmode));
++})
++
+ (define_predicate "equality_operator"
+   (match_code "eq,ne"))
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-2.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-2.c
+new file mode 100644
+index 000000000..42cb966d1
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-2.c
+@@ -0,0 +1,11 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d -mexplicit-relocs=auto" } */
++
++float a[8001];
++float
++t (void)
++{
++  return a[0] + a[8000];
++}
++
++/* { dg-final { scan-assembler-not "la.local" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-3.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-3.c
+new file mode 100644
+index 000000000..32aa5383d
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-single-load-store-3.c
+@@ -0,0 +1,18 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mexplicit-relocs=auto -fdump-rtl-final" } */
++/* { dg-final { scan-rtl-dump-times "mem/v/c" 2 "final" } } */
++/* { dg-final { scan-assembler-not "la\\.local" } } */
++
++volatile unsigned long counter;
++
++unsigned long
++read (void)
++{
++  return counter;
++}
++
++void
++clear (void)
++{
++  counter = 0;
++}
+-- 
+2.45.2
+

@@ -1,0 +1,146 @@
+From 0dea439f456338f116a97b5bb3dd1dfa381b0a92 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Mon, 2 Oct 2023 13:00:18 +0800
+Subject: [PATCH 138/301] LoongArch: Use explicit relocs for TLS access with
+ -mexplicit-relocs=auto
+
+The linker does not know how to relax TLS access for LoongArch, so let's
+emit machine instructions with explicit relocs for TLS.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_explicit_relocs_p):
+	Return true for TLS symbol types if -mexplicit-relocs=auto.
+	(loongarch_call_tls_get_addr): Replace TARGET_EXPLICIT_RELOCS
+	with la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE.
+	(loongarch_legitimize_tls_address): Likewise.
+	* config/loongarch/loongarch.md (@tls_low<mode>): Remove
+	TARGET_EXPLICIT_RELOCS from insn condition.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c: New
+	test.
+	* gcc.target/loongarch/explicit-relocs-auto-tls-le-ie.c: New
+	test.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 37 ++++++++++++-------
+ src/gcc/config/loongarch/loongarch.md         |  2 +-
+ .../explicit-relocs-auto-tls-ld-gd.c          |  9 +++++
+ .../explicit-relocs-auto-tls-le-ie.c          |  6 +++
+ 4 files changed, 40 insertions(+), 14 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-le-ie.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 1d95691f3..4b7f971b2 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -1933,16 +1933,27 @@ loongarch_explicit_relocs_p (enum loongarch_symbol_type type)
+   if (la_opt_explicit_relocs != EXPLICIT_RELOCS_AUTO)
+     return la_opt_explicit_relocs == EXPLICIT_RELOCS_ALWAYS;
+ 
+-  /* If we are performing LTO for a final link, and we have the linker
+-     plugin so we know the resolution of the symbols, then all GOT
+-     references are binding to external symbols or preemptable symbols.
+-     So the linker cannot relax them.  */
+-  return (in_lto_p
+-	  && !flag_incremental_link
+-	  && HAVE_LTO_PLUGIN == 2
+-	  && (!global_options_set.x_flag_use_linker_plugin
+-	      || global_options.x_flag_use_linker_plugin)
+-	  && type == SYMBOL_GOT_DISP);
++  switch (type)
++    {
++      case SYMBOL_TLS_IE:
++      case SYMBOL_TLS_LE:
++      case SYMBOL_TLSGD:
++      case SYMBOL_TLSLDM:
++	/* The linker don't know how to relax TLS accesses.  */
++	return true;
++      case SYMBOL_GOT_DISP:
++	/* If we are performing LTO for a final link, and we have the
++	   linker plugin so we know the resolution of the symbols, then
++	   all GOT references are binding to external symbols or
++	   preemptable symbols.  So the linker cannot relax them.  */
++	return (in_lto_p
++		&& !flag_incremental_link
++		&& HAVE_LTO_PLUGIN == 2
++		&& (!global_options_set.x_flag_use_linker_plugin
++		    || global_options.x_flag_use_linker_plugin));
++      default:
++	return false;
++    }
+ }
+ 
+ /* Returns the number of instructions necessary to reference a symbol.  */
+@@ -2749,7 +2760,7 @@ loongarch_call_tls_get_addr (rtx sym, enum loongarch_symbol_type type, rtx v0)
+ 
+   start_sequence ();
+ 
+-  if (TARGET_EXPLICIT_RELOCS)
++  if (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE)
+     {
+       /* Split tls symbol to high and low.  */
+       rtx high = gen_rtx_HIGH (Pmode, copy_rtx (loc));
+@@ -2914,7 +2925,7 @@ loongarch_legitimize_tls_address (rtx loc)
+ 	  tp = gen_rtx_REG (Pmode, THREAD_POINTER_REGNUM);
+ 	  tmp1 = gen_reg_rtx (Pmode);
+ 	  dest = gen_reg_rtx (Pmode);
+-	  if (TARGET_EXPLICIT_RELOCS)
++	  if (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE)
+ 	    {
+ 	      tmp2 = loongarch_unspec_address (loc, SYMBOL_TLS_IE);
+ 	      tmp3 = gen_reg_rtx (Pmode);
+@@ -2951,7 +2962,7 @@ loongarch_legitimize_tls_address (rtx loc)
+ 	  tmp1 = gen_reg_rtx (Pmode);
+ 	  dest = gen_reg_rtx (Pmode);
+ 
+-	  if (TARGET_EXPLICIT_RELOCS)
++	  if (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE)
+ 	    {
+ 	      tmp2 = loongarch_unspec_address (loc, SYMBOL_TLS_LE);
+ 	      tmp3 = gen_reg_rtx (Pmode);
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 11d6ab625..8651274e6 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -2258,7 +2258,7 @@
+ 	(unspec:P [(mem:P (lo_sum:P (match_operand:P 1 "register_operand" "r")
+ 				    (match_operand:P 2 "symbolic_operand" "")))]
+ 	UNSPEC_TLS_LOW))]
+-  "TARGET_EXPLICIT_RELOCS"
++  ""
+   "addi.<d>\t%0,%1,%L2"
+   [(set_attr "type" "arith")
+    (set_attr "mode" "<MODE>")])
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c
+new file mode 100644
+index 000000000..957ff98df
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-ld-gd.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -fPIC -mexplicit-relocs=auto" } */
++
++__thread int a __attribute__((visibility("hidden")));
++extern __thread int b __attribute__((visibility("default")));
++
++int test() { return a + b; }
++
++/* { dg-final { scan-assembler-not "la.tls" { target tls_native } } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-le-ie.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-le-ie.c
+new file mode 100644
+index 000000000..78898cfc6
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-auto-tls-le-ie.c
+@@ -0,0 +1,6 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mexplicit-relocs=auto" } */
++
++#include "explicit-relocs-auto-tls-ld-gd.c"
++
++/* { dg-final { scan-assembler-not "la.tls" { target tls_native } } } */
+-- 
+2.45.2
+

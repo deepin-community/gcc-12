@@ -1,0 +1,160 @@
+From 72c13810f676621b1c8d0e32e489a1e1a03d741b Mon Sep 17 00:00:00 2001
+From: Peng Fan <fanpeng@loongson.cn>
+Date: Tue, 26 Nov 2024 14:45:36 +0800
+Subject: [PATCH 117/301] LoongArch: Fix building errors
+
+---
+ .../config/loongarch/loongarch-builtins.cc    |  5 --
+ src/gcc/config/loongarch/loongarch-c.cc       | 11 ---
+ src/gcc/config/loongarch/loongarch.cc         |  5 +-
+ .../gcc.target/loongarch/math-float-128.c     | 81 -------------------
+ 4 files changed, 1 insertion(+), 101 deletions(-)
+ delete mode 100644 src/gcc/testsuite/gcc.target/loongarch/math-float-128.c
+
+diff --git a/src/gcc/config/loongarch/loongarch-builtins.cc b/src/gcc/config/loongarch/loongarch-builtins.cc
+index a4a7dbec9..2d9743d86 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -2440,11 +2440,6 @@ loongarch_init_builtins (void)
+   unsigned int i;
+   tree type;
+ 
+-  /* Register the type float128_type_node as a built-in type and
+-     give it an alias "__float128".  */
+-  (*lang_hooks.types.register_builtin_type) (float128_type_node,
+-					    "__float128");
+-
+   /* Iterate through all of the bdesc arrays, initializing all of the
+      builtin functions.  */
+   for (i = 0; i < ARRAY_SIZE (loongarch_builtins); i++)
+diff --git a/src/gcc/config/loongarch/loongarch-c.cc b/src/gcc/config/loongarch/loongarch-c.cc
+index c9b11a042..76c8ea8db 100644
+--- a/src/gcc/config/loongarch/loongarch-c.cc
++++ b/src/gcc/config/loongarch/loongarch-c.cc
+@@ -117,17 +117,6 @@ loongarch_cpu_cpp_builtins (cpp_reader *pfile)
+       builtin_define ("__loongarch_simd_width=256");
+     }
+ 
+-  /* Add support for FLOAT128_TYPE on the LoongArch architecture.  */
+-  builtin_define ("__FLOAT128_TYPE__");
+-
+-  /* Map the old _Float128 'q' builtins into the new 'f128' builtins.  */
+-  builtin_define ("__builtin_fabsq=__builtin_fabsf128");
+-  builtin_define ("__builtin_copysignq=__builtin_copysignf128");
+-  builtin_define ("__builtin_nanq=__builtin_nanf128");
+-  builtin_define ("__builtin_nansq=__builtin_nansf128");
+-  builtin_define ("__builtin_infq=__builtin_inff128");
+-  builtin_define ("__builtin_huge_valq=__builtin_huge_valf128");
+-
+   /* Native Data Sizes.  */
+   builtin_define_with_int_value ("_LOONGARCH_SZINT", INT_TYPE_SIZE);
+   builtin_define_with_int_value ("_LOONGARCH_SZLONG", LONG_TYPE_SIZE);
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 768dd2950..66bf4afc5 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -9699,13 +9699,10 @@ expand_perm_const_2_end:
+ /* Implement TARGET_VECTORIZE_VEC_PERM_CONST.  */
+ 
+ static bool
+-loongarch_vectorize_vec_perm_const (machine_mode vmode, machine_mode op_mode,
++loongarch_vectorize_vec_perm_const (machine_mode vmode,
+            rtx target, rtx op0, rtx op1,
+            const vec_perm_indices &sel)
+ {
+-  if (vmode != op_mode)
+-    return false;
+-
+   struct expand_vec_perm_d d;
+   int i, nelt, which;
+   unsigned char orig_perm[MAX_VECT_LEN];
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/math-float-128.c b/src/gcc/testsuite/gcc.target/loongarch/math-float-128.c
+deleted file mode 100644
+index 387566a57..000000000
+--- a/src/gcc/testsuite/gcc.target/loongarch/math-float-128.c
++++ /dev/null
+@@ -1,81 +0,0 @@
+-/* { dg-do compile } */
+-/* { dg-options " -march=loongarch64 -O2 " } */
+-/* { dg-final { scan-assembler-not "my_fabsq2:.*\\bl\t%plt\\(__builtin_fabsq\\).*my_fabsq2" } } */
+-/* { dg-final { scan-assembler-not "my_copysignq2:.*\\bl\t%plt\\(__builtin_copysignq\\).*my_copysignq2" } } */
+-/* { dg-final { scan-assembler-not "my_infq2:.*\\bl\t%plt\\(__builtin_infq\\).*my_infq2" } } */
+-/* { dg-final { scan-assembler-not "my_huge_valq2:.*\\bl\t%plt\\(__builtin_huge_valq\\).*my_huge_valq2" } } */
+-/* { dg-final { scan-assembler-not "my_nanq2:.*\\bl\t%plt\\(__builtin_nanq\\).*my_nanq2" } } */
+-/* { dg-final { scan-assembler-not "my_nansq2:.*\\bl\t%plt\\(__builtin_nansq\\).*my_nansq2" } } */
+-
+-__float128
+-my_fabsq1 (__float128 a)
+-{
+-  return __builtin_fabsq (a);
+-}
+-
+-_Float128
+-my_fabsq2 (_Float128 a)
+-{
+-  return __builtin_fabsq (a);
+-}
+-
+-__float128
+-my_copysignq1 (__float128 a, __float128 b)
+-{
+-  return __builtin_copysignq (a, b);
+-}
+-
+-_Float128
+-my_copysignq2 (_Float128 a, _Float128 b)
+-{
+-  return __builtin_copysignq (a, b);
+-}
+-
+-__float128
+-my_infq1 (void)
+-{
+-  return __builtin_infq ();
+-}
+-
+-_Float128
+-my_infq2 (void)
+-{
+-  return __builtin_infq ();
+-}
+-
+-__float128
+-my_huge_valq1 (void)
+-{
+-  return __builtin_huge_valq ();
+-}
+-
+-_Float128
+-my_huge_valq2 (void)
+-{
+-  return __builtin_huge_valq ();
+-}
+-
+-__float128
+-my_nanq1 (void)
+-{
+-  return __builtin_nanq ("");
+-}
+-
+-_Float128
+-my_nanq2 (void)
+-{
+-  return __builtin_nanq ("");
+-}
+-
+-__float128
+-my_nansq1 (void)
+-{
+-  return __builtin_nansq ("");
+-}
+-
+-_Float128
+-my_nansq2 (void)
+-{
+-  return __builtin_nansq ("");
+-}
+-
+-- 
+2.45.2
+

@@ -1,0 +1,70 @@
+From b9cf71b96827fd124030cdb038008923ba103ce4 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 25 Feb 2024 20:44:34 +0800
+Subject: [PATCH 253/301] LoongArch: Remove unneeded sign extension after
+ crc/crcc instructions
+
+The specification of crc/crcc instructions is clear that the output is
+sign-extended to GRLEN.  Add a define_insn to tell the compiler this
+fact and allow it to remove the unneeded sign extension on crc/crcc
+output.  As crc/crcc instructions are usually used in a tight loop,
+this should produce a significant performance gain.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md
+	(loongarch_<crc>_w_<size>_w_extended): New define_insn.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/crc-sext.c: New test;
+---
+ src/gcc/config/loongarch/loongarch.md             | 11 +++++++++++
+ src/gcc/testsuite/gcc.target/loongarch/crc-sext.c | 13 +++++++++++++
+ 2 files changed, 24 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/crc-sext.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index b5ad9eada..248ad12bb 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -4264,6 +4264,17 @@
+   [(set_attr "type" "unknown")
+    (set_attr "mode" "<MODE>")])
+ 
++(define_insn "loongarch_<crc>_w_<size>_w_extended"
++  [(set (match_operand:DI 0 "register_operand" "=r")
++	(sign_extend:DI
++	  (unspec:SI [(match_operand:QHSD 1 "register_operand" "r")
++		      (match_operand:SI 2 "register_operand" "r")]
++		     CRC)))]
++  "TARGET_64BIT"
++  "<crc>.w.<size>.w\t%0,%1,%2"
++  [(set_attr "type" "unknown")
++   (set_attr "mode" "<MODE>")])
++
+ ;; With normal or medium code models, if the only use of a pc-relative
+ ;; address is for loading or storing a value, then relying on linker
+ ;; relaxation is not better than emitting the machine instruction directly.
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/crc-sext.c b/src/gcc/testsuite/gcc.target/loongarch/crc-sext.c
+new file mode 100644
+index 000000000..9ade5a8e4
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/crc-sext.c
+@@ -0,0 +1,13 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64" } */
++/* { dg-final { check-function-bodies "**" "" } } */
++
++/*
++**my_crc:
++**	crc.w.d.w	\$r4,\$r4,\$r5
++**	jr	\$r1
++*/
++int my_crc(long long dword, int crc)
++{
++	return __builtin_loongarch_crc_w_d_w(dword, crc);
++}
+-- 
+2.45.2
+

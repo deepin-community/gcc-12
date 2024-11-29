@@ -1,0 +1,678 @@
+From 5e108ac10b03a3d4c2389072474eb246b0c4f4bc Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Thu, 28 Nov 2024 08:36:12 +0000
+Subject: [PATCH 277/301] LoongArch: Define builtin macros for ISA evolutions
+
+ Detailed description of these definitions can be found at
+ https://github.com/loongson/la-toolchain-conventions, which
+ the LoongArch GCC port aims to conform to.
+
+ gcc/ChangeLog:
+
+   * config.gcc: Add loongarch-evolution.o.
+   * config/loongarch/genopts/genstr.sh: Enable generation of
+   loongarch-evolution.[cc,h].
+   * config/loongarch/t-loongarch: Likewise.
+   * config/loongarch/genopts/gen-evolution.awk: New file.
+   * config/loongarch/genopts/isa-evolution.in: Mark ISA version
+   of introduction for each ISA evolution feature.
+   * config/loongarch/loongarch-c.cc (loongarch_cpu_cpp_builtins):
+   Define builtin macros for enabled ISA evolutions and the ISA
+   version.
+   * config/loongarch/loongarch-cpu.cc: Use loongarch-evolution.h.
+   * config/loongarch/loongarch.h: Likewise.
+   * config/loongarch/loongarch-cpucfg-map.h: Delete.
+   * config/loongarch/loongarch-evolution.cc: New file.
+   * config/loongarch/loongarch-evolution.h: New file.
+   * config/loongarch/loongarch-opts.h (ISA_HAS_FRECIPE): Define.
+   (ISA_HAS_DIV32): Likewise.
+   (ISA_HAS_LAM_BH): Likewise.
+   (ISA_HAS_LAMCAS): Likewise.
+   (ISA_HAS_LD_SEQ_SA): Likewise.
+---
+ src/gcc/config.gcc                            |   2 +-
+ .../loongarch/genopts/gen-evolution.awk       | 230 ++++++++++++++++++
+ src/gcc/config/loongarch/genopts/genstr.sh    |  82 ++-----
+ .../config/loongarch/genopts/isa-evolution.in |  10 +-
+ src/gcc/config/loongarch/loongarch-c.cc       |  23 ++
+ src/gcc/config/loongarch/loongarch-cpu.cc     |   2 +-
+ .../config/loongarch/loongarch-evolution.cc   |  60 +++++
+ ...rch-cpucfg-map.h => loongarch-evolution.h} |  46 +++-
+ src/gcc/config/loongarch/loongarch-opts.h     |  11 -
+ src/gcc/config/loongarch/loongarch.h          |   1 +
+ src/gcc/config/loongarch/t-loongarch          |  26 +-
+ 11 files changed, 398 insertions(+), 95 deletions(-)
+ create mode 100644 src/gcc/config/loongarch/genopts/gen-evolution.awk
+ create mode 100644 src/gcc/config/loongarch/loongarch-evolution.cc
+ rename src/gcc/config/loongarch/{loongarch-cpucfg-map.h => loongarch-evolution.h} (52%)
+
+diff --git a/src/gcc/config.gcc b/src/gcc/config.gcc
+index 1bbab4ce4..767271f79 100644
+--- a/src/gcc/config.gcc
++++ b/src/gcc/config.gcc
+@@ -458,7 +458,7 @@ loongarch*-*-*)
+ 	cpu_type=loongarch
+ 	d_target_objs="loongarch-d.o"
+ 	extra_headers="larchintrin.h lsxintrin.h lasxintrin.h"
+-	extra_objs="loongarch-c.o loongarch-builtins.o loongarch-cpu.o loongarch-opts.o loongarch-def.o"
++	extra_objs="loongarch-c.o loongarch-builtins.o loongarch-cpu.o loongarch-opts.o loongarch-def.o loongarch-evolution.o"
+ 	extra_gcc_objs="loongarch-driver.o loongarch-cpu.o loongarch-opts.o loongarch-def.o"
+ 	extra_options="${extra_options} g.opt fused-madd.opt"
+ 	;;
+diff --git a/src/gcc/config/loongarch/genopts/gen-evolution.awk b/src/gcc/config/loongarch/genopts/gen-evolution.awk
+new file mode 100644
+index 000000000..4d105afa9
+--- /dev/null
++++ b/src/gcc/config/loongarch/genopts/gen-evolution.awk
+@@ -0,0 +1,230 @@
++#!/usr/bin/gawk
++#
++# A simple script that generates loongarch-evolution.h
++# from genopts/isa-evolution.in
++#
++# Copyright (C) 2021-2024 Free Software Foundation, Inc.
++#
++# This file is part of GCC.
++#
++# GCC is free software; you can redistribute it and/or modify it under
++# the terms of the GNU General Public License as published by the Free
++# Software Foundation; either version 3, or (at your option) any later
++# version.
++#
++# GCC is distributed in the hope that it will be useful, but WITHOUT
++# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
++# or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
++# License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with GCC; see the file COPYING3.  If not see
++# <http://www.gnu.org/licenses/>.
++
++BEGIN {
++    # isa_version_major[]
++    # isa_version_minor[]
++    # cpucfg_word[]
++    # cpucfg_bit_in_word[]
++    # name_capitalized[]
++    # comment[]
++}
++
++{
++    cpucfg_word[NR] = $1
++    cpucfg_bit_in_word[NR] = $2
++    name[NR] = gensub(/-/, "_", "g", $3)
++    name_capitalized[NR] = toupper(name[NR])
++    isa_version_major[NR] = gensub(/^([1-9][0-9]*)\.([0-9]+)$/, "\\1", 1, $4)
++    isa_version_minor[NR] = gensub(/^([1-9][0-9]*)\.([0-9]+)$/, "\\2", 1, $4)
++
++    $1 = $2 = $3 = $4 = ""
++    sub (/^\s*/, "")
++    comment[NR] = $0
++}
++
++function copyright_header(from_year,to_year)
++{
++    print "   Copyright (C) " from_year "-" to_year \
++          " Free Software Foundation, Inc."
++    print ""
++    print "This file is part of GCC."
++    print ""
++    print "GCC is free software; you can redistribute it and/or modify"
++    print "it under the terms of the GNU General Public License as published by"
++    print "the Free Software Foundation; either version 3, or (at your option)"
++    print "any later version."
++    print ""
++    print "GCC is distributed in the hope that it will be useful,"
++    print "but WITHOUT ANY WARRANTY; without even the implied warranty of"
++    print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the"
++    print "GNU General Public License for more details."
++    print ""
++    print "You should have received a copy of the GNU General Public License"
++    print "along with GCC; see the file COPYING3.  If not see"
++    print "<http://www.gnu.org/licenses/>."
++}
++
++function gen_cpucfg_map()
++{
++    print "static constexpr struct {"
++    print "  int cpucfg_word;"
++    print "  unsigned int cpucfg_bit;"
++    print "  HOST_WIDE_INT isa_evolution_bit;"
++    print "} cpucfg_map[] = {"
++
++    for (i = 1; i <= NR; i++)
++    printf ("  { %d, 1u << %d, OPTION_MASK_ISA_%s },\n",
++            cpucfg_word[i], cpucfg_bit_in_word[i], name_capitalized[i])
++
++    print "};"
++}
++
++function gen_cpucfg_useful_idx()
++{
++    split("0 1 2 16 17 18 19", init_useful_idx)
++
++    delete idx_bucket
++
++    for (i in init_useful_idx)
++        idx_bucket[init_useful_idx[i]] = 1
++    delete init_useful_idx
++
++    for (i in cpucfg_word)
++        idx_bucket[cpucfg_word[i]] = 1
++
++    delete idx_list
++    for (i in idx_bucket)
++        idx_list[length(idx_list)-1] = i+0
++    delete idx_bucket
++
++    asort (idx_list)
++
++    print "static constexpr int cpucfg_useful_idx[] = {"
++    for (i in idx_list)
++        printf("  %d,\n", idx_list[i])
++    print "};"
++
++    print ""
++
++    printf ("static constexpr int N_CPUCFG_WORDS = %d;\n",
++            idx_list[length(idx_list)] + 1)
++
++    delete idx_list
++}
++
++function gen_evolution_decl()
++{
++    print "/* ISA evolution features */"
++    print "enum {"
++
++    for (i = 1; i <= NR; i++)
++    print "  EVO_" name_capitalized[i] " = " i - 1 ","
++
++    print "  N_EVO_FEATURES = " NR
++    print "};"
++    print ""
++
++    print "/* Condition macros */"
++    for (i = 1; i <= NR; i++)
++    printf ("#define ISA_HAS_%s \\\n" \
++            "  (la_target.isa.evolution & OPTION_MASK_ISA_%s)\n",
++            name_capitalized[i], name_capitalized[i])
++    print ""
++
++    print "/* Bitmasks on la_target.isa.evolution.  */"
++    print "extern int la_evo_feature_masks[N_EVO_FEATURES];"
++    print ""
++    print "/* Builtin macro names for the evolution features.  */"
++    print "extern const char* la_evo_macro_name[N_EVO_FEATURES];"
++    print ""
++    print "/* The ISA version where a specific feature is introduced.  */"
++    print "extern int la_evo_version_major[N_EVO_FEATURES];"
++    print "extern int la_evo_version_minor[N_EVO_FEATURES];"
++}
++
++function gen_full_header()
++{
++    print "/* Generated automatically by \"genstr\" from \"isa-evolution.in\"."
++    print "   Please do not edit this file directly."
++    print ""
++
++    copyright_header(2023, 2024)
++
++    print "*/"
++    print ""
++
++    print "#ifndef LOONGARCH_EVOLUTION_H"
++    print "#define LOONGARCH_EVOLUTION_H"
++    print ""
++    print "#if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)"
++    print ""
++    print "#include \"options.h\""
++    print ""
++
++    gen_cpucfg_map()
++
++    print ""
++
++    gen_cpucfg_useful_idx()
++
++    print ""
++
++    gen_evolution_decl()
++
++    print ""
++    print "#endif"
++    print ""
++    print "#endif /* LOONGARCH_EVOLUTION_H */"
++}
++
++
++function gen_full_source()
++{
++    print "/* Generated automatically by \"genstr\" from \"isa-evolution.in\"."
++    print "   Please do not edit this file directly."
++    print ""
++
++    copyright_header(2023, 2024)
++
++    print "*/"
++    print ""
++    print "#include \"config.h\""
++    print "#include \"system.h\""
++    print "#include \"coretypes.h\""
++    print "#include \"options.h\""
++    print ""
++    print "#include \"loongarch-evolution.h\""
++    print ""
++
++    print "int la_evo_feature_masks[] = {";
++    for (i = 1; i <= NR; i++)
++    print "  OPTION_MASK_ISA_" name_capitalized[i] ","
++    print "};"
++    print ""
++
++    print "const char* la_evo_macro_name[] = {";
++    for (i = 1; i <= NR; i++)
++    print "  \"__loongarch_" name[i] "\","
++    print "};"
++    print ""
++
++
++    print "int la_evo_version_major[] = {"
++    for (i = 1; i <= NR; i++)
++    print "  " isa_version_major[i] ",    /* " name_capitalized[i] " */"
++    print "};"
++    print ""
++
++    print "int la_evo_version_minor[] = {"
++    for (i = 1; i <= NR; i++)
++    print "  " isa_version_minor[i] ",    /* " name_capitalized[i] " */"
++    print "};"
++}
++
++END {
++    if (header_p)
++        gen_full_header()
++    else
++        gen_full_source()
++}
+diff --git a/src/gcc/config/loongarch/genopts/genstr.sh b/src/gcc/config/loongarch/genopts/genstr.sh
+index 391eca121..3e86c8152 100755
+--- a/src/gcc/config/loongarch/genopts/genstr.sh
++++ b/src/gcc/config/loongarch/genopts/genstr.sh
+@@ -108,78 +108,30 @@ EOF
+       print("m"$3)
+       gsub(/-/, "_", $3)
+       print("Target Mask(ISA_"toupper($3)") Var(la_isa_evolution)")
+-      $1=""; $2=""; $3=""
++      $1=""; $2=""; $3=""; $4=""
+       sub(/^ */, "", $0)
+       print($0)
+     }' isa-evolution.in
+ }
+ 
+-gen_cpucfg_map() {
+-    cat <<EOF
+-/* Generated automatically by "genstr" from "isa-evolution.in".
+-   Please do not edit this file directly.
+-
+-   Copyright (C) 2023 Free Software Foundation, Inc.
+-
+-This file is part of GCC.
+-
+-GCC is free software; you can redistribute it and/or modify
+-it under the terms of the GNU General Public License as published by
+-the Free Software Foundation; either version 3, or (at your option)
+-any later version.
+-
+-GCC is distributed in the hope that it will be useful,
+-but WITHOUT ANY WARRANTY; without even the implied warranty of
+-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-GNU General Public License for more details.
+-
+-You should have received a copy of the GNU General Public License
+-along with GCC; see the file COPYING3.  If not see
+-<http://www.gnu.org/licenses/>.  */
+-
+-#ifndef LOONGARCH_CPUCFG_MAP_H
+-#define LOONGARCH_CPUCFG_MAP_H
+-
+-#include "options.h"
+-
+-static constexpr struct {
+-  int cpucfg_word;
+-  unsigned int cpucfg_bit;
+-  HOST_WIDE_INT isa_evolution_bit;
+-} cpucfg_map[] = {
+-EOF
+-
+-    # Generate the strings from isa-evolution.in.
+-    awk '{
+-      gsub(/-/, "_", $3)
+-      print("  { "$1", 1u << "$2", OPTION_MASK_ISA_"toupper($3)" },")
+-    }' isa-evolution.in
+-
+-    echo "};"
+-    echo
+-    echo "static constexpr int cpucfg_useful_idx[] = {"
+-
+-    awk 'BEGIN { print("  0,\n  1,\n  2,\n  16,\n  17,\n  18,\n  19,") }
+-    {if ($1+0 > max+0) max=$1; print("  "$1",")}' \
+-   isa-evolution.in | sort -n | uniq
+-
+-    echo "};"
+-    echo ""
+-
+-    awk 'BEGIN { max=19 }
+-    { if ($1+0 > max+0) max=$1 }
+-    END { print "static constexpr int N_CPUCFG_WORDS = "1+max";" }' \
+-   isa-evolution.in
+-
+-    echo "#endif /* LOONGARCH_CPUCFG_MAP_H */"
+-}
+-
+ main() {
+     case "$1" in
+-    cpucfg-map) gen_cpucfg_map;;
+-	header) gen_defines;;
+-	opt) gen_options;;
+-    *) echo "Unknown Command: \"$1\". Available: cpucfg-map, header, opt"; exit 1;;
++   evolution_h)
++            awk -v header_p=1 -f gen-evolution.awk isa-evolution.in
++            ;;
++   evolution_c)
++            awk -v header_p=0 -f gen-evolution.awk isa-evolution.in
++            ;;
++   header)
++            gen_defines
++            ;;
++   opt)
++            gen_options
++            ;;
++   *)
++            echo "Unknown Command: \"$1\". Available: header, opt, evolution_h, evolution_c"
++            exit 1
++            ;;
+     esac
+ }
+ 
+diff --git a/src/gcc/config/loongarch/genopts/isa-evolution.in b/src/gcc/config/loongarch/genopts/isa-evolution.in
+index 11a198b64..50f72d5a0 100644
+--- a/src/gcc/config/loongarch/genopts/isa-evolution.in
++++ b/src/gcc/config/loongarch/genopts/isa-evolution.in
+@@ -1,5 +1,5 @@
+-2	25	frecipe		Support frecipe.{s/d} and frsqrte.{s/d} instructions.
+-2	26	div32		Support div.w[u] and mod.w[u] instructions with inputs not sign-extended.
+-2	27	lam-bh		Support am{swap/add}[_db].{b/h} instructions.
+-2	28	lamcas		Support amcas[_db].{b/h/w/d} instructions.
+-3	23	ld-seq-sa	Do not need load-load barriers (dbar 0x700).
++2	25	frecipe		1.1		Support frecipe.{s/d} and frsqrte.{s/d} instructions.
++2	26	div32		1.1		Support div.w[u] and mod.w[u] instructions with inputs not sign-extended.
++2	27	lam-bh		1.1		Support am{swap/add}[_db].{b/h} instructions.
++2	28	lamcas		1.1		Support amcas[_db].{b/h/w/d} instructions.
++3	23	ld-seq-sa	1.1		Do not need load-load barriers (dbar 0x700).
+diff --git a/src/gcc/config/loongarch/loongarch-c.cc b/src/gcc/config/loongarch/loongarch-c.cc
+index 153db75b0..4ecea6a45 100644
+--- a/src/gcc/config/loongarch/loongarch-c.cc
++++ b/src/gcc/config/loongarch/loongarch-c.cc
+@@ -103,6 +103,29 @@ loongarch_cpu_cpp_builtins (cpp_reader *pfile)
+       builtin_define ("__loongarch_simd_width=256");
+     }
+ 
++  /* ISA evolution features */
++  int max_v_major = 1, max_v_minor = 0;
++ 
++  for (int i = 0; i < N_EVO_FEATURES; i++)
++    if (la_target.isa.evolution & la_evo_feature_masks[i])
++      {
++   builtin_define (la_evo_macro_name[i]);
++ 
++   int major = la_evo_version_major[i],
++       minor = la_evo_version_minor[i];
++ 
++   max_v_major = major > max_v_major ? major : max_v_major;
++   max_v_minor = major == max_v_major
++     ? (minor > max_v_minor ? minor : max_v_minor): max_v_minor;
++      }
++ 
++  /* Find the minimum ISA version required to run the target program.  */
++  if (!(max_v_major == 1 && max_v_minor <= 1 && ISA_HAS_LASX))
++    {
++      builtin_define_with_int_value ("__loongarch_version_major", max_v_major);
++      builtin_define_with_int_value ("__loongarch_version_minor", max_v_minor);
++    }
++
+   /* Native Data Sizes.  */
+   builtin_define_with_int_value ("_LOONGARCH_SZINT", INT_TYPE_SIZE);
+   builtin_define_with_int_value ("_LOONGARCH_SZLONG", LONG_TYPE_SIZE);
+diff --git a/src/gcc/config/loongarch/loongarch-cpu.cc b/src/gcc/config/loongarch/loongarch-cpu.cc
+index eb1eb8011..49107f2ae 100644
+--- a/src/gcc/config/loongarch/loongarch-cpu.cc
++++ b/src/gcc/config/loongarch/loongarch-cpu.cc
+@@ -28,8 +28,8 @@ along with GCC; see the file COPYING3.  If not see
+ #include "loongarch-def.h"
+ #include "loongarch-opts.h"
+ #include "loongarch-cpu.h"
+-#include "loongarch-cpucfg-map.h"
+ #include "loongarch-str.h"
++#include "loongarch-evolution.h"
+ 
+ 
+ /* Native CPU detection with "cpucfg" */
+diff --git a/src/gcc/config/loongarch/loongarch-evolution.cc b/src/gcc/config/loongarch/loongarch-evolution.cc
+new file mode 100644
+index 000000000..1fb4e3b01
+--- /dev/null
++++ b/src/gcc/config/loongarch/loongarch-evolution.cc
+@@ -0,0 +1,60 @@
++/* Generated automatically by "genstr" from "isa-evolution.in".
++   Please do not edit this file directly.
++
++   Copyright (C) 2023-2024 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.
++*/
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "options.h"
++
++#include "loongarch-evolution.h"
++
++int la_evo_feature_masks[] = {
++  OPTION_MASK_ISA_FRECIPE,
++  OPTION_MASK_ISA_DIV32,
++  OPTION_MASK_ISA_LAM_BH,
++  OPTION_MASK_ISA_LAMCAS,
++  OPTION_MASK_ISA_LD_SEQ_SA,
++};
++
++const char* la_evo_macro_name[] = {
++  "__loongarch_frecipe",
++  "__loongarch_div32",
++  "__loongarch_lam_bh",
++  "__loongarch_lamcas",
++  "__loongarch_ld_seq_sa",
++};
++
++int la_evo_version_major[] = {
++  1,    /* FRECIPE */
++  1,    /* DIV32 */
++  1,    /* LAM_BH */
++  1,    /* LAMCAS */
++  1,    /* LD_SEQ_SA */
++};
++
++int la_evo_version_minor[] = {
++  1,    /* FRECIPE */
++  1,    /* DIV32 */
++  1,    /* LAM_BH */
++  1,    /* LAMCAS */
++  1,    /* LD_SEQ_SA */
++};
+diff --git a/src/gcc/config/loongarch/loongarch-cpucfg-map.h b/src/gcc/config/loongarch/loongarch-evolution.h
+similarity index 52%
+rename from src/gcc/config/loongarch/loongarch-cpucfg-map.h
+rename to src/gcc/config/loongarch/loongarch-evolution.h
+index 148333c24..d64996481 100644
+--- a/src/gcc/config/loongarch/loongarch-cpucfg-map.h
++++ b/src/gcc/config/loongarch/loongarch-evolution.h
+@@ -17,10 +17,13 @@ GNU General Public License for more details.
+ 
+ You should have received a copy of the GNU General Public License
+ along with GCC; see the file COPYING3.  If not see
+-<http://www.gnu.org/licenses/>.  */
++<http://www.gnu.org/licenses/>.
++*/
+ 
+-#ifndef LOONGARCH_CPUCFG_MAP_H
+-#define LOONGARCH_CPUCFG_MAP_H
++#ifndef LOONGARCH_EVOLUTION_H
++#define LOONGARCH_EVOLUTION_H
++
++#if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+ 
+ #include "options.h"
+ 
+@@ -48,4 +51,39 @@ static constexpr int cpucfg_useful_idx[] = {
+ };
+ 
+ static constexpr int N_CPUCFG_WORDS = 20;
+-#endif /* LOONGARCH_CPUCFG_MAP_H */
++
++/* ISA evolution features */
++enum {
++  EVO_FRECIPE = 0,
++  EVO_DIV32 = 1,
++  EVO_LAM_BH = 2,
++  EVO_LAMCAS = 3,
++  EVO_LD_SEQ_SA = 4,
++  N_EVO_FEATURES = 5
++};
++
++/* Condition macros */
++#define ISA_HAS_FRECIPE \
++  (la_target.isa.evolution & OPTION_MASK_ISA_FRECIPE)
++#define ISA_HAS_DIV32 \
++  (la_target.isa.evolution & OPTION_MASK_ISA_DIV32)
++#define ISA_HAS_LAM_BH \
++  (la_target.isa.evolution & OPTION_MASK_ISA_LAM_BH)
++#define ISA_HAS_LAMCAS \
++  (la_target.isa.evolution & OPTION_MASK_ISA_LAMCAS)
++#define ISA_HAS_LD_SEQ_SA \
++  (la_target.isa.evolution & OPTION_MASK_ISA_LD_SEQ_SA)
++
++/* Bitmasks on la_target.isa.evolution.  */
++extern int la_evo_feature_masks[N_EVO_FEATURES];
++
++/* Builtin macro names for the evolution features.  */
++extern const char* la_evo_macro_name[N_EVO_FEATURES];
++
++/* The ISA version where a specific feature is introduced.  */
++extern int la_evo_version_major[N_EVO_FEATURES];
++extern int la_evo_version_minor[N_EVO_FEATURES];
++
++#endif
++
++#endif /* LOONGARCH_EVOLUTION_H */
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index 325c1e29c..19bae5a0b 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -115,17 +115,6 @@ struct loongarch_flags {
+ #define ISA_HAS_LASX \
+   (la_target.isa.simd == ISA_EXT_SIMD_LASX)
+ 
+-#define ISA_HAS_FRECIPE \
+-  (la_target.isa.evolution & OPTION_MASK_ISA_FRECIPE)
+-#define ISA_HAS_DIV32 \
+-  (la_target.isa.evolution & OPTION_MASK_ISA_DIV32)
+-#define ISA_HAS_LAM_BH \
+-  (la_target.isa.evolution & OPTION_MASK_ISA_LAM_BH)
+-#define ISA_HAS_LAMCAS \
+-  (la_target.isa.evolution & OPTION_MASK_ISA_LAMCAS)
+-#define ISA_HAS_LD_SEQ_SA \
+-  (la_target.isa.evolution & OPTION_MASK_ISA_LD_SEQ_SA)
+-
+ /* TARGET_ macros for use in *.md template conditionals */
+ #define TARGET_uARCH_LA464	  (la_target.cpu_tune == TUNE_LA464)
+ #define TARGET_uARCH_LA664	  (la_target.cpu_tune == TUNE_LA664)
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index 089206605..6743d2684 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -22,6 +22,7 @@ along with GCC; see the file COPYING3.  If not see
+ /* LoongArch external variables defined in loongarch.cc.  */
+ 
+ #include "config/loongarch/loongarch-opts.h"
++#include "config/loongarch/loongarch-evolution.h"
+ 
+ #define SWITCHABLE_TARGET 1
+ 
+diff --git a/src/gcc/config/loongarch/t-loongarch b/src/gcc/config/loongarch/t-loongarch
+index 488e8cff3..53dde9ce6 100644
+--- a/src/gcc/config/loongarch/t-loongarch
++++ b/src/gcc/config/loongarch/t-loongarch
+@@ -21,7 +21,7 @@ GTM_H += loongarch-multilib.h
+ OPTIONS_H_EXTRA += $(srcdir)/config/loongarch/loongarch-def.h	    \
+ 		   $(srcdir)/config/loongarch/loongarch-def-array.h \
+ 		   $(srcdir)/config/loongarch/loongarch-tune.h	    \
+-		   $(srcdir)/config/loongarch/loongarch-cpucfg-map.h
++		   $(srcdir)/config/loongarch/loongarch-evolution.h
+ 
+ # Canonical target triplet from config.gcc
+ LA_MULTIARCH_TRIPLET = $(patsubst LA_MULTIARCH_TRIPLET=%,%,$\
+@@ -62,7 +62,11 @@ loongarch-opts.o: $(srcdir)/config/loongarch/loongarch-opts.cc $(LA_STR_H)
+ 	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
+ 
+ loongarch-cpu.o: $(srcdir)/config/loongarch/loongarch-cpu.cc $(LA_STR_H) \
+-		 $(srcdir)/config/loongarch/loongarch-cpucfg-map.h
++		 $(srcdir)/config/loongarch/loongarch-evolution.h
++	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
++
++loongarch-evolution.o: $(srcdir)/config/loongarch/loongarch-evolution.cc $(LA_STR_H) \
++	$(srcdir)/config/loongarch/loongarch-evolution.h
+ 	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
+ 
+ loongarch-def.o: $(srcdir)/config/loongarch/loongarch-def.cc $(LA_STR_H)
+@@ -84,11 +88,17 @@ s-loongarch-opt: $(srcdir)/config/loongarch/genopts/genstr.sh \
+     $(srcdir)/config/loongarch/loongarch.opt
+ 	$(STAMP) s-loongarch-opt
+ 
+-$(srcdir)/config/loongarch/loongarch-cpucfg-map.h: s-loongarch-cpucfg-map
++$(srcdir)/config/loongarch/loongarch-evolution.h: s-loongarch-evolution
+ 	@true
+-s-loongarch-cpucfg-map: $(srcdir)/config/loongarch/genopts/genstr.sh \
+-	$(srcdir)/config/loongarch/genopts/isa-evolution.in
+-	$(SHELL) $< cpucfg-map > tmp-cpucfg.h
+-	$(SHELL) $(srcdir)/../move-if-change tmp-cpucfg.h \
+-	    $(srcdir)/config/loongarch/loongarch-cpucfg-map.h
++$(srcdir)/config/loongarch/loongarch-evolution.cc: s-loongarch-evolution
++	@true
++s-loongarch-evolution: $(srcdir)/config/loongarch/genopts/genstr.sh \
++	$(srcdir)/config/loongarch/genopts/isa-evolution.in \
++	$(srcdir)/config/loongarch/genopts/gen-evolution.awk
++	$(SHELL) $< evolution_h > tmp-isa-evo.h
++	$(SHELL) $< evolution_c > tmp-isa-evo.cc
++	$(SHELL) $(srcdir)/../move-if-change tmp-isa-evo.h \
++	    $(srcdir)/config/loongarch/loongarch-evolution.h
++	$(SHELL) $(srcdir)/../move-if-change tmp-isa-evo.cc \
++	    $(srcdir)/config/loongarch/loongarch-evolution.cc
+ 	$(STAMP) $@
+-- 
+2.45.2
+

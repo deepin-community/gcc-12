@@ -1,0 +1,453 @@
+From 1d844410c210bc797bed67af0e27fad00198cb09 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Thu, 25 Jan 2024 19:10:46 +0800
+Subject: [PATCH 238/301] LoongArch: Add the macro implementation of
+ mcmodel=extreme.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-protos.h (loongarch_symbol_extreme_p):
+	Add function declaration.
+	* config/loongarch/loongarch.cc (loongarch_symbolic_constant_p):
+	For SYMBOL_PCREL64, non-zero addend of "la.local $rd,$rt,sym+addend"
+	is not allowed
+	(loongarch_load_tls): Added macro support in extreme mode.
+	(loongarch_call_tls_get_addr): Likewise.
+	(loongarch_legitimize_tls_address): Likewise.
+	(loongarch_force_address): Likewise.
+	(loongarch_legitimize_move): Likewise.
+	(loongarch_output_mi_thunk): Likewise.
+	(loongarch_option_override_internal): Remove the code that detects
+	explicit relocs status.
+	(loongarch_handle_model_attribute): Likewise.
+	* config/loongarch/loongarch.md (movdi_symbolic_off64): New template.
+	* config/loongarch/predicates.md (symbolic_off64_operand): New predicate.
+	(symbolic_off64_or_reg_operand): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/attr-model-5.c: New test.
+	* gcc.target/loongarch/func-call-extreme-5.c: New test.
+	* gcc.target/loongarch/func-call-extreme-6.c: New test.
+	* gcc.target/loongarch/tls-extreme-macro.c: New test.
+---
+ src/gcc/config/loongarch/loongarch-protos.h   |   1 +
+ src/gcc/config/loongarch/loongarch.cc         | 110 +++++++++++-------
+ src/gcc/config/loongarch/loongarch.md         |  48 +++++++-
+ src/gcc/config/loongarch/predicates.md        |  12 ++
+ .../gcc.target/loongarch/attr-model-5.c       |   8 ++
+ .../loongarch/func-call-extreme-5.c           |   7 ++
+ .../loongarch/func-call-extreme-6.c           |   7 ++
+ .../gcc.target/loongarch/tls-extreme-macro.c  |  35 ++++++
+ 8 files changed, 184 insertions(+), 44 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/attr-model-5.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-5.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-6.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/tls-extreme-macro.c
+
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index 5060efbb6..87b94e8b0 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -222,4 +222,5 @@ extern rtx loongarch_build_signbit_mask (machine_mode, bool, bool);
+ extern void loongarch_emit_swrsqrtsf (rtx, rtx, machine_mode, bool);
+ extern void loongarch_emit_swdivsf (rtx, rtx, rtx, machine_mode);
+ extern bool loongarch_explicit_relocs_p (enum loongarch_symbol_type);
++extern bool loongarch_symbol_extreme_p (enum loongarch_symbol_type);
+ #endif /* ! GCC_LOONGARCH_PROTOS_H */
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 54491435d..205945e60 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -1932,8 +1932,13 @@ loongarch_symbolic_constant_p (rtx x, enum loongarch_symbol_type *symbol_type)
+      relocations.  */
+   switch (*symbol_type)
+     {
+-    case SYMBOL_PCREL:
+     case SYMBOL_PCREL64:
++      /* When the code model is extreme, the non-zero offset situation
++	 has not been handled well, so it is disabled here now.  */
++      if (!loongarch_explicit_relocs_p (SYMBOL_PCREL64))
++	return false;
++    /* fall through */
++    case SYMBOL_PCREL:
+       /* GAS rejects offsets outside the range [-2^31, 2^31-1].  */
+       return sext_hwi (INTVAL (offset), 32) == INTVAL (offset);
+ 
+@@ -2735,9 +2740,15 @@ static GTY (()) rtx loongarch_tls_symbol;
+ /* Load an entry for a TLS access.  */
+ 
+ static rtx
+-loongarch_load_tls (rtx dest, rtx sym)
++loongarch_load_tls (rtx dest, rtx sym, enum loongarch_symbol_type type)
+ {
+-  return gen_load_tls (Pmode, dest, sym);
++  /* TLS LE gets a 32 or 64 bit offset here, so one register can do it.  */
++  if (type == SYMBOL_TLS_LE)
++    return gen_load_tls (Pmode, dest, sym);
++
++  return loongarch_symbol_extreme_p (type)
++    ? gen_movdi_symbolic_off64 (dest, sym, gen_reg_rtx (DImode))
++    : gen_load_tls (Pmode, dest, sym);
+ }
+ 
+ /* Return an instruction sequence that calls __tls_get_addr.  SYM is
+@@ -2769,8 +2780,6 @@ loongarch_call_tls_get_addr (rtx sym, enum loongarch_symbol_type type, rtx v0)
+ 
+       if (TARGET_CMODEL_EXTREME)
+ 	{
+-	  gcc_assert (TARGET_EXPLICIT_RELOCS);
+-
+ 	  rtx tmp1 = gen_reg_rtx (Pmode);
+ 	  emit_insn (gen_tls_low (Pmode, tmp1, gen_rtx_REG (Pmode, 0), loc));
+ 	  emit_insn (gen_lui_h_lo20 (tmp1, tmp1, loc));
+@@ -2781,7 +2790,7 @@ loongarch_call_tls_get_addr (rtx sym, enum loongarch_symbol_type type, rtx v0)
+ 	emit_insn (gen_tls_low (Pmode, a0, high, loc));
+     }
+   else
+-    emit_insn (loongarch_load_tls (a0, loc));
++    emit_insn (loongarch_load_tls (a0, loc, type));
+ 
+   if (flag_plt)
+     {
+@@ -2848,22 +2857,28 @@ loongarch_call_tls_get_addr (rtx sym, enum loongarch_symbol_type type, rtx v0)
+ 
+ 	case CMODEL_EXTREME:
+ 	    {
+-	      gcc_assert (TARGET_EXPLICIT_RELOCS);
+-
+-	      rtx tmp1 = gen_reg_rtx (Pmode);
+-	      rtx high = gen_reg_rtx (Pmode);
+-
+-	      loongarch_emit_move (high,
+-				   gen_rtx_HIGH (Pmode, loongarch_tls_symbol));
+-	      loongarch_emit_move (tmp1, gen_rtx_LO_SUM (Pmode,
+-							 gen_rtx_REG (Pmode, 0),
+-							 loongarch_tls_symbol));
+-	      emit_insn (gen_lui_h_lo20 (tmp1, tmp1, loongarch_tls_symbol));
+-	      emit_insn (gen_lui_h_hi12 (tmp1, tmp1, loongarch_tls_symbol));
+-	      loongarch_emit_move (dest,
+-				   gen_rtx_MEM (Pmode,
+-						gen_rtx_PLUS (Pmode,
+-							      high, tmp1)));
++	      if (loongarch_explicit_relocs_p (SYMBOL_GOT_DISP))
++		{
++		  rtx tmp1 = gen_reg_rtx (Pmode);
++		  rtx high = gen_reg_rtx (Pmode);
++
++		  loongarch_emit_move (high,
++				       gen_rtx_HIGH (Pmode,
++						     loongarch_tls_symbol));
++		  loongarch_emit_move (tmp1,
++				       gen_rtx_LO_SUM (Pmode,
++						       gen_rtx_REG (Pmode, 0),
++						       loongarch_tls_symbol));
++		  emit_insn (gen_lui_h_lo20 (tmp1, tmp1, loongarch_tls_symbol));
++		  emit_insn (gen_lui_h_hi12 (tmp1, tmp1, loongarch_tls_symbol));
++		  loongarch_emit_move (dest,
++				       gen_rtx_MEM (Pmode,
++						    gen_rtx_PLUS (Pmode,
++								  high, tmp1)));
++		}
++	      else
++	       emit_insn (gen_movdi_symbolic_off64 (dest, loongarch_tls_symbol,
++						    gen_reg_rtx (DImode)));
+ 	    }
+ 	  break;
+ 
+@@ -2928,8 +2943,6 @@ loongarch_legitimize_tls_address (rtx loc)
+ 
+ 	      if (TARGET_CMODEL_EXTREME)
+ 		{
+-		  gcc_assert (TARGET_EXPLICIT_RELOCS);
+-
+ 		  rtx tmp3 = gen_reg_rtx (Pmode);
+ 		  emit_insn (gen_tls_low (Pmode, tmp3,
+ 					  gen_rtx_REG (Pmode, 0), tmp2));
+@@ -2944,7 +2957,7 @@ loongarch_legitimize_tls_address (rtx loc)
+ 		emit_insn (gen_ld_from_got (Pmode, tmp1, high, tmp2));
+ 	    }
+ 	  else
+-	    emit_insn (loongarch_load_tls (tmp1, tmp2));
++	    emit_insn (loongarch_load_tls (tmp1, tmp2, SYMBOL_TLS_IE));
+ 	  emit_insn (gen_add3_insn (dest, tmp1, tp));
+ 	}
+       break;
+@@ -3001,14 +3014,12 @@ loongarch_legitimize_tls_address (rtx loc)
+ 
+ 	      if (TARGET_CMODEL_EXTREME)
+ 		{
+-		  gcc_assert (TARGET_EXPLICIT_RELOCS);
+-
+ 		  emit_insn (gen_lui_h_lo20 (tmp1, tmp1, tmp2));
+ 		  emit_insn (gen_lui_h_hi12 (tmp1, tmp1, tmp2));
+ 		}
+ 	    }
+ 	  else
+-	    emit_insn (loongarch_load_tls (tmp1, tmp2));
++	    emit_insn (loongarch_load_tls (tmp1, tmp2, SYMBOL_TLS_LE));
+ 	  emit_insn (gen_add3_insn (dest, tmp1, tp));
+ 	}
+       break;
+@@ -3081,7 +3092,7 @@ loongarch_force_address (rtx x, machine_mode mode)
+   return x;
+ }
+ 
+-static bool
++bool
+ loongarch_symbol_extreme_p (enum loongarch_symbol_type type)
+ {
+   switch (type)
+@@ -3402,6 +3413,21 @@ loongarch_legitimize_move (machine_mode mode, rtx dest, rtx src)
+       return true;
+     }
+ 
++  /* Obtain the address of the symbol through the macro instruction
++     of two registers.  */
++  enum loongarch_symbol_type symbol_type;
++  if (TARGET_64BIT && register_operand (dest, mode)
++      && loongarch_symbolic_constant_p (src, &symbol_type)
++      && loongarch_symbol_extreme_p (symbol_type))
++    {
++      gcc_assert (can_create_pseudo_p ());
++      rtx tmp_reg = gen_reg_rtx (DImode);
++      emit_insn (gen_movdi_symbolic_off64 (dest, src, tmp_reg));
++      set_unique_reg_note (get_last_insn (), REG_UNUSED, tmp_reg);
++      set_unique_reg_note (get_last_insn (), REG_EQUAL, src);
++      return true;
++    }
++
+   return false;
+ }
+ 
+@@ -7456,12 +7482,22 @@ loongarch_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
+      allowed, otherwise load the address into a register first.  */
+   if (use_sibcall_p)
+     {
+-      insn = emit_call_insn (gen_sibcall_internal (fnaddr, const0_rtx));
++      if (TARGET_CMODEL_EXTREME)
++	{
++	  emit_insn (gen_movdi_symbolic_off64 (temp1, fnaddr, temp2));
++	  insn = emit_call_insn (gen_sibcall_internal (temp1, const0_rtx));
++	}
++      else
++	insn = emit_call_insn (gen_sibcall_internal (fnaddr, const0_rtx));
+       SIBLING_CALL_P (insn) = 1;
+     }
+   else
+     {
+-      loongarch_emit_move (temp1, fnaddr);
++      if (TARGET_CMODEL_EXTREME)
++	emit_insn (gen_movdi_symbolic_off64 (temp1, fnaddr, temp2));
++      else
++	loongarch_emit_move (temp1, fnaddr);
++
+       emit_jump_insn (gen_indirect_jump (temp1));
+     }
+ 
+@@ -7566,10 +7602,6 @@ loongarch_option_override_internal (struct gcc_options *opts,
+   switch (la_target.cmodel)
+     {
+       case CMODEL_EXTREME:
+-	if (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)
+-	  error ("code model %qs is not compatible with %s",
+-		 "extreme", "-mexplicit-relocs=none");
+-
+ 	if (opts->x_flag_plt)
+ 	  {
+ 	    if (global_options_set.x_flag_plt)
+@@ -7987,14 +8019,6 @@ loongarch_handle_model_attribute (tree *node, tree name, tree arg, int,
+ 	  *no_add_attrs = true;
+ 	  return NULL_TREE;
+ 	}
+-      if (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)
+-	{
+-	  error_at (DECL_SOURCE_LOCATION (decl),
+-		    "%qE attribute is not compatible with %s", name,
+-		    "-mexplicit-relocs=none");
+-	  *no_add_attrs = true;
+-	  return NULL_TREE;
+-	}
+ 
+       arg = TREE_VALUE (arg);
+       if (TREE_CODE (arg) != STRING_CST)
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 4f9a92334..add55e0af 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -82,6 +82,8 @@
+ 
+   UNSPEC_SIBCALL_VALUE_MULTIPLE_INTERNAL_1
+   UNSPEC_CALL_VALUE_MULTIPLE_INTERNAL_1
++
++  UNSPEC_LOAD_SYMBOL_OFFSET64
+ ])
+ 
+ (define_c_enum "unspecv" [
+@@ -2182,6 +2184,46 @@
+   [(set_attr "move_type" "move,const,load,store,mgtf,fpload,mftg,fpstore")
+    (set_attr "mode" "DI")])
+ 
++;; Use two registers to get the global symbol address from the got table.
++;; la.global rd, rt, sym
++
++(define_insn_and_split "movdi_symbolic_off64"
++ [(set (match_operand:DI 0 "register_operand" "=r,r")
++       (match_operand:DI 1 "symbolic_off64_or_reg_operand" "Yd,r"))
++  (unspec:DI [(const_int 0)]
++    UNSPEC_LOAD_SYMBOL_OFFSET64)
++  (clobber (match_operand:DI 2 "register_operand" "=&r,r"))]
++ "TARGET_64BIT && TARGET_CMODEL_EXTREME"
++{
++  if (which_alternative == 1)
++    return "#";
++
++  enum loongarch_symbol_type symbol_type;
++  gcc_assert (loongarch_symbolic_constant_p (operands[1], &symbol_type));
++
++  switch (symbol_type)
++    {
++    case SYMBOL_PCREL64:
++      return "la.local\t%0,%2,%1";
++    case SYMBOL_GOT_DISP:
++      return "la.global\t%0,%2,%1";
++    case SYMBOL_TLS_IE:
++      return "la.tls.ie\t%0,%2,%1";
++    case SYMBOL_TLSGD:
++      return "la.tls.gd\t%0,%2,%1";
++    case SYMBOL_TLSLDM:
++      return "la.tls.ld\t%0,%2,%1";
++
++    default:
++      gcc_unreachable ();
++  }
++}
++ "&& REG_P (operands[1]) && find_reg_note (insn, REG_UNUSED, operands[2]) != 0"
++ [(set (match_dup 0) (match_dup 1))]
++ ""
++ [(set_attr "mode" "DI")
++  (set_attr "insn_count" "5")])
++
+ ;; 32-bit Integer moves
+ 
+ (define_expand "movsi"
+@@ -2724,7 +2766,11 @@
+     }
+ }
+   [(set_attr "mode" "<MODE>")
+-   (set_attr "insn_count" "2")])
++   (set (attr "insn_count")
++      (if_then_else
++	(match_test "TARGET_CMODEL_EXTREME")
++	(const_int 4)
++	(const_int 2)))])
+ 
+ ;; Move operand 1 to the high word of operand 0 using movgr2frh.w, preserving the
+ ;; value in the low word.
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 824a85b36..1d9a30695 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -576,6 +576,18 @@
+ 	  || symbolic_pcrel_offset_operand (op, Pmode));
+ })
+ 
++(define_predicate "symbolic_off64_operand"
++ (match_code "const,symbol_ref,label_ref")
++{
++  enum loongarch_symbol_type type;
++  return loongarch_symbolic_constant_p (op, &type)
++	 && loongarch_symbol_extreme_p (type);
++})
++
++(define_predicate "symbolic_off64_or_reg_operand"
++ (ior (match_operand 0 "register_operand")
++      (match_operand 0 "symbolic_off64_operand")))
++
+ (define_predicate "equality_operator"
+   (match_code "eq,ne"))
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/attr-model-5.c b/src/gcc/testsuite/gcc.target/loongarch/attr-model-5.c
+new file mode 100644
+index 000000000..5f2c3ec9e
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/attr-model-5.c
+@@ -0,0 +1,8 @@
++/* { dg-do compile } */
++/* { dg-options "-mexplicit-relocs=none -mcmodel=extreme -O2 -fno-pic" } */
++/* { dg-final { scan-assembler "la.local\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,x" } } */
++/* { dg-final { scan-assembler "la.local\t\\\$r\[0-9\]+,y" } } */
++/* { dg-final { scan-assembler "la.local\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,counter" } } */
++
++#define ATTR_MODEL_TEST
++#include "attr-model-test.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-5.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-5.c
+new file mode 100644
+index 000000000..b1bd9d236
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-5.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-mabi=lp64d -O0 -fpic -fno-plt -mexplicit-relocs=none -mcmodel=extreme" } */
++/* { dg-final { scan-assembler "test:.*la.global\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,g" } } */
++/* { dg-final { scan-assembler "test1:.*la.global\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,f" } } */
++/* { dg-final { scan-assembler "test2:.*la.local\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,l" } } */
++
++#include "func-call-extreme-1.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-6.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-6.c
+new file mode 100644
+index 000000000..6e6ad5c9f
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-6.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-mabi=lp64d -O0 -fno-pic -fno-plt -mexplicit-relocs=none -mcmodel=extreme" } */
++/* { dg-final { scan-assembler "test:.*la.global\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,g" } } */
++/* { dg-final { scan-assembler "test1:.*la.local\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,f" } } */
++/* { dg-final { scan-assembler "test2:.*la.local\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,l" } } */
++
++#include "func-call-extreme-1.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/tls-extreme-macro.c b/src/gcc/testsuite/gcc.target/loongarch/tls-extreme-macro.c
+new file mode 100644
+index 000000000..4341f8212
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/tls-extreme-macro.c
+@@ -0,0 +1,35 @@
++/* { dg-do compile } */
++/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=none" } */
++/* { dg-final { scan-assembler "test_le:.*la.tls.le\t\\\$r\[0-9\]+,\\\.L" { target tls_native } } } */
++/* { dg-final { scan-assembler "test_ie:.*la.tls.ie\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,\\\.L" { target tls_native } } } */
++/* { dg-final { scan-assembler "test_ld:.*la.tls.ld\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,\\\.L.*la.global\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,__tls_get_addr" { target tls_native } } } */
++/* { dg-final { scan-assembler "test_le:.*la.tls.gd\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,\\\.L.*la.global\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,__tls_get_addr" { target tls_native } } } */
++
++__thread int c __attribute__ ((tls_model ("local-exec")));
++__thread int d __attribute__ ((tls_model ("initial-exec")));
++__thread int e __attribute__ ((tls_model ("local-dynamic")));
++__thread int f __attribute__ ((tls_model ("global-dynamic")));
++
++int
++test_le (void)
++{
++  return c;
++}
++
++int
++test_ie (void)
++{
++  return d;
++}
++
++int
++test_ld (void)
++{
++  return e;
++}
++
++int
++test_gd (void)
++{
++  return f;
++}
+-- 
+2.45.2
+

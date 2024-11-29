@@ -1,0 +1,69 @@
+From 8835e96f8387e03c2c8cdec56ed61bfb484e3255 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 17 Dec 2023 04:26:23 +0800
+Subject: [PATCH 198/301] LoongArch: Add sign_extend pattern for 32-bit rotate
+ shift
+
+Remove a redundant sign extension.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (rotrsi3_extend): New
+	define_insn.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/rotrw.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.md          | 10 ++++++++++
+ src/gcc/testsuite/gcc.target/loongarch/rotrw.c | 17 +++++++++++++++++
+ 2 files changed, 27 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotrw.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 6cf71d9e4..44e8d336a 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -2893,6 +2893,16 @@
+   [(set_attr "type" "shift,shift")
+    (set_attr "mode" "<MODE>")])
+ 
++(define_insn "rotrsi3_extend"
++  [(set (match_operand:DI 0 "register_operand" "=r,r")
++	(sign_extend:DI
++	  (rotatert:SI (match_operand:SI 1 "register_operand" "r,r")
++		       (match_operand:SI 2 "arith_operand" "r,I"))))]
++  "TARGET_64BIT"
++  "rotr%i2.w\t%0,%1,%2"
++  [(set_attr "type" "shift,shift")
++   (set_attr "mode" "SI")])
++
+ ;; The following templates were added to generate "bstrpick.d + alsl.d"
+ ;; instruction pairs.
+ ;; It is required that the values of const_immalsl_operand and
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotrw.c b/src/gcc/testsuite/gcc.target/loongarch/rotrw.c
+new file mode 100644
+index 000000000..6ed45e8b8
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotrw.c
+@@ -0,0 +1,17 @@
++/* { dg-do compile } */
++/* { dg-options "-O2" } */
++/* { dg-final { scan-assembler "rotr\\.w\t\\\$r4,\\\$r4,\\\$r5" } } */
++/* { dg-final { scan-assembler "rotri\\.w\t\\\$r4,\\\$r4,5" } } */
++/* { dg-final { scan-assembler-not "slli\\.w" } } */
++
++unsigned
++rotr (unsigned a, unsigned b)
++{
++  return a >> b | a << 32 - b;
++}
++
++unsigned
++rotri (unsigned a)
++{
++  return a >> 5 | a << 27;
++}
+-- 
+2.45.2
+

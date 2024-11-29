@@ -1,0 +1,189 @@
+From 0427e33d9a50bf7cff012c42ca50a4fb5b94a630 Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Mon, 23 Oct 2023 10:13:24 +0800
+Subject: [PATCH 140/301] LoongArch: Fix vfrint-releated comments in
+ lsxintrin.h and lasxintrin.h
+
+The comment of vfrint-related intrinsic functions does not match the return
+value type in definition. This patch fixes these comments.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasxintrin.h (__lasx_xvftintrnel_l_s): Fix comments.
+	(__lasx_xvfrintrne_s): Ditto.
+	(__lasx_xvfrintrne_d): Ditto.
+	(__lasx_xvfrintrz_s): Ditto.
+	(__lasx_xvfrintrz_d): Ditto.
+	(__lasx_xvfrintrp_s): Ditto.
+	(__lasx_xvfrintrp_d): Ditto.
+	(__lasx_xvfrintrm_s): Ditto.
+	(__lasx_xvfrintrm_d): Ditto.
+	* config/loongarch/lsxintrin.h (__lsx_vftintrneh_l_s): Ditto.
+	(__lsx_vfrintrne_s): Ditto.
+	(__lsx_vfrintrne_d): Ditto.
+	(__lsx_vfrintrz_s): Ditto.
+	(__lsx_vfrintrz_d): Ditto.
+	(__lsx_vfrintrp_s): Ditto.
+	(__lsx_vfrintrp_d): Ditto.
+	(__lsx_vfrintrm_s): Ditto.
+	(__lsx_vfrintrm_d): Ditto.
+---
+ src/gcc/config/loongarch/lasxintrin.h | 16 ++++++++--------
+ src/gcc/config/loongarch/lsxintrin.h  | 16 ++++++++--------
+ 2 files changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/lasxintrin.h b/src/gcc/config/loongarch/lasxintrin.h
+index d39379927..7bce2c757 100644
+--- a/src/gcc/config/loongarch/lasxintrin.h
++++ b/src/gcc/config/loongarch/lasxintrin.h
+@@ -3368,7 +3368,7 @@ __m256i __lasx_xvftintrnel_l_s (__m256 _1)
+ }
+ 
+ /* Assembly instruction format:	xd, xj.  */
+-/* Data types in instruction templates:  V8SI, V8SF.  */
++/* Data types in instruction templates:  V8SF, V8SF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m256 __lasx_xvfrintrne_s (__m256 _1)
+ {
+@@ -3376,7 +3376,7 @@ __m256 __lasx_xvfrintrne_s (__m256 _1)
+ }
+ 
+ /* Assembly instruction format:	xd, xj.  */
+-/* Data types in instruction templates:  V4DI, V4DF.  */
++/* Data types in instruction templates:  V4DF, V4DF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m256d __lasx_xvfrintrne_d (__m256d _1)
+ {
+@@ -3384,7 +3384,7 @@ __m256d __lasx_xvfrintrne_d (__m256d _1)
+ }
+ 
+ /* Assembly instruction format:	xd, xj.  */
+-/* Data types in instruction templates:  V8SI, V8SF.  */
++/* Data types in instruction templates:  V8SF, V8SF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m256 __lasx_xvfrintrz_s (__m256 _1)
+ {
+@@ -3392,7 +3392,7 @@ __m256 __lasx_xvfrintrz_s (__m256 _1)
+ }
+ 
+ /* Assembly instruction format:	xd, xj.  */
+-/* Data types in instruction templates:  V4DI, V4DF.  */
++/* Data types in instruction templates:  V4DF, V4DF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m256d __lasx_xvfrintrz_d (__m256d _1)
+ {
+@@ -3400,7 +3400,7 @@ __m256d __lasx_xvfrintrz_d (__m256d _1)
+ }
+ 
+ /* Assembly instruction format:	xd, xj.  */
+-/* Data types in instruction templates:  V8SI, V8SF.  */
++/* Data types in instruction templates:  V8SF, V8SF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m256 __lasx_xvfrintrp_s (__m256 _1)
+ {
+@@ -3408,7 +3408,7 @@ __m256 __lasx_xvfrintrp_s (__m256 _1)
+ }
+ 
+ /* Assembly instruction format:	xd, xj.  */
+-/* Data types in instruction templates:  V4DI, V4DF.  */
++/* Data types in instruction templates:  V4DF, V4DF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m256d __lasx_xvfrintrp_d (__m256d _1)
+ {
+@@ -3416,7 +3416,7 @@ __m256d __lasx_xvfrintrp_d (__m256d _1)
+ }
+ 
+ /* Assembly instruction format:	xd, xj.  */
+-/* Data types in instruction templates:  V8SI, V8SF.  */
++/* Data types in instruction templates:  V8SF, V8SF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m256 __lasx_xvfrintrm_s (__m256 _1)
+ {
+@@ -3424,7 +3424,7 @@ __m256 __lasx_xvfrintrm_s (__m256 _1)
+ }
+ 
+ /* Assembly instruction format:	xd, xj.  */
+-/* Data types in instruction templates:  V4DI, V4DF.  */
++/* Data types in instruction templates:  V4DF, V4DF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m256d __lasx_xvfrintrm_d (__m256d _1)
+ {
+diff --git a/src/gcc/config/loongarch/lsxintrin.h b/src/gcc/config/loongarch/lsxintrin.h
+index ec4206990..29553c093 100644
+--- a/src/gcc/config/loongarch/lsxintrin.h
++++ b/src/gcc/config/loongarch/lsxintrin.h
+@@ -3412,7 +3412,7 @@ __m128i __lsx_vftintrneh_l_s (__m128 _1)
+ }
+ 
+ /* Assembly instruction format:	vd, vj.  */
+-/* Data types in instruction templates:  V4SI, V4SF.  */
++/* Data types in instruction templates:  V4SF, V4SF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m128 __lsx_vfrintrne_s (__m128 _1)
+ {
+@@ -3420,7 +3420,7 @@ __m128 __lsx_vfrintrne_s (__m128 _1)
+ }
+ 
+ /* Assembly instruction format:	vd, vj.  */
+-/* Data types in instruction templates:  V2DI, V2DF.  */
++/* Data types in instruction templates:  V2DF, V2DF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m128d __lsx_vfrintrne_d (__m128d _1)
+ {
+@@ -3428,7 +3428,7 @@ __m128d __lsx_vfrintrne_d (__m128d _1)
+ }
+ 
+ /* Assembly instruction format:	vd, vj.  */
+-/* Data types in instruction templates:  V4SI, V4SF.  */
++/* Data types in instruction templates:  V4SF, V4SF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m128 __lsx_vfrintrz_s (__m128 _1)
+ {
+@@ -3436,7 +3436,7 @@ __m128 __lsx_vfrintrz_s (__m128 _1)
+ }
+ 
+ /* Assembly instruction format:	vd, vj.  */
+-/* Data types in instruction templates:  V2DI, V2DF.  */
++/* Data types in instruction templates:  V2DF, V2DF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m128d __lsx_vfrintrz_d (__m128d _1)
+ {
+@@ -3444,7 +3444,7 @@ __m128d __lsx_vfrintrz_d (__m128d _1)
+ }
+ 
+ /* Assembly instruction format:	vd, vj.  */
+-/* Data types in instruction templates:  V4SI, V4SF.  */
++/* Data types in instruction templates:  V4SF, V4SF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m128 __lsx_vfrintrp_s (__m128 _1)
+ {
+@@ -3452,7 +3452,7 @@ __m128 __lsx_vfrintrp_s (__m128 _1)
+ }
+ 
+ /* Assembly instruction format:	vd, vj.  */
+-/* Data types in instruction templates:  V2DI, V2DF.  */
++/* Data types in instruction templates:  V2DF, V2DF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m128d __lsx_vfrintrp_d (__m128d _1)
+ {
+@@ -3460,7 +3460,7 @@ __m128d __lsx_vfrintrp_d (__m128d _1)
+ }
+ 
+ /* Assembly instruction format:	vd, vj.  */
+-/* Data types in instruction templates:  V4SI, V4SF.  */
++/* Data types in instruction templates:  V4SF, V4SF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m128 __lsx_vfrintrm_s (__m128 _1)
+ {
+@@ -3468,7 +3468,7 @@ __m128 __lsx_vfrintrm_s (__m128 _1)
+ }
+ 
+ /* Assembly instruction format:	vd, vj.  */
+-/* Data types in instruction templates:  V2DI, V2DF.  */
++/* Data types in instruction templates:  V2DF, V2DF.  */
+ extern __inline __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+ __m128d __lsx_vfrintrm_d (__m128d _1)
+ {
+-- 
+2.45.2
+

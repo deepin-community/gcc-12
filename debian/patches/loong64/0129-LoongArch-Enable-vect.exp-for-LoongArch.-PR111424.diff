@@ -1,0 +1,65 @@
+From bbef089d68ba23c5bfcf68ed99854a6401c9cddb Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Fri, 25 Oct 2024 00:58:01 +0000
+Subject: [PATCH 129/301] LoongArch: Enable vect.exp for LoongArch. [PR111424]
+
+gcc/testsuite/ChangeLog:
+
+        PR target/111424
+        * lib/target-supports.exp: Enable vect.exp for LoongArch.
+---
+ src/gcc/testsuite/lib/target-supports.exp | 31 +++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/src/gcc/testsuite/lib/target-supports.exp b/src/gcc/testsuite/lib/target-supports.exp
+index 69fbcd0eb..948696c6b 100644
+--- a/src/gcc/testsuite/lib/target-supports.exp
++++ b/src/gcc/testsuite/lib/target-supports.exp
+@@ -10544,6 +10544,13 @@ proc check_vect_support_and_set_flags { } {
+         }
+     } elseif [istarget amdgcn-*-*] {
+         set dg-do-what-default run
++    } elseif [istarget loongarch*-*-*] {
++      lappend DEFAULT_VECTCFLAGS "-mdouble-float" "-mlasx"
++      if [check_effective_target_loongarch_asx_hw] {
++     set dg-do-what-default run
++      } else {
++     set dg-do-what-default compile
++      }
+     } else {
+         return 0
+     }
+@@ -10551,6 +10558,30 @@ proc check_vect_support_and_set_flags { } {
+     return 1
+ }
+ 
++proc check_effective_target_loongarch_sx_hw { } {
++    return [check_runtime loongarch_sx_hw {
++   #include <lsxintrin.h>
++   int main (void)
++   {
++     __m128i a, b, c;
++     c = __lsx_vand_v (a, b);
++     return 0;
++   }
++    } "-mlsx"]
++}
++
++proc check_effective_target_loongarch_asx_hw { } {
++    return [check_runtime loongarch_asx_hw {
++   #include <lasxintrin.h>
++   int main (void)
++   {
++     __m256i a, b, c;
++     c = __lasx_xvand_v (a, b);
++     return 0;
++   }
++    } "-mlasx"]
++}
++
+ # Return 1 if the target does *not* require strict alignment.
+ 
+ proc check_effective_target_non_strict_align {} {
+-- 
+2.45.2
+

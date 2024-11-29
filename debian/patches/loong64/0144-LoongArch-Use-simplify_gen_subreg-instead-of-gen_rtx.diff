@@ -1,0 +1,116 @@
+From f433c27b46bdd5149fb91ecf3dad381497203da3 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 12 Nov 2023 00:55:13 +0800
+Subject: [PATCH 144/301] LoongArch: Use simplify_gen_subreg instead of
+ gen_rtx_SUBREG in loongarch_expand_vec_cond_mask_expr [PR112476]
+
+GCC internal says:
+
+    'subreg's of 'subreg's are not supported.  Using
+    'simplify_gen_subreg' is the recommended way to avoid this problem.
+
+Unfortunately loongarch_expand_vec_cond_mask_expr might create nested
+subreg under certain circumstances, causing an ICE.
+
+Use simplify_gen_subreg as the internal document suggests.
+
+gcc/ChangeLog:
+
+	PR target/112476
+	* config/loongarch/loongarch.cc
+	(loongarch_expand_vec_cond_mask_expr): Call simplify_gen_subreg
+	instead of gen_rtx_SUBREG.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/112476
+	* gcc.target/loongarch/pr112476-1.c: New test.
+	* gcc.target/loongarch/pr112476-2.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 11 ++++++---
+ .../gcc.target/loongarch/pr112476-1.c         | 24 +++++++++++++++++++
+ .../gcc.target/loongarch/pr112476-2.c         |  5 ++++
+ 3 files changed, 37 insertions(+), 3 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/pr112476-1.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/pr112476-2.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 4b7f971b2..db87f92b6 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -11189,7 +11189,9 @@ loongarch_expand_vec_cond_mask_expr (machine_mode mode, machine_mode vimode,
+ 	  if (mode != vimode)
+ 	    {
+ 	      xop1 = gen_reg_rtx (vimode);
+-	      emit_move_insn (xop1, gen_rtx_SUBREG (vimode, operands[1], 0));
++	      emit_move_insn (xop1,
++			      simplify_gen_subreg (vimode, operands[1],
++						   mode, 0));
+ 	    }
+ 	  emit_move_insn (src1, xop1);
+ 	}
+@@ -11206,7 +11208,9 @@ loongarch_expand_vec_cond_mask_expr (machine_mode mode, machine_mode vimode,
+ 	  if (mode != vimode)
+ 	    {
+ 	      xop2 = gen_reg_rtx (vimode);
+-	      emit_move_insn (xop2, gen_rtx_SUBREG (vimode, operands[2], 0));
++	      emit_move_insn (xop2,
++			      simplify_gen_subreg (vimode, operands[2],
++						   mode, 0));
+ 	    }
+ 	  emit_move_insn (src2, xop2);
+ 	}
+@@ -11225,7 +11229,8 @@ loongarch_expand_vec_cond_mask_expr (machine_mode mode, machine_mode vimode,
+ 			  gen_rtx_AND (vimode, mask, src1));
+       /* The result is placed back to a register with the mask.  */
+       emit_insn (gen_rtx_SET (mask, bsel));
+-      emit_move_insn (operands[0], gen_rtx_SUBREG (mode, mask, 0));
++      emit_move_insn (operands[0], simplify_gen_subreg (mode, mask,
++							vimode, 0));
+     }
+ }
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/pr112476-1.c b/src/gcc/testsuite/gcc.target/loongarch/pr112476-1.c
+new file mode 100644
+index 000000000..4cf133e7a
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr112476-1.c
+@@ -0,0 +1,24 @@
++/* PR target/112476: ICE with -mlsx */
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mfpu=64 -mabi=lp64d -mlsx" } */
++
++int foo, bar;
++float baz, res, a;
++
++void
++apply_adjacent_ternary (float *dst, float *src0)
++{
++  do
++    {
++      __builtin_memcpy (&res, &src0, sizeof (res));
++      *dst = foo ? baz : res;
++      dst++;
++    }
++  while (dst != src0);
++}
++
++void
++xx (void)
++{
++  apply_adjacent_ternary (&a, &a);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/pr112476-2.c b/src/gcc/testsuite/gcc.target/loongarch/pr112476-2.c
+new file mode 100644
+index 000000000..cc0dfbfc9
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr112476-2.c
+@@ -0,0 +1,5 @@
++/* PR target/112476: ICE with -mlasx */
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mfpu=64 -mabi=lp64d -mlasx" } */
++
++#include "pr112476-1.c"
+-- 
+2.45.2
+

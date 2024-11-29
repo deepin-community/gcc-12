@@ -1,0 +1,197 @@
+From 95df299a19191bd20743399fbda23cadf1990183 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 14 Nov 2023 00:17:19 +0800
+Subject: [PATCH 150/301] LoongArch: Handle vectorized copysign (x, -1)
+ expansion efficiently
+
+With LSX or LASX, copysign (x[i], -1) (or any negative constant) can be
+vectorized using [x]vbitseti.{w/d} instructions to directly set the
+signbits.
+
+Inspired by Tamar Christina's "AArch64: Handle copysign (x, -1) expansion
+efficiently" (r14-5289).
+
+gcc/ChangeLog:
+
+	* config/loongarch/lsx.md (copysign<mode>3): Allow operand[2] to
+	be an reg_or_vector_same_val_operand.  If it's a const vector
+	with same negative elements, expand the copysign with a bitset
+	instruction.  Otherwise, force it into an register.
+	* config/loongarch/lasx.md (copysign<mode>3): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* g++.target/loongarch/vect-copysign-negconst.C: New test.
+	* g++.target/loongarch/vect-copysign-negconst-run.C: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 22 ++++++++-
+ src/gcc/config/loongarch/lsx.md               | 22 ++++++++-
+ .../loongarch/vect-copysign-negconst-run.C    | 47 +++++++++++++++++++
+ .../loongarch/vect-copysign-negconst.C        | 27 +++++++++++
+ 4 files changed, 116 insertions(+), 2 deletions(-)
+ create mode 100644 src/gcc/testsuite/g++.target/loongarch/vect-copysign-negconst-run.C
+ create mode 100644 src/gcc/testsuite/g++.target/loongarch/vect-copysign-negconst.C
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index f0f2dd08d..2e11f0612 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -3136,11 +3136,31 @@
+ 	  (match_operand:FLASX 1 "register_operand")))
+    (set (match_dup 5)
+ 	(and:FLASX (match_dup 3)
+-		   (match_operand:FLASX 2 "register_operand")))
++		   (match_operand:FLASX 2 "reg_or_vector_same_val_operand")))
+    (set (match_operand:FLASX 0 "register_operand")
+ 	(ior:FLASX (match_dup 4) (match_dup 5)))]
+   "ISA_HAS_LASX"
+ {
++  /* copysign (x, -1) should instead be expanded as setting the sign
++     bit.  */
++  if (!REG_P (operands[2]))
++    {
++      rtx op2_elt = unwrap_const_vec_duplicate (operands[2]);
++      if (GET_CODE (op2_elt) == CONST_DOUBLE
++	  && real_isneg (CONST_DOUBLE_REAL_VALUE (op2_elt)))
++	{
++	  rtx n = GEN_INT (8 * GET_MODE_SIZE (<UNITMODE>mode) - 1);
++	  operands[0] = lowpart_subreg (<VIMODE256>mode, operands[0],
++					<MODE>mode);
++	  operands[1] = lowpart_subreg (<VIMODE256>mode, operands[1],
++					<MODE>mode);
++	  emit_insn (gen_lasx_xvbitseti_<lasxfmt> (operands[0],
++						   operands[1], n));
++	  DONE;
++	}
++    }
++
++  operands[2] = force_reg (<MODE>mode, operands[2]);
+   operands[3] = loongarch_build_signbit_mask (<MODE>mode, 1, 0);
+ 
+   operands[4] = gen_reg_rtx (<MODE>mode);
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 55c7d79a0..8ea41c85b 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -2873,11 +2873,31 @@
+ 	  (match_operand:FLSX 1 "register_operand")))
+    (set (match_dup 5)
+ 	(and:FLSX (match_dup 3)
+-		  (match_operand:FLSX 2 "register_operand")))
++		  (match_operand:FLSX 2 "reg_or_vector_same_val_operand")))
+    (set (match_operand:FLSX 0 "register_operand")
+ 	(ior:FLSX (match_dup 4) (match_dup 5)))]
+   "ISA_HAS_LSX"
+ {
++  /* copysign (x, -1) should instead be expanded as setting the sign
++     bit.  */
++  if (!REG_P (operands[2]))
++    {
++      rtx op2_elt = unwrap_const_vec_duplicate (operands[2]);
++      if (GET_CODE (op2_elt) == CONST_DOUBLE
++	  && real_isneg (CONST_DOUBLE_REAL_VALUE (op2_elt)))
++	{
++	  rtx n = GEN_INT (8 * GET_MODE_SIZE (<UNITMODE>mode) - 1);
++	  operands[0] = lowpart_subreg (<VIMODE>mode, operands[0],
++					<MODE>mode);
++	  operands[1] = lowpart_subreg (<VIMODE>mode, operands[1],
++					<MODE>mode);
++	  emit_insn (gen_lsx_vbitseti_<lsxfmt> (operands[0], operands[1],
++						n));
++	  DONE;
++	}
++    }
++
++  operands[2] = force_reg (<MODE>mode, operands[2]);
+   operands[3] = loongarch_build_signbit_mask (<MODE>mode, 1, 0);
+ 
+   operands[4] = gen_reg_rtx (<MODE>mode);
+diff --git a/src/gcc/testsuite/g++.target/loongarch/vect-copysign-negconst-run.C b/src/gcc/testsuite/g++.target/loongarch/vect-copysign-negconst-run.C
+new file mode 100644
+index 000000000..d2d5d15c9
+--- /dev/null
++++ b/src/gcc/testsuite/g++.target/loongarch/vect-copysign-negconst-run.C
+@@ -0,0 +1,47 @@
++/* { dg-do run } */
++/* { dg-options "-O2 -march=loongarch64 -mlasx -mno-strict-align" } */
++/* { dg-require-effective-target loongarch_asx_hw } */
++
++#include "vect-copysign-negconst.C"
++
++double d[] = {1.2, -3.4, -5.6, 7.8};
++float f[] = {1.2, -3.4, -5.6, 7.8, -9.0, -11.4, 51.4, 1919.810};
++
++double _abs(double x) { return __builtin_fabs (x); }
++float _abs(float x) { return __builtin_fabsf (x); }
++
++template <class T>
++void
++check (T *arr, T *orig, int len)
++{
++  for (int i = 0; i < len; i++)
++    {
++      if (arr[i] > 0)
++	__builtin_trap ();
++      if (_abs (arr[i]) != _abs (orig[i]))
++	__builtin_trap ();
++    }
++}
++
++int
++main()
++{
++  double test_d[4];
++  float test_f[8];
++
++  __builtin_memcpy (test_d, d, sizeof (test_d));
++  force_negative<2> (test_d);
++  check (test_d, d, 2);
++
++  __builtin_memcpy (test_d, d, sizeof (test_d));
++  force_negative<4> (test_d);
++  check (test_d, d, 4);
++
++  __builtin_memcpy (test_f, f, sizeof (test_f));
++  force_negative<4> (test_f);
++  check (test_f, f, 4);
++
++  __builtin_memcpy (test_f, f, sizeof (test_f));
++  force_negative<8> (test_f);
++  check (test_f, f, 8);
++}
+diff --git a/src/gcc/testsuite/g++.target/loongarch/vect-copysign-negconst.C b/src/gcc/testsuite/g++.target/loongarch/vect-copysign-negconst.C
+new file mode 100644
+index 000000000..5e8820d2b
+--- /dev/null
++++ b/src/gcc/testsuite/g++.target/loongarch/vect-copysign-negconst.C
+@@ -0,0 +1,27 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mlasx -mno-strict-align" } */
++/* { dg-final { scan-assembler "\txvbitseti.*63" } } */
++/* { dg-final { scan-assembler "\txvbitseti.*31" } } */
++/* { dg-final { scan-assembler "\tvbitseti.*63" } } */
++/* { dg-final { scan-assembler "\tvbitseti.*31" } } */
++
++template <int N>
++__attribute__ ((noipa)) void
++force_negative (float *arr)
++{
++  for (int i = 0; i < N; i++)
++    arr[i] = __builtin_copysignf (arr[i], -2);
++}
++
++template <int N>
++__attribute__ ((noipa)) void
++force_negative (double *arr)
++{
++  for (int i = 0; i < N; i++)
++    arr[i] = __builtin_copysign (arr[i], -3);
++}
++
++template void force_negative<4>(float *);
++template void force_negative<8>(float *);
++template void force_negative<2>(double *);
++template void force_negative<4>(double *);
+-- 
+2.45.2
+

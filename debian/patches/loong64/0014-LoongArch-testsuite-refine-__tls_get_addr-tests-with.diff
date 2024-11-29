@@ -1,0 +1,159 @@
+From 3da08ac23cd7ea2006a6a084ccaca5e6e16c008f Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 24 Aug 2022 19:34:47 +0800
+Subject: [PATCH 014/301] LoongArch: testsuite: refine __tls_get_addr tests
+ with tls_native
+
+If GCC is not built with a working linker for the target (developers
+occansionally build such a "minimal" GCC for testing and debugging),
+TLS will be emulated and __tls_get_addr won't be used.  Refine those
+tests depending on __tls_get_addr with tls_native to avoid test
+failures.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/func-call-medium-1.c: Refine test
+	depending on __tls_get_addr with { target tls_native }.
+	* gcc.target/loongarch/func-call-medium-2.c: Likewise.
+	* gcc.target/loongarch/func-call-medium-3.c: Likewise.
+	* gcc.target/loongarch/func-call-medium-4.c: Likewise.
+	* gcc.target/loongarch/func-call-medium-5.c: Likewise.
+	* gcc.target/loongarch/func-call-medium-6.c: Likewise.
+	* gcc.target/loongarch/func-call-medium-7.c: Likewise.
+	* gcc.target/loongarch/func-call-medium-8.c: Likewise.
+	* gcc.target/loongarch/tls-gd-noplt.c: Likewise.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c | 2 +-
+ src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c | 2 +-
+ src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c | 2 +-
+ src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c | 2 +-
+ src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c | 2 +-
+ src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c | 2 +-
+ src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c | 2 +-
+ src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c | 3 ++-
+ src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c       | 2 +-
+ 9 files changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c
+index 276d73e5e..6339e832f 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-1.c
+@@ -3,7 +3,7 @@
+ /* { dg-final { scan-assembler "test:.*la\.global\t.*g\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*la\.global\t.*f\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*la\.local\t.*l\n\tjirl" } } */
+-/* { dg-final { scan-assembler "test3:.*la\.global\t.*\_\_tls\_get\_addr" } } */
++/* { dg-final { scan-assembler "test3:.*la\.global\t.*\_\_tls\_get\_addr" { target tls_native } } } */
+ 
+ extern void g (void);
+ void
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c
+index 237821c06..a53e75e0b 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-2.c
+@@ -3,7 +3,7 @@
+ /* { dg-final { scan-assembler "test:.*la\.global\t.*g\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*la\.local\t.*f\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*la\.local\t.*l\n\tjirl" } } */
+-/* { dg-final { scan-assembler "test3:.*la\.global\t.*\_\_tls\_get\_addr" } } */
++/* { dg-final { scan-assembler "test3:.*la\.global\t.*\_\_tls\_get\_addr" { target tls_native } } } */
+ 
+ extern void g (void);
+ void
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c
+index 9a6e16103..0da7bf98e 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-3.c
+@@ -3,7 +3,7 @@
+ /* { dg-final { scan-assembler "test:.*la\.global\t.*g\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*la\.global\t.*f\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*la\.local\t.*l\n\tjirl" } } */
+-/* { dg-final { scan-assembler "test3:.*la\.global\t.*\_\_tls\_get\_addr" } } */
++/* { dg-final { scan-assembler "test3:.*la\.global\t.*\_\_tls\_get\_addr" { target tls_native } } } */
+ 
+ extern void g (void);
+ void
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c
+index 2577e3452..0219688ae 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-4.c
+@@ -3,7 +3,7 @@
+ /* { dg-final { scan-assembler "test:.*la\.global\t.*g\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*la\.local\t.*f\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*la\.local\t.*l\n\tjirl" } } */
+-/* { dg-final { scan-assembler "test3:.*la\.global\t.*\_\_tls\_get\_addr" } } */
++/* { dg-final { scan-assembler "test3:.*la\.global\t.*\_\_tls\_get\_addr" { target tls_native } } } */
+ 
+ extern void g (void);
+ void
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c
+index d70b6ea46..8a47b5afc 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c
+@@ -3,7 +3,7 @@
+ /* { dg-final { scan-assembler "test:.*pcalau12i.*%pc_hi20\\(g\\)\n\tjirl.*pc_lo12\\(g\\)" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i.*%pc_hi20\\(f\\)\n\tjirl.*%pc_lo12\\(f\\)" } } */
+ /* { dg-final { scan-assembler "test2:.*pcalau12i.*%pc_hi20\\(l\\)\n\tjirl.*%pc_lo12\\(l\\)" } } */
+-/* { dg-final { scan-assembler "test3:.*pcalau12i.*%pc_hi20\\(__tls_get_addr\\)\n\t.*\n\tjirl.*%pc_lo12\\(__tls_get_addr\\)" } } */
++/* { dg-final { scan-assembler "test3:.*pcalau12i.*%pc_hi20\\(__tls_get_addr\\)\n\t.*\n\tjirl.*%pc_lo12\\(__tls_get_addr\\)" { target tls_native } } } */
+ 
+ extern void g (void);
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c
+index f963a9944..1e75e60e0 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c
+@@ -3,7 +3,7 @@
+ /* { dg-final { scan-assembler "test:.*pcalau12i.*%pc_hi20\\(g\\)\n\tjirl.*pc_lo12\\(g\\)" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i.*%pc_hi20\\(f\\)\n\tjirl.*%pc_lo12\\(f\\)" } } */
+ /* { dg-final { scan-assembler "test2:.*pcalau12i.*%pc_hi20\\(l\\)\n\tjirl.*%pc_lo12\\(l\\)" } } */
+-/* { dg-final { scan-assembler "test3:.*pcalau12i.*%pc_hi20\\(__tls_get_addr\\)\n\t.*\n\tjirl.*%pc_lo12\\(__tls_get_addr\\)" } } */
++/* { dg-final { scan-assembler "test3:.*pcalau12i.*%pc_hi20\\(__tls_get_addr\\)\n\t.*\n\tjirl.*%pc_lo12\\(__tls_get_addr\\)" { target tls_native } } } */
+ 
+ extern void g (void);
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c
+index f2818b2da..9e89085ca 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c
+@@ -3,7 +3,7 @@
+ /* { dg-final { scan-assembler "test:.*pcalau12i\t.*%got_pc_hi20\\(g\\)\n\tld\.d\t.*%got_pc_lo12\\(g\\)\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i\t.*%got_pc_hi20\\(f\\)\n\tld\.d\t.*%got_pc_lo12\\(f\\)\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test2:.*pcalau12i\t.*%pc_hi20\\(l\\)\n\tjirl.*%pc_lo12\\(l\\)" } } */
+-/* { dg-final { scan-assembler "test3:.*pcalau12i.*%got_pc_hi20\\(__tls_get_addr\\)\n\tld\.d.*%got_pc_lo12\\(__tls_get_addr\\)" } } */
++/* { dg-final { scan-assembler "test3:.*pcalau12i.*%got_pc_hi20\\(__tls_get_addr\\)\n\tld\.d.*%got_pc_lo12\\(__tls_get_addr\\)" { target tls_native } } } */
+ 
+ 
+ extern void g (void);
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c
+index 7fa873d84..fde9c6e0e 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c
+@@ -3,7 +3,8 @@
+ /* { dg-final { scan-assembler "test:.*pcalau12i\t.*%got_pc_hi20\\(g\\)\n\tld\.d\t.*%got_pc_lo12\\(g\\)\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i\t.*%pc_hi20\\(f\\)\n\tjirl.*%pc_lo12\\(f\\)" } } */
+ /* { dg-final { scan-assembler "test2:.*pcalau12i\t.*%pc_hi20\\(l\\)\n\tjirl.*%pc_lo12\\(l\\)" } } */
+-/* { dg-final { scan-assembler "test3:.*pcalau12i.*%got_pc_hi20\\(__tls_get_addr\\)\n\tld\.d.*%got_pc_lo12\\(__tls_get_addr\\)" } } */
++/* { dg-final { scan-assembler "test3:.*pcalau12i.*%got_pc_hi20\\(__tls_get_addr\\)\n\tld\.d.*%got_pc_lo12\\(__tls_get_addr\\)" { target tls_native } } } */
++/* { dg-final { scan-assembler "test3:.*pcalau12i.*%got_pc_hi20\\(__tls_get_addr\\)\n\tld\.d.*%got_pc_lo12\\(__tls_get_addr\\)" { target tls_native } } } */
+ 
+ extern void g (void);
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c b/src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c
+index 375663286..9432c477e 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/tls-gd-noplt.c
+@@ -1,6 +1,6 @@
+ /* { dg-do compile } */
+ /* { dg-options "-O0 -fno-plt -mcmodel=normal -mexplicit-relocs" } */
+-/* { dg-final { scan-assembler "pcalau12i\t.*%got_pc_hi20\\(__tls_get_addr\\)\n\tld\.d.*%got_pc_lo12\\(__tls_get_addr\\)" } } */
++/* { dg-final { scan-assembler "pcalau12i\t.*%got_pc_hi20\\(__tls_get_addr\\)\n\tld\.d.*%got_pc_lo12\\(__tls_get_addr\\)" { target tls_native } } } */
+ 
+ __attribute__ ((tls_model ("global-dynamic"))) __thread int a;
+ 
+-- 
+2.45.2
+

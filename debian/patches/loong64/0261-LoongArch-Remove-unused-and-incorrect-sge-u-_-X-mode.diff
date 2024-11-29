@@ -1,0 +1,57 @@
+From 01376f94ab004fe9ef7ea6f964cf37b073f0c024 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 13 Mar 2024 20:44:38 +0800
+Subject: [PATCH 261/301] LoongArch: Remove unused and incorrect
+ "sge<u>_<X:mode><GPR:mode>" define_insn
+
+If this insn is really used, we'll have something like
+
+    slti $r4,$r0,$r5
+
+in the code.  The assembler will reject it because slti wants 2
+register operands and 1 immediate operand.  But we've not got any bug
+report for this, indicating this define_insn is unused at all.
+
+Note that do_store_flag (in expr.cc) is already converting x >= 1 to
+x > 0 unconditionally, so this define_insn is indeed unused and we can
+just remove it.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (any_ge): Remove.
+	(sge<u>_<X:mode><GPR:mode>): Remove.
+---
+ src/gcc/config/loongarch/loongarch.md | 10 ----------
+ 1 file changed, 10 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index d2c7c3b05..1b3525dde 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -517,7 +517,6 @@
+ ;; These code iterators allow the signed and unsigned scc operations to use
+ ;; the same template.
+ (define_code_iterator any_gt [gt gtu])
+-(define_code_iterator any_ge [ge geu])
+ (define_code_iterator any_lt [lt ltu])
+ (define_code_iterator any_le [le leu])
+ 
+@@ -3355,15 +3354,6 @@
+   [(set_attr "type" "slt")
+    (set_attr "mode" "<X:MODE>")])
+ 
+-(define_insn "*sge<u>_<X:mode><GPR:mode>"
+-  [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(any_ge:GPR (match_operand:X 1 "register_operand" "r")
+-		     (const_int 1)))]
+-  ""
+-  "slt<u>i\t%0,%.,%1"
+-  [(set_attr "type" "slt")
+-   (set_attr "mode" "<X:MODE>")])
+-
+ (define_insn "*slt<u>_<X:mode><GPR:mode>"
+   [(set (match_operand:GPR 0 "register_operand" "=r")
+ 	(any_lt:GPR (match_operand:X 1 "register_operand" "r")
+-- 
+2.45.2
+

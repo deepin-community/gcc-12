@@ -1,0 +1,268 @@
+From cf0781ff87142f4d63a67a7b981d0acacfc102ed Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 19 Nov 2023 16:28:59 +0800
+Subject: [PATCH 165/301] LoongArch: Use standard pattern name and RTX code for
+ LSX/LASX muh instructions
+
+Removes unnecessary UNSPECs and make the muh instructions useful with
+GNU vectors or auto vectorization.
+
+gcc/ChangeLog:
+
+	* config/loongarch/simd.md (muh): New code attribute mapping
+	any_extend to smul_highpart or umul_highpart.
+	(<su>mul<mode>3_highpart): New define_insn.
+	* config/loongarch/lsx.md (UNSPEC_LSX_VMUH_S): Remove.
+	(UNSPEC_LSX_VMUH_U): Remove.
+	(lsx_vmuh_s_<lsxfmt>): Remove.
+	(lsx_vmuh_u_<lsxfmt>): Remove.
+	* config/loongarch/lasx.md (UNSPEC_LASX_XVMUH_S): Remove.
+	(UNSPEC_LASX_XVMUH_U): Remove.
+	(lasx_xvmuh_s_<lasxfmt>): Remove.
+	(lasx_xvmuh_u_<lasxfmt>): Remove.
+	* config/loongarch/loongarch-builtins.cc (CODE_FOR_lsx_vmuh_b):
+	Redefine to standard pattern name.
+	(CODE_FOR_lsx_vmuh_h): Likewise.
+	(CODE_FOR_lsx_vmuh_w): Likewise.
+	(CODE_FOR_lsx_vmuh_d): Likewise.
+	(CODE_FOR_lsx_vmuh_bu): Likewise.
+	(CODE_FOR_lsx_vmuh_hu): Likewise.
+	(CODE_FOR_lsx_vmuh_wu): Likewise.
+	(CODE_FOR_lsx_vmuh_du): Likewise.
+	(CODE_FOR_lasx_xvmuh_b): Likewise.
+	(CODE_FOR_lasx_xvmuh_h): Likewise.
+	(CODE_FOR_lasx_xvmuh_w): Likewise.
+	(CODE_FOR_lasx_xvmuh_d): Likewise.
+	(CODE_FOR_lasx_xvmuh_bu): Likewise.
+	(CODE_FOR_lasx_xvmuh_hu): Likewise.
+	(CODE_FOR_lasx_xvmuh_wu): Likewise.
+	(CODE_FOR_lasx_xvmuh_du): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vect-muh.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 22 ------------
+ .../config/loongarch/loongarch-builtins.cc    | 32 ++++++++---------
+ src/gcc/config/loongarch/lsx.md               | 22 ------------
+ src/gcc/config/loongarch/simd.md              | 16 +++++++++
+ .../testsuite/gcc.target/loongarch/vect-muh.c | 36 +++++++++++++++++++
+ 5 files changed, 68 insertions(+), 60 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-muh.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index d4a56c307..023a023b4 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -68,8 +68,6 @@
+   UNSPEC_LASX_BRANCH
+   UNSPEC_LASX_BRANCH_V
+ 
+-  UNSPEC_LASX_XVMUH_S
+-  UNSPEC_LASX_XVMUH_U
+   UNSPEC_LASX_MXVEXTW_U
+   UNSPEC_LASX_XVSLLWIL_S
+   UNSPEC_LASX_XVSLLWIL_U
+@@ -2823,26 +2821,6 @@
+   [(set_attr "type" "simd_logic")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvmuh_s_<lasxfmt>"
+-  [(set (match_operand:ILASX 0 "register_operand" "=f")
+-	(unspec:ILASX [(match_operand:ILASX 1 "register_operand" "f")
+-		       (match_operand:ILASX 2 "register_operand" "f")]
+-		      UNSPEC_LASX_XVMUH_S))]
+-  "ISA_HAS_LASX"
+-  "xvmuh.<lasxfmt>\t%u0,%u1,%u2"
+-  [(set_attr "type" "simd_int_arith")
+-   (set_attr "mode" "<MODE>")])
+-
+-(define_insn "lasx_xvmuh_u_<lasxfmt_u>"
+-  [(set (match_operand:ILASX 0 "register_operand" "=f")
+-	(unspec:ILASX [(match_operand:ILASX 1 "register_operand" "f")
+-		       (match_operand:ILASX 2 "register_operand" "f")]
+-		      UNSPEC_LASX_XVMUH_U))]
+-  "ISA_HAS_LASX"
+-  "xvmuh.<lasxfmt_u>\t%u0,%u1,%u2"
+-  [(set_attr "type" "simd_int_arith")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lasx_xvsllwil_s_<dlasxfmt>_<lasxfmt>"
+   [(set (match_operand:<VDMODE256> 0 "register_operand" "=f")
+ 	(unspec:<VDMODE256> [(match_operand:ILASX_WHB 1 "register_operand" "f")
+diff --git a/src/gcc/config/loongarch/loongarch-builtins.cc b/src/gcc/config/loongarch/loongarch-builtins.cc
+index fb458feac..41ea357cf 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -319,6 +319,14 @@ AVAIL_ALL (lasx, ISA_HAS_LASX)
+ #define CODE_FOR_lsx_vmod_hu CODE_FOR_umodv8hi3
+ #define CODE_FOR_lsx_vmod_wu CODE_FOR_umodv4si3
+ #define CODE_FOR_lsx_vmod_du CODE_FOR_umodv2di3
++#define CODE_FOR_lsx_vmuh_b CODE_FOR_smulv16qi3_highpart
++#define CODE_FOR_lsx_vmuh_h CODE_FOR_smulv8hi3_highpart
++#define CODE_FOR_lsx_vmuh_w CODE_FOR_smulv4si3_highpart
++#define CODE_FOR_lsx_vmuh_d CODE_FOR_smulv2di3_highpart
++#define CODE_FOR_lsx_vmuh_bu CODE_FOR_umulv16qi3_highpart
++#define CODE_FOR_lsx_vmuh_hu CODE_FOR_umulv8hi3_highpart
++#define CODE_FOR_lsx_vmuh_wu CODE_FOR_umulv4si3_highpart
++#define CODE_FOR_lsx_vmuh_du CODE_FOR_umulv2di3_highpart
+ #define CODE_FOR_lsx_vmul_b CODE_FOR_mulv16qi3
+ #define CODE_FOR_lsx_vmul_h CODE_FOR_mulv8hi3
+ #define CODE_FOR_lsx_vmul_w CODE_FOR_mulv4si3
+@@ -439,14 +447,6 @@ AVAIL_ALL (lasx, ISA_HAS_LASX)
+ #define CODE_FOR_lsx_vfnmsub_s CODE_FOR_vfnmsubv4sf4_nmsub4
+ #define CODE_FOR_lsx_vfnmsub_d CODE_FOR_vfnmsubv2df4_nmsub4
+ 
+-#define CODE_FOR_lsx_vmuh_b CODE_FOR_lsx_vmuh_s_b
+-#define CODE_FOR_lsx_vmuh_h CODE_FOR_lsx_vmuh_s_h
+-#define CODE_FOR_lsx_vmuh_w CODE_FOR_lsx_vmuh_s_w
+-#define CODE_FOR_lsx_vmuh_d CODE_FOR_lsx_vmuh_s_d
+-#define CODE_FOR_lsx_vmuh_bu CODE_FOR_lsx_vmuh_u_bu
+-#define CODE_FOR_lsx_vmuh_hu CODE_FOR_lsx_vmuh_u_hu
+-#define CODE_FOR_lsx_vmuh_wu CODE_FOR_lsx_vmuh_u_wu
+-#define CODE_FOR_lsx_vmuh_du CODE_FOR_lsx_vmuh_u_du
+ #define CODE_FOR_lsx_vsllwil_h_b CODE_FOR_lsx_vsllwil_s_h_b
+ #define CODE_FOR_lsx_vsllwil_w_h CODE_FOR_lsx_vsllwil_s_w_h
+ #define CODE_FOR_lsx_vsllwil_d_w CODE_FOR_lsx_vsllwil_s_d_w
+@@ -588,6 +588,14 @@ AVAIL_ALL (lasx, ISA_HAS_LASX)
+ #define CODE_FOR_lasx_xvmul_h CODE_FOR_mulv16hi3
+ #define CODE_FOR_lasx_xvmul_w CODE_FOR_mulv8si3
+ #define CODE_FOR_lasx_xvmul_d CODE_FOR_mulv4di3
++#define CODE_FOR_lasx_xvmuh_b CODE_FOR_smulv32qi3_highpart
++#define CODE_FOR_lasx_xvmuh_h CODE_FOR_smulv16hi3_highpart
++#define CODE_FOR_lasx_xvmuh_w CODE_FOR_smulv8si3_highpart
++#define CODE_FOR_lasx_xvmuh_d CODE_FOR_smulv4di3_highpart
++#define CODE_FOR_lasx_xvmuh_bu CODE_FOR_umulv32qi3_highpart
++#define CODE_FOR_lasx_xvmuh_hu CODE_FOR_umulv16hi3_highpart
++#define CODE_FOR_lasx_xvmuh_wu CODE_FOR_umulv8si3_highpart
++#define CODE_FOR_lasx_xvmuh_du CODE_FOR_umulv4di3_highpart
+ #define CODE_FOR_lasx_xvclz_b CODE_FOR_clzv32qi2
+ #define CODE_FOR_lasx_xvclz_h CODE_FOR_clzv16hi2
+ #define CODE_FOR_lasx_xvclz_w CODE_FOR_clzv8si2
+@@ -697,14 +705,6 @@ AVAIL_ALL (lasx, ISA_HAS_LASX)
+ #define CODE_FOR_lasx_xvavgr_hu CODE_FOR_lasx_xvavgr_u_hu
+ #define CODE_FOR_lasx_xvavgr_wu CODE_FOR_lasx_xvavgr_u_wu
+ #define CODE_FOR_lasx_xvavgr_du CODE_FOR_lasx_xvavgr_u_du
+-#define CODE_FOR_lasx_xvmuh_b CODE_FOR_lasx_xvmuh_s_b
+-#define CODE_FOR_lasx_xvmuh_h CODE_FOR_lasx_xvmuh_s_h
+-#define CODE_FOR_lasx_xvmuh_w CODE_FOR_lasx_xvmuh_s_w
+-#define CODE_FOR_lasx_xvmuh_d CODE_FOR_lasx_xvmuh_s_d
+-#define CODE_FOR_lasx_xvmuh_bu CODE_FOR_lasx_xvmuh_u_bu
+-#define CODE_FOR_lasx_xvmuh_hu CODE_FOR_lasx_xvmuh_u_hu
+-#define CODE_FOR_lasx_xvmuh_wu CODE_FOR_lasx_xvmuh_u_wu
+-#define CODE_FOR_lasx_xvmuh_du CODE_FOR_lasx_xvmuh_u_du
+ #define CODE_FOR_lasx_xvssran_b_h CODE_FOR_lasx_xvssran_s_b_h
+ #define CODE_FOR_lasx_xvssran_h_w CODE_FOR_lasx_xvssran_s_h_w
+ #define CODE_FOR_lasx_xvssran_w_d CODE_FOR_lasx_xvssran_s_w_d
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index c1c3719e3..537afaf96 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -64,8 +64,6 @@
+   UNSPEC_LSX_VSRLR
+   UNSPEC_LSX_VSRLRI
+   UNSPEC_LSX_VSHUF
+-  UNSPEC_LSX_VMUH_S
+-  UNSPEC_LSX_VMUH_U
+   UNSPEC_LSX_VEXTW_S
+   UNSPEC_LSX_VEXTW_U
+   UNSPEC_LSX_VSLLWIL_S
+@@ -2506,26 +2504,6 @@
+   [(set_attr "type" "simd_logic")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vmuh_s_<lsxfmt>"
+-  [(set (match_operand:ILSX 0 "register_operand" "=f")
+-	(unspec:ILSX [(match_operand:ILSX 1 "register_operand" "f")
+-		      (match_operand:ILSX 2 "register_operand" "f")]
+-		     UNSPEC_LSX_VMUH_S))]
+-  "ISA_HAS_LSX"
+-  "vmuh.<lsxfmt>\t%w0,%w1,%w2"
+-  [(set_attr "type" "simd_int_arith")
+-   (set_attr "mode" "<MODE>")])
+-
+-(define_insn "lsx_vmuh_u_<lsxfmt_u>"
+-  [(set (match_operand:ILSX 0 "register_operand" "=f")
+-	(unspec:ILSX [(match_operand:ILSX 1 "register_operand" "f")
+-		      (match_operand:ILSX 2 "register_operand" "f")]
+-		     UNSPEC_LSX_VMUH_U))]
+-  "ISA_HAS_LSX"
+-  "vmuh.<lsxfmt_u>\t%w0,%w1,%w2"
+-  [(set_attr "type" "simd_int_arith")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lsx_vextw_s_d"
+   [(set (match_operand:V2DI 0 "register_operand" "=f")
+ 	(unspec:V2DI [(match_operand:V4SI 1 "register_operand" "f")]
+diff --git a/src/gcc/config/loongarch/simd.md b/src/gcc/config/loongarch/simd.md
+index 27d1ffecd..a0e8db3c0 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -206,6 +206,22 @@
+   [(set_attr "type" "simd_fcvt")
+    (set_attr "mode" "<MODE>")])
+ 
++;; <x>vmuh.{b/h/w/d}
++
++(define_code_attr muh
++  [(sign_extend "smul_highpart")
++   (zero_extend "umul_highpart")])
++
++(define_insn "<su>mul<mode>3_highpart"
++  [(set (match_operand:IVEC 0 "register_operand" "=f")
++	(<muh>:IVEC (match_operand:IVEC 1 "register_operand" "f")
++		    (match_operand:IVEC 2 "register_operand" "f")))
++   (any_extend (const_int 0))]
++  ""
++  "<x>vmuh.<simdfmt><u>\t%<wu>0,%<wu>1,%<wu>2"
++  [(set_attr "type" "simd_int_arith")
++   (set_attr "mode" "<MODE>")])
++
+ ; The LoongArch SX Instructions.
+ (include "lsx.md")
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-muh.c b/src/gcc/testsuite/gcc.target/loongarch/vect-muh.c
+new file mode 100644
+index 000000000..a788840b2
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-muh.c
+@@ -0,0 +1,36 @@
++/* { dg-do compile } */
++/* { dg-options "-mlasx -O3" } */
++/* { dg-final { scan-assembler "\tvmuh\.w\t" } } */
++/* { dg-final { scan-assembler "\tvmuh\.wu\t" } } */
++/* { dg-final { scan-assembler "\txvmuh\.w\t" } } */
++/* { dg-final { scan-assembler "\txvmuh\.wu\t" } } */
++
++int a[8], b[8], c[8];
++
++void
++test1 (void)
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = ((long)a[i] * (long)b[i]) >> 32;
++}
++
++void
++test2 (void)
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = ((long)(unsigned)a[i] * (long)(unsigned)b[i]) >> 32;
++}
++
++void
++test3 (void)
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = ((long)a[i] * (long)b[i]) >> 32;
++}
++
++void
++test4 (void)
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = ((long)(unsigned)a[i] * (long)(unsigned)b[i]) >> 32;
++}
+-- 
+2.45.2
+

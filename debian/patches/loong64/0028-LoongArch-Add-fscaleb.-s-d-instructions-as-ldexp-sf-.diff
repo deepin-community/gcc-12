@@ -1,0 +1,155 @@
+From 7e7a4155219c25773d88132532596f66dec7ea1b Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 8 Nov 2022 12:14:35 +0800
+Subject: [PATCH 028/301] LoongArch: Add fscaleb.{s,d} instructions as
+ ldexp{sf,df}3
+
+This allows optimizing __builtin_ldexp{,f} and __builtin_scalbn{,f} with
+-fno-math-errno.
+
+IMODE is added because we can't hard code SI for operand 2: fscaleb.d
+instruction always take the high half of both source registers into
+account.  See my_ldexp_long in the test case.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (UNSPEC_FSCALEB): New unspec.
+	(type): Add fscaleb.
+	(IMODE): New mode attr.
+	(ldexp<mode>3): New instruction template.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/fscaleb.c: New test.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/loongarch.md         | 26 +++++++++-
+ .../testsuite/gcc.target/loongarch/fscaleb.c  | 48 +++++++++++++++++++
+ 2 files changed, 72 insertions(+), 2 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/fscaleb.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 97fce8f47..541c1f437 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -41,6 +41,7 @@
+   UNSPEC_FTINT
+   UNSPEC_FTINTRM
+   UNSPEC_FTINTRP
++  UNSPEC_FSCALEB
+ 
+   ;; Override return address for exception handling.
+   UNSPEC_EH_RETURN
+@@ -221,6 +222,7 @@
+ ;; fcmp		floating point compare
+ ;; fcopysign	floating point copysign
+ ;; fcvt		floating point convert
++;; fscaleb	floating point scale
+ ;; fsqrt	floating point square root
+ ;; frsqrt       floating point reciprocal square root
+ ;; multi	multiword sequence (or user asm statements)
+@@ -232,8 +234,8 @@
+   "unknown,branch,jump,call,load,fpload,fpidxload,store,fpstore,fpidxstore,
+    prefetch,prefetchx,condmove,mgtf,mftg,const,arith,logical,
+    shift,slt,signext,clz,trap,imul,idiv,move,
+-   fmove,fadd,fmul,fmadd,fdiv,frdiv,fabs,fneg,fcmp,fcopysign,fcvt,fsqrt,
+-   frsqrt,accext,accmod,multi,atomic,syncloop,nop,ghost"
++   fmove,fadd,fmul,fmadd,fdiv,frdiv,fabs,fneg,fcmp,fcopysign,fcvt,fscaleb,
++   fsqrt,frsqrt,accext,accmod,multi,atomic,syncloop,nop,ghost"
+   (cond [(eq_attr "jirl" "!unset") (const_string "call")
+ 	 (eq_attr "got" "load") (const_string "load")
+ 
+@@ -419,6 +421,10 @@
+ ;; the controlling mode.
+ (define_mode_attr HALFMODE [(DF "SI") (DI "SI") (TF "DI")])
+ 
++;; This attribute gives the integer mode that has the same size of a
++;; floating-point mode.
++(define_mode_attr IMODE [(SF "SI") (DF "DI")])
++
+ ;; This code iterator allows signed and unsigned widening multiplications
+ ;; to use the same template.
+ (define_code_iterator any_extend [sign_extend zero_extend])
+@@ -1015,7 +1021,23 @@
+   "fcopysign.<fmt>\t%0,%1,%2"
+   [(set_attr "type" "fcopysign")
+    (set_attr "mode" "<UNITMODE>")])
++
++;;
++;;  ....................
++;;
++;;	FLOATING POINT SCALE
++;;
++;;  ....................
+ 
++(define_insn "ldexp<mode>3"
++  [(set (match_operand:ANYF 0 "register_operand" "=f")
++	(unspec:ANYF [(match_operand:ANYF    1 "register_operand" "f")
++		      (match_operand:<IMODE> 2 "register_operand" "f")]
++		     UNSPEC_FSCALEB))]
++  "TARGET_HARD_FLOAT"
++  "fscaleb.<fmt>\t%0,%1,%2"
++  [(set_attr "type" "fscaleb")
++   (set_attr "mode" "<UNITMODE>")])
+ 
+ ;;
+ ;;  ...................
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/fscaleb.c b/src/gcc/testsuite/gcc.target/loongarch/fscaleb.c
+new file mode 100644
+index 000000000..f18470fbb
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/fscaleb.c
+@@ -0,0 +1,48 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno" } */
++/* { dg-final { scan-assembler-times "fscaleb\\.s" 3 } } */
++/* { dg-final { scan-assembler-times "fscaleb\\.d" 4 } } */
++/* { dg-final { scan-assembler-times "slli\\.w" 1 } } */
++
++double
++my_scalbln (double a, long b)
++{
++  return __builtin_scalbln (a, b);
++}
++
++double
++my_scalbn (double a, int b)
++{
++  return __builtin_scalbn (a, b);
++}
++
++double
++my_ldexp (double a, int b)
++{
++  return __builtin_ldexp (a, b);
++}
++
++float
++my_scalblnf (float a, long b)
++{
++  return __builtin_scalblnf (a, b);
++}
++
++float
++my_scalbnf (float a, int b)
++{
++  return __builtin_scalbnf (a, b);
++}
++
++float
++my_ldexpf (float a, int b)
++{
++  return __builtin_ldexpf (a, b);
++}
++
++/* b must be sign-extended */
++double
++my_ldexp_long (double a, long b)
++{
++  return __builtin_ldexp (a, b);
++}
+-- 
+2.45.2
+

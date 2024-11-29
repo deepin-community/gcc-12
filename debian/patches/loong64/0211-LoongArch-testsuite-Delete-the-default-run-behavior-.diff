@@ -1,0 +1,31 @@
+From 8c0115b1591d5dd52fc4df786b46e845777b2b9a Mon Sep 17 00:00:00 2001
+From: chenxiaolong <chenxiaolong@loongson.cn>
+Date: Fri, 5 Jan 2024 11:43:27 +0800
+Subject: [PATCH 211/301] LoongArch: testsuite:Delete the default run behavior
+ in pr60510.f.
+
+When binutils does not support vector instruction sets, the test program fails
+because it does not recognize vectorization at the assembly stage. Therefore,
+the default run behavior of the program is deleted, so that the behavior of
+the program depends on whether the software supports vectorization.
+
+gcc/testsuite/ChangeLog:
+
+	* gfortran.dg/vect/pr60510.f: Delete the default behavior of the
+	program.
+---
+ src/gcc/testsuite/gfortran.dg/vect/pr60510.f | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/src/gcc/testsuite/gfortran.dg/vect/pr60510.f b/src/gcc/testsuite/gfortran.dg/vect/pr60510.f
+index ecd50dd55..c1e11b27d 100644
+--- a/src/gcc/testsuite/gfortran.dg/vect/pr60510.f
++++ b/src/gcc/testsuite/gfortran.dg/vect/pr60510.f
+@@ -1,4 +1,3 @@
+-! { dg-do run }
+ ! { dg-require-effective-target vect_double }
+ ! { dg-require-effective-target vect_intdouble_cvt }
+ ! { dg-additional-options "-fno-inline -ffast-math" }
+-- 
+2.45.2
+

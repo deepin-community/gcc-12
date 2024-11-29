@@ -1,0 +1,104 @@
+From 3c7e91ad83f38edf2116aaeaa9b4ce4c052d008d Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Fri, 15 Mar 2024 09:30:27 +0800
+Subject: [PATCH 266/301] LoongArch: Combine UNITS_PER_FP_REG and
+ UNITS_PER_FPREG macros.
+
+These macros are completely same in definition, so we can keep the previous one
+and eliminate later one.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc
+	(loongarch_hard_regno_mode_ok_uncached): Combine UNITS_PER_FP_REG and
+	UNITS_PER_FPREG macros.
+	(loongarch_hard_regno_nregs): Ditto.
+	(loongarch_class_max_nregs): Ditto.
+	(loongarch_get_separate_components): Ditto.
+	(loongarch_process_components): Ditto.
+	* config/loongarch/loongarch.h (UNITS_PER_FPREG): Ditto.
+	(UNITS_PER_HWFPVALUE): Ditto.
+	(UNITS_PER_FPVALUE): Ditto.
+---
+ src/gcc/config/loongarch/loongarch.cc | 10 +++++-----
+ src/gcc/config/loongarch/loongarch.h  |  7 ++-----
+ 2 files changed, 7 insertions(+), 10 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index d243add17..16a3bc4f6 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -6771,7 +6771,7 @@ loongarch_hard_regno_mode_ok_uncached (unsigned int regno, machine_mode mode)
+ 	 and TRUNC.  There's no point allowing sizes smaller than a word,
+ 	 because the FPU has no appropriate load/store instructions.  */
+       if (mclass == MODE_INT)
+-	return size >= MIN_UNITS_PER_WORD && size <= UNITS_PER_FPREG;
++	return size >= MIN_UNITS_PER_WORD && size <= UNITS_PER_FP_REG;
+     }
+ 
+   return false;
+@@ -6814,7 +6814,7 @@ loongarch_hard_regno_nregs (unsigned int regno, machine_mode mode)
+       if (LASX_SUPPORTED_MODE_P (mode))
+ 	return 1;
+ 
+-      return (GET_MODE_SIZE (mode) + UNITS_PER_FPREG - 1) / UNITS_PER_FPREG;
++      return (GET_MODE_SIZE (mode) + UNITS_PER_FP_REG - 1) / UNITS_PER_FP_REG;
+     }
+ 
+   /* All other registers are word-sized.  */
+@@ -6849,7 +6849,7 @@ loongarch_class_max_nregs (enum reg_class rclass, machine_mode mode)
+ 	  else if (LSX_SUPPORTED_MODE_P (mode))
+ 	    size = MIN (size, UNITS_PER_LSX_REG);
+ 	  else
+-	    size = MIN (size, UNITS_PER_FPREG);
++	    size = MIN (size, UNITS_PER_FP_REG);
+ 	}
+       left &= ~reg_class_contents[FP_REGS];
+     }
+@@ -8225,7 +8225,7 @@ loongarch_get_separate_components (void)
+ 	if (IMM12_OPERAND (offset))
+ 	  bitmap_set_bit (components, regno);
+ 
+-	offset -= UNITS_PER_FPREG;
++	offset -= UNITS_PER_FP_REG;
+       }
+ 
+   /* Don't mess with the hard frame pointer.  */
+@@ -8304,7 +8304,7 @@ loongarch_process_components (sbitmap components, loongarch_save_restore_fn fn)
+ 	if (bitmap_bit_p (components, regno))
+ 	  loongarch_save_restore_reg (mode, regno, offset, fn);
+ 
+-	offset -= UNITS_PER_FPREG;
++	offset -= UNITS_PER_FP_REG;
+       }
+ }
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index 8bcdb8729..698e42aec 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -138,19 +138,16 @@ along with GCC; see the file COPYING3.  If not see
+ /* Width of a LASX vector register in bits.  */
+ #define BITS_PER_LASX_REG (UNITS_PER_LASX_REG * BITS_PER_UNIT)
+ 
+-/* For LARCH, width of a floating point register.  */
+-#define UNITS_PER_FPREG (TARGET_DOUBLE_FLOAT ? 8 : 4)
+-
+ /* The largest size of value that can be held in floating-point
+    registers and moved with a single instruction.  */
+ #define UNITS_PER_HWFPVALUE \
+-  (TARGET_SOFT_FLOAT ? 0 : UNITS_PER_FPREG)
++  (TARGET_SOFT_FLOAT ? 0 : UNITS_PER_FP_REG)
+ 
+ /* The largest size of value that can be held in floating-point
+    registers.  */
+ #define UNITS_PER_FPVALUE \
+   (TARGET_SOFT_FLOAT ? 0 \
+-   : TARGET_SINGLE_FLOAT ? UNITS_PER_FPREG \
++   : TARGET_SINGLE_FLOAT ? UNITS_PER_FP_REG \
+ 			 : LONG_DOUBLE_TYPE_SIZE / BITS_PER_UNIT)
+ 
+ /* The number of bytes in a double.  */
+-- 
+2.45.2
+

@@ -1,0 +1,228 @@
+From a61c1d426cbba3782458cc89ef671d4073a4966d Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Fri, 8 Dec 2023 10:16:48 +0800
+Subject: [PATCH 222/301] LoongArch: Optimized some of the symbolic expansion
+ instructions generated during bitwise operations.
+
+There are two mode iterators defined in the loongarch.md:
+	(define_mode_iterator GPR [SI (DI "TARGET_64BIT")])
+  and
+	(define_mode_iterator X [(SI "!TARGET_64BIT") (DI "TARGET_64BIT")])
+Replace the mode in the bit arithmetic from GPR to X.
+
+Since the bitwise operation instruction does not distinguish between 64-bit,
+32-bit, etc., it is necessary to perform symbolic expansion if the bitwise
+operation is less than 64 bits.
+The original definition would have generated a lot of redundant symbolic
+extension instructions. This problem is optimized with reference to the
+implementation of RISCV.
+
+Add this patch spec2017 500.perlbench performance improvement by 1.8%
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (one_cmpl<mode>2): Replace GPR with X.
+	(*nor<mode>3): Likewise.
+	(nor<mode>3): Likewise.
+	(*negsi2_extended): New template.
+	(*<optab>si3_internal): Likewise.
+	(*one_cmplsi2_internal): Likewise.
+	(*norsi3_internal): Likewise.
+	(*<optab>nsi_internal): Likewise.
+	(bytepick_w_<bytepick_imm>_extend): Modify this template according to the
+	modified bit operation to make the optimization work.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/sign-extend-bitwise.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.md         | 93 ++++++++++++++-----
+ .../loongarch/sign-extend-bitwise.c           | 21 +++++
+ 2 files changed, 90 insertions(+), 24 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/sign-extend-bitwise.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 23653a2b0..6ebf33cbe 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -736,7 +736,7 @@
+ 
+ (define_insn "sub<mode>3"
+   [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(minus:GPR (match_operand:GPR 1 "register_operand" "rJ")
++	(minus:GPR (match_operand:GPR 1 "register_operand" "r")
+ 		   (match_operand:GPR 2 "register_operand" "r")))]
+   ""
+   "sub.<d>\t%0,%z1,%2"
+@@ -1412,13 +1412,13 @@
+   [(set_attr "alu_type"	"sub")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "one_cmpl<mode>2"
+-  [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(not:GPR (match_operand:GPR 1 "register_operand" "r")))]
+-  ""
+-  "nor\t%0,%.,%1"
+-  [(set_attr "alu_type" "not")
+-   (set_attr "mode" "<MODE>")])
++(define_insn "*negsi2_extended"
++  [(set (match_operand:DI 0 "register_operand" "=r")
++	(sign_extend:DI (neg:SI (match_operand:SI 1 "register_operand" "r"))))]
++  "TARGET_64BIT"
++  "sub.w\t%0,%.,%1"
++  [(set_attr "alu_type" "sub")
++   (set_attr "mode" "SI")])
+ 
+ (define_insn "neg<mode>2"
+   [(set (match_operand:ANYF 0 "register_operand" "=f")
+@@ -1438,14 +1438,39 @@
+ ;;
+ 
+ (define_insn "<optab><mode>3"
+-  [(set (match_operand:GPR 0 "register_operand" "=r,r")
+-	(any_bitwise:GPR (match_operand:GPR 1 "register_operand" "%r,r")
+-			 (match_operand:GPR 2 "uns_arith_operand" "r,K")))]
++  [(set (match_operand:X 0 "register_operand" "=r,r")
++	(any_bitwise:X (match_operand:X 1 "register_operand" "%r,r")
++		       (match_operand:X 2 "uns_arith_operand" "r,K")))]
+   ""
+   "<insn>%i2\t%0,%1,%2"
+   [(set_attr "type" "logical")
+    (set_attr "mode" "<MODE>")])
+ 
++(define_insn "*<optab>si3_internal"
++  [(set (match_operand:SI 0 "register_operand" "=r,r")
++	(any_bitwise:SI (match_operand:SI 1 "register_operand" "%r,r")
++			(match_operand:SI 2 "uns_arith_operand"    " r,K")))]
++  "TARGET_64BIT"
++  "<insn>%i2\t%0,%1,%2"
++  [(set_attr "type" "logical")
++   (set_attr "mode" "SI")])
++
++(define_insn "one_cmpl<mode>2"
++  [(set (match_operand:X 0 "register_operand" "=r")
++	(not:X (match_operand:X 1 "register_operand" "r")))]
++  ""
++  "nor\t%0,%.,%1"
++  [(set_attr "alu_type" "not")
++   (set_attr "mode" "<MODE>")])
++
++(define_insn "*one_cmplsi2_internal"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(not:SI (match_operand:SI 1 "register_operand" " r")))]
++  "TARGET_64BIT"
++  "nor\t%0,%.,%1"
++  [(set_attr "type" "logical")
++   (set_attr "mode" "SI")])
++
+ (define_insn "and<mode>3_extended"
+   [(set (match_operand:GPR 0 "register_operand" "=r")
+ 	(and:GPR (match_operand:GPR 1 "nonimmediate_operand" "r")
+@@ -1561,25 +1586,43 @@
+   [(set_attr "type" "logical")
+    (set_attr "mode" "HI")])
+ 
+-(define_insn "*nor<mode>3"
+-  [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(and:GPR (not:GPR (match_operand:GPR 1 "register_operand" "%r"))
+-		 (not:GPR (match_operand:GPR 2 "register_operand" "r"))))]
++(define_insn "nor<mode>3"
++  [(set (match_operand:X 0 "register_operand" "=r")
++	(and:X (not:X (match_operand:X 1 "register_operand" "%r"))
++		 (not:X (match_operand:X 2 "register_operand" "r"))))]
+   ""
+   "nor\t%0,%1,%2"
+   [(set_attr "type" "logical")
+    (set_attr "mode" "<MODE>")])
+ 
++(define_insn "*norsi3_internal"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(and:SI (not:SI (match_operand:SI 1 "register_operand" "%r"))
++		 (not:SI (match_operand:SI 2 "register_operand" "r"))))]
++  "TARGET_64BIT"
++  "nor\t%0,%1,%2"
++  [(set_attr "type" "logical")
++   (set_attr "mode" "SI")])
++
+ (define_insn "<optab>n<mode>"
+-  [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(neg_bitwise:GPR
+-	    (not:GPR (match_operand:GPR 1 "register_operand" "r"))
+-	    (match_operand:GPR 2 "register_operand" "r")))]
++  [(set (match_operand:X 0 "register_operand" "=r")
++	(neg_bitwise:X
++	    (not:X (match_operand:X 1 "register_operand" "r"))
++	    (match_operand:X 2 "register_operand" "r")))]
+   ""
+   "<insn>n\t%0,%2,%1"
+   [(set_attr "type" "logical")
+    (set_attr "mode" "<MODE>")])
+ 
++(define_insn "*<optab>nsi_internal"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(neg_bitwise:SI
++	    (not:SI (match_operand:SI 1 "register_operand" "r"))
++	    (match_operand:SI 2 "register_operand" "r")))]
++  "TARGET_64BIT"
++  "<insn>n\t%0,%2,%1"
++  [(set_attr "type" "logical")
++   (set_attr "mode" "SI")])
+ 
+ ;;
+ ;;  ....................
+@@ -3167,7 +3210,6 @@
+ 		      (label_ref (match_operand 1))
+ 		      (pc)))])
+ 
+-
+ 
+ ;;
+ ;;  ....................
+@@ -3967,10 +4009,13 @@
+ (define_insn "bytepick_w_<bytepick_imm>_extend"
+   [(set (match_operand:DI 0 "register_operand" "=r")
+ 	(sign_extend:DI
+-	  (ior:SI (lshiftrt (match_operand:SI 1 "register_operand" "r")
+-			    (const_int <bytepick_w_lshiftrt_amount>))
+-		  (ashift (match_operand:SI 2 "register_operand" "r")
+-			  (const_int bytepick_w_ashift_amount)))))]
++	 (subreg:SI
++	  (ior:DI (subreg:DI (lshiftrt
++			      (match_operand:SI 1 "register_operand" "r")
++			      (const_int <bytepick_w_lshiftrt_amount>)) 0)
++		  (subreg:DI (ashift
++			      (match_operand:SI 2 "register_operand" "r")
++			      (const_int bytepick_w_ashift_amount)) 0)) 0)))]
+   "TARGET_64BIT"
+   "bytepick.w\t%0,%1,%2,<bytepick_imm>"
+   [(set_attr "mode" "SI")])
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/sign-extend-bitwise.c b/src/gcc/testsuite/gcc.target/loongarch/sign-extend-bitwise.c
+new file mode 100644
+index 000000000..5753ef69d
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/sign-extend-bitwise.c
+@@ -0,0 +1,21 @@
++/* { dg-do compile } */
++/* { dg-options "-mabi=lp64d -O2" } */
++/* { dg-final { scan-assembler-not "slli.w\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,0" } } */
++
++struct pmop
++{
++  unsigned int op_pmflags;
++  unsigned int op_pmpermflags;
++};
++unsigned int PL_hints;
++
++struct pmop *pmop;
++void
++Perl_newPMOP (int type, int flags)
++{
++  if (PL_hints & 0x00100000)
++    pmop->op_pmpermflags |= 0x0001;
++  if (PL_hints & 0x00000004)
++    pmop->op_pmpermflags |= 0x0800;
++  pmop->op_pmflags = pmop->op_pmpermflags;
++}
+-- 
+2.45.2
+

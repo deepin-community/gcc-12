@@ -1,0 +1,257 @@
+From d441d1b053342b68489f0b5b6acc4767b6462675 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Wed, 6 Dec 2023 15:04:50 +0800
+Subject: [PATCH 177/301] LoongArch: Use standard pattern name for
+ xvfrsqrt/vfrsqrt instructions.
+
+Rename lasx_xvfrsqrt*/lsx_vfrsqrt* to rsqrt<mode>2 to align with standard
+pattern name. Define function use_rsqrt_p to decide when to use rsqrt optab.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (lasx_xvfrsqrt_<flasxfmt>): Renamed to ..
+	(rsqrt<mode>2): .. this.
+	* config/loongarch/loongarch-builtins.cc
+	(CODE_FOR_lsx_vfrsqrt_d): Redefine to standard pattern name.
+	(CODE_FOR_lsx_vfrsqrt_s): Ditto.
+	(CODE_FOR_lasx_xvfrsqrt_d): Ditto.
+	(CODE_FOR_lasx_xvfrsqrt_s): Ditto.
+	* config/loongarch/loongarch.cc (use_rsqrt_p): New function.
+	(loongarch_optab_supported_p): Ditto.
+	(TARGET_OPTAB_SUPPORTED_P): New hook.
+	* config/loongarch/loongarch.md (*rsqrt<mode>a): Remove.
+	(*rsqrt<mode>2): New insn pattern.
+	(*rsqrt<mode>b): Remove.
+	* config/loongarch/lsx.md (lsx_vfrsqrt_<flsxfmt>): Renamed to ..
+	(rsqrt<mode>2): .. this.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-rsqrt.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-rsqrt.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              |  6 ++---
+ .../config/loongarch/loongarch-builtins.cc    |  4 +++
+ src/gcc/config/loongarch/loongarch.cc         | 27 +++++++++++++++++++
+ src/gcc/config/loongarch/loongarch.md         | 24 +++++------------
+ src/gcc/config/loongarch/lsx.md               |  6 ++---
+ .../loongarch/vector/lasx/lasx-rsqrt.c        | 26 ++++++++++++++++++
+ .../loongarch/vector/lsx/lsx-rsqrt.c          | 26 ++++++++++++++++++
+ 7 files changed, 96 insertions(+), 23 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-rsqrt.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-rsqrt.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index b1416f6c3..3a4a1fe51 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -1646,10 +1646,10 @@
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvfrsqrt_<flasxfmt>"
++(define_insn "rsqrt<mode>2"
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+-	(unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
+-		      UNSPEC_LASX_XVFRSQRT))]
++    (unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
++		  UNSPEC_LASX_XVFRSQRT))]
+   "ISA_HAS_LASX"
+   "xvfrsqrt.<flasxfmt>\t%u0,%u1"
+   [(set_attr "type" "simd_fdiv")
+diff --git a/src/gcc/config/loongarch/loongarch-builtins.cc b/src/gcc/config/loongarch/loongarch-builtins.cc
+index bc156bd36..4aae27a5e 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -500,6 +500,8 @@ AVAIL_ALL (lasx_frecipe, ISA_HAS_LASX && TARGET_FRECIPE)
+ #define CODE_FOR_lsx_vssrlrn_bu_h CODE_FOR_lsx_vssrlrn_u_bu_h
+ #define CODE_FOR_lsx_vssrlrn_hu_w CODE_FOR_lsx_vssrlrn_u_hu_w
+ #define CODE_FOR_lsx_vssrlrn_wu_d CODE_FOR_lsx_vssrlrn_u_wu_d
++#define CODE_FOR_lsx_vfrsqrt_d CODE_FOR_rsqrtv2df2
++#define CODE_FOR_lsx_vfrsqrt_s CODE_FOR_rsqrtv4sf2
+ 
+ /* LoongArch ASX define CODE_FOR_lasx_mxxx */
+ #define CODE_FOR_lasx_xvsadd_b CODE_FOR_ssaddv32qi3
+@@ -776,6 +778,8 @@ AVAIL_ALL (lasx_frecipe, ISA_HAS_LASX && TARGET_FRECIPE)
+ #define CODE_FOR_lasx_xvsat_hu CODE_FOR_lasx_xvsat_u_hu
+ #define CODE_FOR_lasx_xvsat_wu CODE_FOR_lasx_xvsat_u_wu
+ #define CODE_FOR_lasx_xvsat_du CODE_FOR_lasx_xvsat_u_du
++#define CODE_FOR_lasx_xvfrsqrt_d CODE_FOR_rsqrtv4df2
++#define CODE_FOR_lasx_xvfrsqrt_s CODE_FOR_rsqrtv8sf2
+ 
+ static const struct loongarch_builtin_description loongarch_builtins[] = {
+ #define LARCH_MOVFCSR2GR 0
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 24749ba2f..7aa8e616e 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -11485,6 +11485,30 @@ loongarch_builtin_support_vector_misalignment (machine_mode mode,
+ 						      is_packed);
+ }
+ 
++static bool
++use_rsqrt_p (void)
++{
++  return (flag_finite_math_only
++	  && !flag_trapping_math
++	  && flag_unsafe_math_optimizations);
++}
++
++/* Implement the TARGET_OPTAB_SUPPORTED_P hook.  */
++
++static bool
++loongarch_optab_supported_p (int op, machine_mode, machine_mode,
++			     optimization_type opt_type)
++{
++  switch (op)
++    {
++    case rsqrt_optab:
++      return opt_type == OPTIMIZE_FOR_SPEED && use_rsqrt_p ();
++
++    default:
++      return true;
++    }
++}
++
+ /* If -fverbose-asm, dump some info for debugging.  */
+ static void
+ loongarch_asm_code_end (void)
+@@ -11623,6 +11647,9 @@ loongarch_asm_code_end (void)
+ #undef TARGET_FUNCTION_ARG_BOUNDARY
+ #define TARGET_FUNCTION_ARG_BOUNDARY loongarch_function_arg_boundary
+ 
++#undef TARGET_OPTAB_SUPPORTED_P
++#define TARGET_OPTAB_SUPPORTED_P loongarch_optab_supported_p
++
+ #undef TARGET_VECTOR_MODE_SUPPORTED_P
+ #define TARGET_VECTOR_MODE_SUPPORTED_P loongarch_vector_mode_supported_p
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 9080cec1c..4dfe583e2 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -60,6 +60,7 @@
+   UNSPEC_TIE
+ 
+   ;; RSQRT
++  UNSPEC_RSQRT
+   UNSPEC_RSQRTE
+ 
+   ;; RECIP
+@@ -1134,25 +1135,14 @@
+    (set_attr "mode" "<UNITMODE>")
+    (set_attr "insn_count" "1")])
+ 
+-(define_insn "*rsqrt<mode>a"
++(define_insn "*rsqrt<mode>2"
+   [(set (match_operand:ANYF 0 "register_operand" "=f")
+-	(div:ANYF (match_operand:ANYF 1 "const_1_operand" "")
+-		  (sqrt:ANYF (match_operand:ANYF 2 "register_operand" "f"))))]
+-  "flag_unsafe_math_optimizations"
+-  "frsqrt.<fmt>\t%0,%2"
+-  [(set_attr "type" "frsqrt")
+-   (set_attr "mode" "<UNITMODE>")
+-   (set_attr "insn_count" "1")])
+-
+-(define_insn "*rsqrt<mode>b"
+-  [(set (match_operand:ANYF 0 "register_operand" "=f")
+-	(sqrt:ANYF (div:ANYF (match_operand:ANYF 1 "const_1_operand" "")
+-			     (match_operand:ANYF 2 "register_operand" "f"))))]
+-  "flag_unsafe_math_optimizations"
+-  "frsqrt.<fmt>\t%0,%2"
++    (unspec:ANYF [(match_operand:ANYF 1 "register_operand" "f")]
++	     UNSPEC_RSQRT))]
++  "TARGET_HARD_FLOAT"
++  "frsqrt.<fmt>\t%0,%1"
+   [(set_attr "type" "frsqrt")
+-   (set_attr "mode" "<UNITMODE>")
+-   (set_attr "insn_count" "1")])
++   (set_attr "mode" "<UNITMODE>")])
+ 
+ ;; Approximate Reciprocal Square Root Instructions.
+ 
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 37bdc6910..cb4a448e7 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -1559,10 +1559,10 @@
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vfrsqrt_<flsxfmt>"
++(define_insn "rsqrt<mode>2"
+   [(set (match_operand:FLSX 0 "register_operand" "=f")
+-	(unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRSQRT))]
++    (unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
++		 UNSPEC_LSX_VFRSQRT))]
+   "ISA_HAS_LSX"
+   "vfrsqrt.<flsxfmt>\t%w0,%w1"
+   [(set_attr "type" "simd_fdiv")
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-rsqrt.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-rsqrt.c
+new file mode 100644
+index 000000000..24316944d
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-rsqrt.c
+@@ -0,0 +1,26 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx -ffast-math" } */
++/* { dg-final { scan-assembler "xvfrsqrt.s" } } */
++/* { dg-final { scan-assembler "xvfrsqrt.d" } } */
++
++extern float sqrtf (float);
++
++float a[8], b[8];
++
++void
++foo1(void)
++{
++  for (int i = 0; i < 8; i++)
++    a[i] = 1 / sqrtf (b[i]);
++}
++
++extern double sqrt (double);
++
++double da[4], db[4];
++
++void
++foo2(void)
++{
++  for (int i = 0; i < 4; i++)
++    da[i] = 1 / sqrt (db[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-rsqrt.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-rsqrt.c
+new file mode 100644
+index 000000000..519cc4764
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-rsqrt.c
+@@ -0,0 +1,26 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx -ffast-math" } */
++/* { dg-final { scan-assembler "vfrsqrt.s" } } */
++/* { dg-final { scan-assembler "vfrsqrt.d" } } */
++
++extern float sqrtf (float);
++
++float a[4], b[4];
++
++void
++foo1(void)
++{
++  for (int i = 0; i < 4; i++)
++    a[i] = 1 / sqrtf (b[i]);
++}
++
++extern double sqrt (double);
++
++double da[2], db[2];
++
++void
++foo2(void)
++{
++  for (int i = 0; i < 2; i++)
++    da[i] = 1 / sqrt (db[i]);
++}
+-- 
+2.45.2
+

@@ -1,0 +1,49 @@
+From af7630521c996fe3d85f6bf0e4c1007a36f93350 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Mon, 20 Feb 2023 16:47:11 +0800
+Subject: [PATCH 036/301] LoongArch: Change the value of macro
+ TRY_EMPTY_VM_SPACE from 0x8000000000 to 0x1000000000.
+
+The PCH mechanism first tries to map the .gch file to the virtual memory
+space pointed to by TRY_EMPTY_VM_SPACE during the compilation process.
+
+The original value of TRY_EMPTY_VM_SPACE macro is 0x8000000000,
+but like la464 only has 40 bits of virtual address space, this value
+just exceeds the address range.
+
+If we want to support chips with less than 40 bits virtual addresses,
+then the value of this macro needs to be set small. I think setting
+this value small will increase the probability of virtual address
+mapping failure. And the purpose of pch is to make compilation faster,
+but I think we rarely compile on embedded systems. So this situation
+may not be within our consideration.
+
+So change the value of this macro to 0x1000000000.
+
+gcc/ChangeLog:
+
+	* config/host-linux.cc (TRY_EMPTY_VM_SPACE): Modify the value of
+	the macro to 0x1000000000.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/host-linux.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/host-linux.cc b/src/gcc/config/host-linux.cc
+index 817d3c087..d93cfc064 100644
+--- a/src/gcc/config/host-linux.cc
++++ b/src/gcc/config/host-linux.cc
+@@ -99,7 +99,7 @@
+ #elif defined(__riscv) && defined (__LP64__)
+ # define TRY_EMPTY_VM_SPACE	0x1000000000
+ #elif defined(__loongarch__) && defined(__LP64__)
+-# define TRY_EMPTY_VM_SPACE	0x8000000000
++# define TRY_EMPTY_VM_SPACE	0x1000000000
+ #else
+ # define TRY_EMPTY_VM_SPACE	0
+ #endif
+-- 
+2.45.2
+

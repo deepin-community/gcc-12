@@ -1,0 +1,112 @@
+From b51e58be8410791aff4819c188605f586b7c9c35 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 30 Dec 2023 21:40:11 +0800
+Subject: [PATCH 207/301] LoongArch: Provide fmin/fmax RTL pattern for vectors
+
+We already had smin/smax RTL pattern using vfmin/vfmax instructions.
+But for smin/smax, it's unspecified what will happen if either operand
+contains any NaN operands.  So we would not vectorize the loop with
+-fno-finite-math-only (the default for all optimization levels expect
+-Ofast).
+
+But, LoongArch vfmin/vfmax instruction is IEEE-754-2008 conformant so we
+can also use them and vectorize the loop.
+
+gcc/ChangeLog:
+
+	* config/loongarch/simd.md (fmax<mode>3): New define_insn.
+	(fmin<mode>3): Likewise.
+	(reduc_fmax_scal_<mode>3): New define_expand.
+	(reduc_fmin_scal_<mode>3): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vfmax-vfmin.c: New test.
+---
+ src/gcc/config/loongarch/simd.md              | 31 +++++++++++++++++++
+ .../gcc.target/loongarch/vfmax-vfmin.c        | 31 +++++++++++++++++++
+ 2 files changed, 62 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vfmax-vfmin.c
+
+diff --git a/src/gcc/config/loongarch/simd.md b/src/gcc/config/loongarch/simd.md
+index 93fb39abc..8ac1d75a8 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -426,6 +426,37 @@
+   [(set_attr "type" "simd_fcmp")
+    (set_attr "mode" "<MODE>")])
+ 
++; [x]vf{min/max} instructions are IEEE-754-2008 conforming, use them for
++; the corresponding IEEE-754-2008 operations.  We must use UNSPEC instead
++; of smin/smax though, see PR105414 and PR107013.
++
++(define_int_iterator UNSPEC_FMAXMIN [UNSPEC_FMAX UNSPEC_FMIN])
++(define_int_attr fmaxmin [(UNSPEC_FMAX "fmax") (UNSPEC_FMIN "fmin")])
++
++(define_insn "<fmaxmin><mode>3"
++  [(set (match_operand:FVEC 0 "register_operand" "=f")
++	(unspec:FVEC [(match_operand:FVEC 1 "register_operand" "f")
++		      (match_operand:FVEC 2 "register_operand" "f")]
++		     UNSPEC_FMAXMIN))]
++  ""
++  "<x>v<fmaxmin>.<simdfmt>\t%<wu>0,%<wu>1,%<wu>2"
++  [(set_attr "type" "simd_fminmax")
++   (set_attr "mode" "<MODE>")])
++
++;; ... and also reduc operations.
++(define_expand "reduc_<fmaxmin>_scal_<mode>"
++  [(match_operand:<UNITMODE> 0 "register_operand")
++   (match_operand:FVEC 1 "register_operand")
++   (const_int UNSPEC_FMAXMIN)]
++  ""
++{
++  rtx tmp = gen_reg_rtx (<MODE>mode);
++  loongarch_expand_vector_reduc (gen_<fmaxmin><mode>3, tmp, operands[1]);
++  emit_insn (gen_vec_extract<mode><unitmode> (operands[0], tmp,
++					      const0_rtx));
++  DONE;
++})
++
+ ; The LoongArch SX Instructions.
+ (include "lsx.md")
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vfmax-vfmin.c b/src/gcc/testsuite/gcc.target/loongarch/vfmax-vfmin.c
+new file mode 100644
+index 000000000..811fee361
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vfmax-vfmin.c
+@@ -0,0 +1,31 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mtune=la464 -mlasx" } */
++/* { dg-final { scan-assembler "\tvfmin\\.d" } } */
++/* { dg-final { scan-assembler "\tvfmax\\.d" } } */
++/* { dg-final { scan-assembler "\txvfmin\\.d" } } */
++/* { dg-final { scan-assembler "\txvfmax\\.d" } } */
++/* { dg-final { scan-assembler "\tvfmin\\.s" } } */
++/* { dg-final { scan-assembler "\tvfmax\\.s" } } */
++/* { dg-final { scan-assembler "\txvfmin\\.s" } } */
++/* { dg-final { scan-assembler "\txvfmax\\.s" } } */
++
++#define T(OP) __typeof__ (__builtin_##OP (0, 0))
++
++#define TEST(OP, LEN) \
++void \
++test_##OP##LEN (T (OP) *restrict dest, \
++		const T (OP) *restrict src1, \
++		const T (OP) *restrict src2) \
++{ \
++  for (int i = 0; i < LEN / sizeof (T(OP)); i++) \
++    dest[i] = __builtin_##OP (src1[i], src2[i]); \
++}
++
++TEST(fmin, 16)
++TEST(fmax, 16)
++TEST(fmin, 32)
++TEST(fmax, 32)
++TEST(fminf, 16)
++TEST(fmaxf, 16)
++TEST(fminf, 32)
++TEST(fmaxf, 32)
+-- 
+2.45.2
+

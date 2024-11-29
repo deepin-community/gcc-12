@@ -1,0 +1,164 @@
+From c515db91ab54c1a31a49e07adec5791c222f2930 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 7 Dec 2023 15:45:30 +0800
+Subject: [PATCH 184/301] LoongArch: Allow -mcmodel=extreme and model attribute
+ with -mexplicit-relocs=auto
+
+There seems no real reason to require -mexplicit-relocs=always for
+-mcmodel=extreme or model attribute.  As the linker does not know how to
+relax a 3-operand la.local or la.global pseudo instruction, just emit
+explicit relocs for SYMBOL_PCREL64, and under TARGET_CMODEL_EXTREME also
+SYMBOL_GOT_DISP.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_explicit_relocs_p):
+	Return true for SYMBOL_PCREL64.  Return true for SYMBOL_GOT_DISP
+	if TARGET_CMODEL_EXTREME.
+	(loongarch_split_symbol): Check for la_opt_explicit_relocs !=
+	EXPLICIT_RELOCS_NONE instead of TARGET_EXPLICIT_RELOCS.
+	(loongarch_print_operand_reloc): Likewise.
+	(loongarch_option_override_internal): Likewise.
+	(loongarch_handle_model_attribute): Likewise.
+	* doc/invoke.texi (-mcmodel=extreme): Update the compatibility
+	between it and -mexplicit-relocs=.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/attr-model-3.c: New test.
+	* gcc.target/loongarch/attr-model-4.c: New test.
+	* gcc.target/loongarch/func-call-extreme-3.c: New test.
+	* gcc.target/loongarch/func-call-extreme-4.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 25 ++++++++++++-------
+ .../gcc.target/loongarch/attr-model-3.c       |  6 +++++
+ .../gcc.target/loongarch/attr-model-4.c       |  6 +++++
+ .../loongarch/func-call-extreme-3.c           |  7 ++++++
+ .../loongarch/func-call-extreme-4.c           |  7 ++++++
+ 5 files changed, 42 insertions(+), 9 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/attr-model-3.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/attr-model-4.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-3.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-4.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 4b5a1023f..891ea79b7 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -1969,9 +1969,16 @@ loongarch_explicit_relocs_p (enum loongarch_symbol_type type)
+       case SYMBOL_TLS_LE:
+       case SYMBOL_TLSGD:
+       case SYMBOL_TLSLDM:
+-	/* The linker don't know how to relax TLS accesses.  */
++      case SYMBOL_PCREL64:
++	/* The linker don't know how to relax TLS accesses or 64-bit
++	   pc-relative accesses.  */
+ 	return true;
+       case SYMBOL_GOT_DISP:
++	/* The linker don't know how to relax GOT accesses in extreme
++	   code model.  */
++	if (TARGET_CMODEL_EXTREME)
++	  return true;
++
+ 	/* If we are performing LTO for a final link, and we have the
+ 	   linker plugin so we know the resolution of the symbols, then
+ 	   all GOT references are binding to external symbols or
+@@ -3134,7 +3141,7 @@ loongarch_split_symbol (rtx temp, rtx addr, machine_mode mode, rtx *low_out)
+ 
+   if (loongarch_symbol_extreme_p (symbol_type) && can_create_pseudo_p ())
+     {
+-      gcc_assert (TARGET_EXPLICIT_RELOCS);
++      gcc_assert (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE);
+ 
+       temp1 = gen_reg_rtx (Pmode);
+       emit_move_insn (temp1, gen_rtx_LO_SUM (Pmode, gen_rtx_REG (Pmode, 0),
+@@ -5933,7 +5940,7 @@ loongarch_print_operand_reloc (FILE *file, rtx op, bool hi64_part,
+     loongarch_classify_symbolic_expression (op);
+ 
+   if (loongarch_symbol_extreme_p (symbol_type))
+-    gcc_assert (TARGET_EXPLICIT_RELOCS);
++    gcc_assert (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE);
+ 
+   switch (symbol_type)
+     {
+@@ -7538,9 +7545,9 @@ loongarch_option_override_internal (struct gcc_options *opts,
+   switch (la_target.cmodel)
+     {
+       case CMODEL_EXTREME:
+-	if (!TARGET_EXPLICIT_RELOCS)
+-	  error ("code model %qs needs %s",
+-		 "extreme", "-mexplicit-relocs=always");
++	if (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)
++	  error ("code model %qs is not compatible with %s",
++		 "extreme", "-mexplicit-relocs=none");
+ 
+ 	if (opts->x_flag_plt)
+ 	  {
+@@ -7906,11 +7913,11 @@ loongarch_handle_model_attribute (tree *node, tree name, tree arg, int,
+ 	  *no_add_attrs = true;
+ 	  return NULL_TREE;
+ 	}
+-      if (!TARGET_EXPLICIT_RELOCS)
++      if (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)
+ 	{
+ 	  error_at (DECL_SOURCE_LOCATION (decl),
+-		    "%qE attribute requires %s", name,
+-		    "-mexplicit-relocs=always");
++		    "%qE attribute is not compatible with %s", name,
++		    "-mexplicit-relocs=none");
+ 	  *no_add_attrs = true;
+ 	  return NULL_TREE;
+ 	}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/attr-model-3.c b/src/gcc/testsuite/gcc.target/loongarch/attr-model-3.c
+new file mode 100644
+index 000000000..5622d5086
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/attr-model-3.c
+@@ -0,0 +1,6 @@
++/* { dg-do compile } */
++/* { dg-options "-mexplicit-relocs=auto -mcmodel=normal -O2" } */
++/* { dg-final { scan-assembler-times "%pc64_hi12" 2 } } */
++
++#define ATTR_MODEL_TEST
++#include "attr-model-test.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/attr-model-4.c b/src/gcc/testsuite/gcc.target/loongarch/attr-model-4.c
+new file mode 100644
+index 000000000..482724bb9
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/attr-model-4.c
+@@ -0,0 +1,6 @@
++/* { dg-do compile } */
++/* { dg-options "-mexplicit-relocs=auto -mcmodel=extreme -O2" } */
++/* { dg-final { scan-assembler-times "%pc64_hi12" 3 } } */
++
++#define ATTR_MODEL_TEST
++#include "attr-model-test.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-3.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-3.c
+new file mode 100644
+index 000000000..a4da44b4a
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-3.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-mabi=lp64d -O0 -fno-pic -fno-plt -mexplicit-relocs=auto -mcmodel=extreme" } */
++/* { dg-final { scan-assembler "test:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
++/* { dg-final { scan-assembler "test1:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
++/* { dg-final { scan-assembler "test2:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
++
++#include "func-call-extreme-1.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-4.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-4.c
+new file mode 100644
+index 000000000..16b00f4c5
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-4.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-mabi=lp64d -O0 -fpic -fno-plt -mexplicit-relocs=auto -mcmodel=extreme" } */
++/* { dg-final { scan-assembler "test:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
++/* { dg-final { scan-assembler "test1:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
++/* { dg-final { scan-assembler "test2:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
++
++#include "func-call-extreme-1.c"
+-- 
+2.45.2
+

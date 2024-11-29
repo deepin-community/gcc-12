@@ -1,0 +1,30 @@
+From cffbce84f4cef176686394f80b25cb11e465c750 Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Fri, 3 Nov 2023 17:01:36 +0800
+Subject: [PATCH 143/301] LoongArch: Fix instruction name typo in
+ lsx_vreplgr2vr_<lsxfmt_f> template
+
+gcc/ChangeLog:
+
+	* config/loongarch/lsx.md: Fix instruction name typo in
+	lsx_vreplgr2vr_<lsxfmt_f> template.
+---
+ src/gcc/config/loongarch/lsx.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 4af32c8df..55c7d79a0 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -1523,7 +1523,7 @@
+   "ISA_HAS_LSX"
+ {
+   if (which_alternative == 1)
+-    return "ldi.<lsxfmt>\t%w0,0";
++    return "vldi.<lsxfmt>\t%w0,0";
+ 
+   if (!TARGET_64BIT && (<MODE>mode == V2DImode || <MODE>mode == V2DFmode))
+     return "#";
+-- 
+2.45.2
+

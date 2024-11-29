@@ -1,0 +1,285 @@
+From 2a3f83ed0a179ee7a8cbd5494cbb66d81aa98948 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 19 Nov 2023 17:28:06 +0800
+Subject: [PATCH 166/301] LoongArch: Use standard pattern name and RTX code for
+ LSX/LASX rotate shift
+
+Remove unnecessary UNSPECs and make the [x]vrotr[i] instructions useful
+with GNU vectors and auto vectorization.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lsx.md (bitimm): Move to ...
+	(UNSPEC_LSX_VROTR): Remove.
+	(lsx_vrotr_<lsxfmt>): Remove.
+	(lsx_vrotri_<lsxfmt>): Remove.
+	* config/loongarch/lasx.md (UNSPEC_LASX_XVROTR): Remove.
+	(lsx_vrotr_<lsxfmt>): Remove.
+	(lsx_vrotri_<lsxfmt>): Remove.
+	* config/loongarch/simd.md (bitimm): ... here.  Expand it to
+	cover LASX modes.
+	(vrotr<mode>3): New define_insn.
+	(vrotri<mode>3): New define_insn.
+	* config/loongarch/loongarch-builtins.cc:
+	(CODE_FOR_lsx_vrotr_b): Use standard pattern name.
+	(CODE_FOR_lsx_vrotr_h): Likewise.
+	(CODE_FOR_lsx_vrotr_w): Likewise.
+	(CODE_FOR_lsx_vrotr_d): Likewise.
+	(CODE_FOR_lasx_xvrotr_b): Likewise.
+	(CODE_FOR_lasx_xvrotr_h): Likewise.
+	(CODE_FOR_lasx_xvrotr_w): Likewise.
+	(CODE_FOR_lasx_xvrotr_d): Likewise.
+	(CODE_FOR_lsx_vrotri_b): Define to standard pattern name.
+	(CODE_FOR_lsx_vrotri_h): Likewise.
+	(CODE_FOR_lsx_vrotri_w): Likewise.
+	(CODE_FOR_lsx_vrotri_d): Likewise.
+	(CODE_FOR_lasx_xvrotri_b): Likewise.
+	(CODE_FOR_lasx_xvrotri_h): Likewise.
+	(CODE_FOR_lasx_xvrotri_w): Likewise.
+	(CODE_FOR_lasx_xvrotri_d): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vect-rotr.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 22 ------------
+ .../config/loongarch/loongarch-builtins.cc    | 16 +++++++++
+ src/gcc/config/loongarch/lsx.md               | 28 ---------------
+ src/gcc/config/loongarch/simd.md              | 29 +++++++++++++++
+ .../gcc.target/loongarch/vect-rotr.c          | 36 +++++++++++++++++++
+ 5 files changed, 81 insertions(+), 50 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-rotr.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 023a023b4..116b30c07 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -138,7 +138,6 @@
+   UNSPEC_LASX_XVHSUBW_Q_D
+   UNSPEC_LASX_XVHADDW_QU_DU
+   UNSPEC_LASX_XVHSUBW_QU_DU
+-  UNSPEC_LASX_XVROTR
+   UNSPEC_LASX_XVADD_Q
+   UNSPEC_LASX_XVSUB_Q
+   UNSPEC_LASX_XVREPLVE
+@@ -4232,18 +4231,6 @@
+   [(set_attr "type" "simd_int_arith")
+    (set_attr "mode" "V4DI")])
+ 
+-;;XVROTR.B   XVROTR.H   XVROTR.W   XVROTR.D
+-;;TODO-478
+-(define_insn "lasx_xvrotr_<lasxfmt>"
+-  [(set (match_operand:ILASX 0 "register_operand" "=f")
+-	(unspec:ILASX [(match_operand:ILASX 1 "register_operand" "f")
+-		       (match_operand:ILASX 2 "register_operand" "f")]
+-		      UNSPEC_LASX_XVROTR))]
+-  "ISA_HAS_LASX"
+-  "xvrotr.<lasxfmt>\t%u0,%u1,%u2"
+-  [(set_attr "type" "simd_int_arith")
+-   (set_attr "mode" "<MODE>")])
+-
+ ;;XVADD.Q
+ ;;TODO2
+ (define_insn "lasx_xvadd_q"
+@@ -4426,15 +4413,6 @@
+   [(set_attr "type" "simd_fcvt")
+    (set_attr "mode" "V4DI")])
+ 
+-(define_insn "lasx_xvrotri_<lasxfmt>"
+-  [(set (match_operand:ILASX 0 "register_operand" "=f")
+-	(rotatert:ILASX (match_operand:ILASX 1 "register_operand" "f")
+-		       (match_operand 2 "const_<bitimm256>_operand" "")))]
+-  "ISA_HAS_LASX"
+-  "xvrotri.<lasxfmt>\t%u0,%u1,%2"
+-  [(set_attr "type" "simd_shf")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lasx_xvextl_q_d"
+   [(set (match_operand:V4DI 0 "register_operand" "=f")
+ 	(unspec:V4DI [(match_operand:V4DI 1 "register_operand" "f")]
+diff --git a/src/gcc/config/loongarch/loongarch-builtins.cc b/src/gcc/config/loongarch/loongarch-builtins.cc
+index 41ea357cf..f4523c8bf 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -369,6 +369,14 @@ AVAIL_ALL (lasx, ISA_HAS_LASX)
+ #define CODE_FOR_lsx_vsrli_h CODE_FOR_vlshrv8hi3
+ #define CODE_FOR_lsx_vsrli_w CODE_FOR_vlshrv4si3
+ #define CODE_FOR_lsx_vsrli_d CODE_FOR_vlshrv2di3
++#define CODE_FOR_lsx_vrotr_b CODE_FOR_vrotrv16qi3
++#define CODE_FOR_lsx_vrotr_h CODE_FOR_vrotrv8hi3
++#define CODE_FOR_lsx_vrotr_w CODE_FOR_vrotrv4si3
++#define CODE_FOR_lsx_vrotr_d CODE_FOR_vrotrv2di3
++#define CODE_FOR_lsx_vrotri_b CODE_FOR_rotrv16qi3
++#define CODE_FOR_lsx_vrotri_h CODE_FOR_rotrv8hi3
++#define CODE_FOR_lsx_vrotri_w CODE_FOR_rotrv4si3
++#define CODE_FOR_lsx_vrotri_d CODE_FOR_rotrv2di3
+ #define CODE_FOR_lsx_vsub_b CODE_FOR_subv16qi3
+ #define CODE_FOR_lsx_vsub_h CODE_FOR_subv8hi3
+ #define CODE_FOR_lsx_vsub_w CODE_FOR_subv4si3
+@@ -634,6 +642,14 @@ AVAIL_ALL (lasx, ISA_HAS_LASX)
+ #define CODE_FOR_lasx_xvsrli_h CODE_FOR_vlshrv16hi3
+ #define CODE_FOR_lasx_xvsrli_w CODE_FOR_vlshrv8si3
+ #define CODE_FOR_lasx_xvsrli_d CODE_FOR_vlshrv4di3
++#define CODE_FOR_lasx_xvrotr_b CODE_FOR_vrotrv32qi3
++#define CODE_FOR_lasx_xvrotr_h CODE_FOR_vrotrv16hi3
++#define CODE_FOR_lasx_xvrotr_w CODE_FOR_vrotrv8si3
++#define CODE_FOR_lasx_xvrotr_d CODE_FOR_vrotrv4di3
++#define CODE_FOR_lasx_xvrotri_b CODE_FOR_rotrv32qi3
++#define CODE_FOR_lasx_xvrotri_h CODE_FOR_rotrv16hi3
++#define CODE_FOR_lasx_xvrotri_w CODE_FOR_rotrv8si3
++#define CODE_FOR_lasx_xvrotri_d CODE_FOR_rotrv4di3
+ #define CODE_FOR_lasx_xvsub_b CODE_FOR_subv32qi3
+ #define CODE_FOR_lasx_xvsub_h CODE_FOR_subv16hi3
+ #define CODE_FOR_lasx_xvsub_w CODE_FOR_subv8si3
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 537afaf96..232399934 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -141,7 +141,6 @@
+   UNSPEC_LSX_VMADDWOD
+   UNSPEC_LSX_VMADDWOD2
+   UNSPEC_LSX_VMADDWOD3
+-  UNSPEC_LSX_VROTR
+   UNSPEC_LSX_VADD_Q
+   UNSPEC_LSX_VSUB_Q
+   UNSPEC_LSX_VEXTH_Q_D
+@@ -363,14 +362,6 @@
+    (V8HI "exp_8")
+    (V16QI "exp_16")])
+ 
+-;; This attribute is used to form an immediate operand constraint using
+-;; "const_<bitimm>_operand".
+-(define_mode_attr bitimm
+-  [(V16QI "uimm3")
+-   (V8HI  "uimm4")
+-   (V4SI  "uimm5")
+-   (V2DI  "uimm6")])
+-
+ (define_expand "vec_init<mode><unitmode>"
+   [(match_operand:LSX 0 "register_operand")
+    (match_operand:LSX 1 "")]
+@@ -4152,16 +4143,6 @@
+   [(set_attr "type" "simd_int_arith")
+    (set_attr "mode" "V2DI")])
+ 
+-(define_insn "lsx_vrotr_<lsxfmt>"
+-  [(set (match_operand:ILSX 0 "register_operand" "=f")
+-	(unspec:ILSX [(match_operand:ILSX 1 "register_operand" "f")
+-		      (match_operand:ILSX 2 "register_operand" "f")]
+-		     UNSPEC_LSX_VROTR))]
+-  "ISA_HAS_LSX"
+-  "vrotr.<lsxfmt>\t%w0,%w1,%w2"
+-  [(set_attr "type" "simd_int_arith")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lsx_vadd_q"
+   [(set (match_operand:V2DI 0 "register_operand" "=f")
+ 	(unspec:V2DI [(match_operand:V2DI 1 "register_operand" "f")
+@@ -4255,15 +4236,6 @@
+   [(set_attr "type" "simd_fcvt")
+    (set_attr "mode" "V2DI")])
+ 
+-(define_insn "lsx_vrotri_<lsxfmt>"
+-  [(set (match_operand:ILSX 0 "register_operand" "=f")
+-	(rotatert:ILSX (match_operand:ILSX 1 "register_operand" "f")
+-		      (match_operand 2 "const_<bitimm>_operand" "")))]
+-  "ISA_HAS_LSX"
+-  "vrotri.<lsxfmt>\t%w0,%w1,%2"
+-  [(set_attr "type" "simd_shf")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lsx_vextl_q_d"
+   [(set (match_operand:V2DI 0 "register_operand" "=f")
+ 	(unspec:V2DI [(match_operand:V2DI 1 "register_operand" "f")]
+diff --git a/src/gcc/config/loongarch/simd.md b/src/gcc/config/loongarch/simd.md
+index a0e8db3c0..4ecf7a55e 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -91,6 +91,13 @@
+ 			   (V8HI "16") (V16HI "16")
+ 			   (V16QI "8") (V32QI "8")])
+ 
++;; This attribute is used to form an immediate operand constraint using
++;; "const_<bitimm>_operand".
++(define_mode_attr bitimm [(V16QI "uimm3") (V32QI "uimm3")
++			  (V8HI  "uimm4") (V16HI "uimm4")
++			  (V4SI  "uimm5") (V8SI "uimm5")
++			  (V2DI  "uimm6") (V4DI "uimm6")])
++
+ ;; =======================================================================
+ ;; For many LASX instructions, the only difference of it from the LSX
+ ;; counterpart is the length of vector operands.  Describe these LSX/LASX
+@@ -222,6 +229,28 @@
+   [(set_attr "type" "simd_int_arith")
+    (set_attr "mode" "<MODE>")])
+ 
++;; <x>vrotr.{b/h/w/d}
++
++(define_insn "vrotr<mode>3"
++  [(set (match_operand:IVEC 0 "register_operand" "=f")
++	(rotatert:IVEC (match_operand:IVEC 1 "register_operand" "f")
++		       (match_operand:IVEC 2 "register_operand" "f")))]
++  ""
++  "<x>vrotr.<simdfmt>\t%<wu>0,%<wu>1,%<wu>2"
++  [(set_attr "type" "simd_int_arith")
++   (set_attr "mode" "<MODE>")])
++
++;; <x>vrotri.{b/h/w/d}
++
++(define_insn "rotr<mode>3"
++  [(set (match_operand:IVEC 0 "register_operand" "=f")
++	(rotatert:IVEC (match_operand:IVEC 1 "register_operand" "f")
++		       (match_operand:SI 2 "const_<bitimm>_operand")))]
++  ""
++  "<x>vrotri.<simdfmt>\t%<wu>0,%<wu>1,%2";
++  [(set_attr "type" "simd_int_arith")
++   (set_attr "mode" "<MODE>")])
++
+ ; The LoongArch SX Instructions.
+ (include "lsx.md")
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-rotr.c b/src/gcc/testsuite/gcc.target/loongarch/vect-rotr.c
+new file mode 100644
+index 000000000..733c36334
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-rotr.c
+@@ -0,0 +1,36 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx" } */
++/* { dg-final { scan-assembler "\tvrotr\.w\t" } } */
++/* { dg-final { scan-assembler "\txvrotr\.w\t" } } */
++/* { dg-final { scan-assembler "\tvrotri\.w\t\[^\n\]*7\n" } } */
++/* { dg-final { scan-assembler "\txvrotri\.w\t\[^\n\]*7\n" } } */
++
++unsigned int a[8], b[8];
++
++void
++test1 (void)
++{
++  for (int i = 0; i < 4; i++)
++    a[i] = a[i] >> b[i] | a[i] << (32 - b[i]);
++}
++
++void
++test2 (void)
++{
++  for (int i = 0; i < 8; i++)
++    a[i] = a[i] >> b[i] | a[i] << (32 - b[i]);
++}
++
++void
++test3 (void)
++{
++  for (int i = 0; i < 4; i++)
++    a[i] = a[i] >> 7 | a[i] << 25;
++}
++
++void
++test4 (void)
++{
++  for (int i = 0; i < 8; i++)
++    a[i] = a[i] >> 7 | a[i] << 25;
++}
+-- 
+2.45.2
+

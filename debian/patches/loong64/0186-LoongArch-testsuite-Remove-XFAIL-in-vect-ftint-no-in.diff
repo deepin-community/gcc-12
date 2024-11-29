@@ -1,0 +1,30 @@
+From 4cb4cd724b22bb5c5cec82bd3d695281f88c9645 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 13 Dec 2023 02:39:35 +0800
+Subject: [PATCH 186/301] LoongArch: testsuite: Remove XFAIL in
+ vect-ftint-no-inexact.c
+
+After r14-6455 this no longer fails.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vect-ftint-no-inexact.c (xfail): Remove.
+---
+ src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c b/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
+index 83d268099..61918beef 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
+@@ -39,6 +39,5 @@
+ /* { dg-final { scan-assembler-not "\txvftintrne\.w\.s" } } */
+ /* { dg-final { scan-assembler-not "\txvftintrne\.l\.d" } } */
+ 
+-/* trunc: XFAIL due to PR 107723 */
+-/* { dg-final { scan-assembler "bl\t%plt\\(trunc\\)" { xfail *-*-* } } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(trunc\\)" } } */
+ /* { dg-final { scan-assembler "bl\t%plt\\(truncf\\)" } } */
+-- 
+2.45.2
+

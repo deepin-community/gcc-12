@@ -1,0 +1,34 @@
+From 9ce3dbc9b1277a6c3cf36c3023e8bb51555b5f09 Mon Sep 17 00:00:00 2001
+From: chenxiaolong <chenxiaolong@loongson.cn>
+Date: Fri, 29 Dec 2023 09:45:15 +0800
+Subject: [PATCH 209/301] LoongArch: testsuite:Fix FAIL in lasx-xvstelm.c file.
+
+After implementing the cost model on the LoongArch architecture, the GCC
+compiler code has this feature turned on by default, which causes the
+lasx-xvstelm.c file test to fail. Through analysis, this test case can
+generate vectorization instructions required for detection only after
+disabling the functionality of the cost model with the "-fno-vect-cost-model"
+compilation option.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-xvstelm.c:Add compile
+	option "-fno-vect-cost-model" to dg-options.
+---
+ .../testsuite/gcc.target/loongarch/vector/lasx/lasx-xvstelm.c   | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvstelm.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvstelm.c
+index 1a7b0e86f..4b846204a 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvstelm.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvstelm.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O3 -mlasx" } */
++/* { dg-options "-O3 -mlasx -fno-vect-cost-model" } */
+ /* { dg-final { scan-assembler-times "xvstelm.w" 8} } */
+ 
+ #define LEN 256
+-- 
+2.45.2
+

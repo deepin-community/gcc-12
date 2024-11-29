@@ -1,0 +1,514 @@
+From e52f39feb8a5e576388b18a7d045e6edf4b2e6ab Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Mon, 29 Jan 2024 15:20:07 +0800
+Subject: [PATCH 241/301] LoongArch: Don't split the instructions containing
+ relocs for extreme code model.
+
+The ABI mandates the pcalau12i/addi.d/lu32i.d/lu52i.d instructions for
+addressing a symbol to be adjacent.  So model them as "one large
+instruction", i.e. define_insn, with two output registers.  The real
+address is the sum of these two registers.
+
+The advantage of this approach is the RTL passes can still use ldx/stx
+instructions to skip an addi.d instruction.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (unspec): Add
+	UNSPEC_LA_PCREL_64_PART1 and UNSPEC_LA_PCREL_64_PART2.
+	(la_pcrel64_two_parts): New define_insn.
+	* config/loongarch/loongarch.cc (loongarch_tls_symbol): Fix a
+	typo in the comment.
+	(loongarch_call_tls_get_addr): If -mcmodel=extreme
+	-mexplicit-relocs={always,auto}, use la_pcrel64_two_parts for
+	addressing the TLS symbol and __tls_get_addr.  Emit an REG_EQUAL
+	note to allow CSE addressing __tls_get_addr.
+	(loongarch_legitimize_tls_address): If -mcmodel=extreme
+	-mexplicit-relocs={always,auto}, address TLS IE symbols with
+	la_pcrel64_two_parts.
+	(loongarch_split_symbol): If -mcmodel=extreme
+	-mexplicit-relocs={always,auto}, address symbols with
+	la_pcrel64_two_parts.
+	(loongarch_output_mi_thunk): Clean up unreachable code.  If
+	-mcmodel=extreme -mexplicit-relocs={always,auto}, address the MI
+	thunks with la_pcrel64_two_parts.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/func-call-extreme-1.c (dg-options):
+	Use -O2 instead of -O0 to ensure the pcalau12i/addi/lu32i/lu52i
+	instruction sequences are not reordered by the compiler.
+	(NOIPA): Disallow interprocedural optimizations.
+	* gcc.target/loongarch/func-call-extreme-2.c: Remove the content
+	duplicated from func-call-extreme-1.c, include it instead.
+	(dg-options): Likewise.
+	* gcc.target/loongarch/func-call-extreme-3.c (dg-options):
+	Likewise.
+	* gcc.target/loongarch/func-call-extreme-4.c (dg-options):
+	Likewise.
+	* gcc.target/loongarch/cmodel-extreme-1.c: New test.
+	* gcc.target/loongarch/cmodel-extreme-2.c: New test.
+	* g++.target/loongarch/cmodel-extreme-mi-thunk-1.C: New test.
+	* g++.target/loongarch/cmodel-extreme-mi-thunk-2.C: New test.
+	* g++.target/loongarch/cmodel-extreme-mi-thunk-3.C: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 131 ++++++++++--------
+ src/gcc/config/loongarch/loongarch.md         |  20 +++
+ .../loongarch/cmodel-extreme-mi-thunk-1.C     |  11 ++
+ .../loongarch/cmodel-extreme-mi-thunk-2.C     |   6 +
+ .../loongarch/cmodel-extreme-mi-thunk-3.C     |   6 +
+ .../gcc.target/loongarch/cmodel-extreme-1.c   |  18 +++
+ .../gcc.target/loongarch/cmodel-extreme-2.c   |   7 +
+ .../loongarch/func-call-extreme-1.c           |  14 +-
+ .../loongarch/func-call-extreme-2.c           |  29 +---
+ .../loongarch/func-call-extreme-3.c           |   2 +-
+ .../loongarch/func-call-extreme-4.c           |   2 +-
+ 11 files changed, 154 insertions(+), 92 deletions(-)
+ create mode 100644 src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-1.C
+ create mode 100644 src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-2.C
+ create mode 100644 src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-3.C
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-1.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-2.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index b4abeaf11..4cd2a038b 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -2733,7 +2733,7 @@ loongarch_add_offset (rtx temp, rtx reg, HOST_WIDE_INT offset)
+   return plus_constant (Pmode, reg, offset);
+ }
+ 
+-/* The __tls_get_attr symbol.  */
++/* The __tls_get_addr symbol.  */
+ static GTY (()) rtx loongarch_tls_symbol;
+ 
+ /* Load an entry for a TLS access.  */
+@@ -2773,20 +2773,22 @@ loongarch_call_tls_get_addr (rtx sym, enum loongarch_symbol_type type, rtx v0)
+ 
+   if (loongarch_explicit_relocs_p (type))
+     {
+-      /* Split tls symbol to high and low.  */
+-      rtx high = gen_rtx_HIGH (Pmode, copy_rtx (loc));
+-      high = loongarch_force_temporary (tmp, high);
+-
+       if (TARGET_CMODEL_EXTREME)
+ 	{
+-	  rtx tmp1 = gen_reg_rtx (Pmode);
+-	  emit_insn (gen_tls_low (Pmode, tmp1, gen_rtx_REG (Pmode, 0), loc));
+-	  emit_insn (gen_lui_h_lo20 (tmp1, tmp1, loc));
+-	  emit_insn (gen_lui_h_hi12 (tmp1, tmp1, loc));
+-	  emit_move_insn (a0, gen_rtx_PLUS (Pmode, high, tmp1));
++	  rtx part1 = gen_reg_rtx (Pmode);
++	  rtx part2 = gen_reg_rtx (Pmode);
++
++	  emit_insn (gen_la_pcrel64_two_parts (part1, part2, loc));
++	  emit_move_insn (a0, gen_rtx_PLUS (Pmode, part1, part2));
+ 	}
+       else
+-	emit_insn (gen_tls_low (Pmode, a0, high, loc));
++	{
++	  /* Split tls symbol to high and low.  */
++	  rtx high = gen_rtx_HIGH (Pmode, copy_rtx (loc));
++
++	  high = loongarch_force_temporary (tmp, high);
++	  emit_insn (gen_tls_low (Pmode, a0, high, loc));
++	}
+     }
+   else
+     emit_insn (loongarch_load_tls (a0, loc, type));
+@@ -2868,22 +2870,28 @@ loongarch_call_tls_get_addr (rtx sym, enum loongarch_symbol_type type, rtx v0)
+ 	    {
+ 	      if (loongarch_explicit_relocs_p (SYMBOL_GOT_DISP))
+ 		{
+-		  rtx tmp1 = gen_reg_rtx (Pmode);
+-		  rtx high = gen_reg_rtx (Pmode);
++		  gcc_assert (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE);
+ 
+-		  loongarch_emit_move (high,
+-				       gen_rtx_HIGH (Pmode,
+-						     loongarch_tls_symbol));
+-		  loongarch_emit_move (tmp1,
+-				       gen_rtx_LO_SUM (Pmode,
+-						       gen_rtx_REG (Pmode, 0),
++		  rtx part1 = gen_reg_rtx (Pmode);
++		  rtx part2 = gen_reg_rtx (Pmode);
++
++		  emit_insn (gen_la_pcrel64_two_parts (part1, part2,
+ 						       loongarch_tls_symbol));
+-		  emit_insn (gen_lui_h_lo20 (tmp1, tmp1, loongarch_tls_symbol));
+-		  emit_insn (gen_lui_h_hi12 (tmp1, tmp1, loongarch_tls_symbol));
+-		  loongarch_emit_move (dest,
+-				       gen_rtx_MEM (Pmode,
+-						    gen_rtx_PLUS (Pmode,
+-								  high, tmp1)));
++		  loongarch_emit_move (
++		    dest,
++		    gen_rtx_MEM (Pmode, gen_rtx_PLUS (Pmode,
++						      part1,
++						      part2)));
++
++		  /* Put an REG_EQUAL note here to allow CSE (storing
++		     part1 + part2, i.e. the address of tls_get_addr into
++		     a saved register and use it for multiple TLS
++		     accesses).  */
++		  rtx sum = gen_rtx_UNSPEC (
++		    Pmode, gen_rtvec (1, loongarch_tls_symbol),
++		    UNSPEC_ADDRESS_FIRST
++		    + loongarch_classify_symbol (loongarch_tls_symbol));
++		  set_unique_reg_note (get_last_insn (), REG_EQUAL, sum);
+ 		}
+ 	      else
+ 	       emit_insn (gen_movdi_symbolic_off64 (dest, loongarch_tls_symbol,
+@@ -2946,24 +2954,30 @@ loongarch_legitimize_tls_address (rtx loc)
+ 	  dest = gen_reg_rtx (Pmode);
+ 	  if (loongarch_explicit_relocs_p (SYMBOL_TLS_IE))
+ 	    {
+-	      tmp3 = gen_reg_rtx (Pmode);
+-	      rtx high = gen_rtx_HIGH (Pmode, copy_rtx (tmp2));
+-	      high = loongarch_force_temporary (tmp3, high);
+-
+ 	      if (TARGET_CMODEL_EXTREME)
+ 		{
+-		  rtx tmp3 = gen_reg_rtx (Pmode);
+-		  emit_insn (gen_tls_low (Pmode, tmp3,
+-					  gen_rtx_REG (Pmode, 0), tmp2));
+-		  emit_insn (gen_lui_h_lo20 (tmp3, tmp3, tmp2));
+-		  emit_insn (gen_lui_h_hi12 (tmp3, tmp3, tmp2));
++		  gcc_assert (la_opt_explicit_relocs
++			      != EXPLICIT_RELOCS_NONE);
++
++		  rtx part1 = gen_reg_rtx (Pmode);
++		  rtx part2 = gen_reg_rtx (Pmode);
++
++		  emit_insn (gen_la_pcrel64_two_parts (part1, part2,
++						       tmp2));
+ 		  emit_move_insn (tmp1,
+ 				  gen_rtx_MEM (Pmode,
+ 					       gen_rtx_PLUS (Pmode,
+-							     high, tmp3)));
++							     part1,
++							     part2)));
+ 		}
+ 	      else
+-		emit_insn (gen_ld_from_got (Pmode, tmp1, high, tmp2));
++		{
++		  tmp3 = gen_reg_rtx (Pmode);
++		  rtx high = gen_rtx_HIGH (Pmode, copy_rtx (tmp2));
++
++		  high = loongarch_force_temporary (tmp3, high);
++		  emit_insn (gen_ld_from_got (Pmode, tmp1, high, tmp2));
++		}
+ 	    }
+ 	  else
+ 	    emit_insn (loongarch_load_tls (tmp1, tmp2, SYMBOL_TLS_IE));
+@@ -3142,24 +3156,23 @@ loongarch_split_symbol (rtx temp, rtx addr, machine_mode mode, rtx *low_out)
+       || !loongarch_split_symbol_type (symbol_type))
+     return false;
+ 
+-  rtx high, temp1 = NULL;
++  rtx high;
+ 
+   if (temp == NULL)
+     temp = gen_reg_rtx (Pmode);
+ 
+-  /* Get the 12-31 bits of the address.  */
+-  high = gen_rtx_HIGH (Pmode, copy_rtx (addr));
+-  high = loongarch_force_temporary (temp, high);
+-
+   if (loongarch_symbol_extreme_p (symbol_type) && can_create_pseudo_p ())
+     {
+       gcc_assert (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE);
+ 
+-      temp1 = gen_reg_rtx (Pmode);
+-      emit_move_insn (temp1, gen_rtx_LO_SUM (Pmode, gen_rtx_REG (Pmode, 0),
+-					     addr));
+-      emit_insn (gen_lui_h_lo20 (temp1, temp1, addr));
+-      emit_insn (gen_lui_h_hi12 (temp1, temp1, addr));
++      high = gen_reg_rtx (Pmode);
++      emit_insn (gen_la_pcrel64_two_parts (high, temp, addr));
++    }
++  else
++    {
++      /* Get the 12-31 bits of the address.  */
++      high = gen_rtx_HIGH (Pmode, copy_rtx (addr));
++      high = loongarch_force_temporary (temp, high);
+     }
+ 
+   if (low_out)
+@@ -3168,7 +3181,7 @@ loongarch_split_symbol (rtx temp, rtx addr, machine_mode mode, rtx *low_out)
+       case SYMBOL_PCREL64:
+ 	if (can_create_pseudo_p ())
+ 	  {
+-	    *low_out = gen_rtx_PLUS (Pmode, high, temp1);
++	    *low_out = gen_rtx_PLUS (Pmode, high, temp);
+ 	    break;
+ 	  }
+ 	/* fall through */
+@@ -3180,7 +3193,8 @@ loongarch_split_symbol (rtx temp, rtx addr, machine_mode mode, rtx *low_out)
+ 	/* SYMBOL_GOT_DISP symbols are loaded from the GOT.  */
+ 	{
+ 	  if (TARGET_CMODEL_EXTREME && can_create_pseudo_p ())
+-	    *low_out = gen_rtx_MEM (Pmode, gen_rtx_PLUS (Pmode, high, temp1));
++	    *low_out = gen_rtx_MEM (Pmode, gen_rtx_PLUS (Pmode, high,
++							 temp));
+ 	  else
+ 	    {
+ 	      rtx low = gen_rtx_LO_SUM (Pmode, high, addr);
+@@ -7491,21 +7505,24 @@ loongarch_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
+      allowed, otherwise load the address into a register first.  */
+   if (use_sibcall_p)
+     {
+-      if (TARGET_CMODEL_EXTREME)
+-	{
+-	  emit_insn (gen_movdi_symbolic_off64 (temp1, fnaddr, temp2));
+-	  insn = emit_call_insn (gen_sibcall_internal (temp1, const0_rtx));
+-	}
+-      else
+-	insn = emit_call_insn (gen_sibcall_internal (fnaddr, const0_rtx));
++      /* If TARGET_CMODEL_EXTREME, we cannot do a direct jump at all
++	 and const_call_insn_operand should have returned false.  */
++      gcc_assert (!TARGET_CMODEL_EXTREME);
++
++      insn = emit_call_insn (gen_sibcall_internal (fnaddr, const0_rtx));
+       SIBLING_CALL_P (insn) = 1;
+     }
+   else
+     {
+-      if (TARGET_CMODEL_EXTREME)
++      if (!TARGET_CMODEL_EXTREME)
++	loongarch_emit_move (temp1, fnaddr);
++      else if (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)
+ 	emit_insn (gen_movdi_symbolic_off64 (temp1, fnaddr, temp2));
+       else
+-	loongarch_emit_move (temp1, fnaddr);
++	{
++	  emit_insn (gen_la_pcrel64_two_parts (temp1, temp2, fnaddr));
++	  emit_move_insn (temp1, gen_rtx_PLUS (Pmode, temp1, temp2));
++	}
+ 
+       emit_jump_insn (gen_indirect_jump (temp1));
+     }
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index add55e0af..9356194fe 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -84,6 +84,8 @@
+   UNSPEC_CALL_VALUE_MULTIPLE_INTERNAL_1
+ 
+   UNSPEC_LOAD_SYMBOL_OFFSET64
++  UNSPEC_LA_PCREL_64_PART1
++  UNSPEC_LA_PCREL_64_PART2
+ ])
+ 
+ (define_c_enum "unspecv" [
+@@ -2224,6 +2226,24 @@
+  [(set_attr "mode" "DI")
+   (set_attr "insn_count" "5")])
+ 
++;; The 64-bit PC-relative part of address loading.
++;; Note that the psABI does not allow splitting it.
++(define_insn "la_pcrel64_two_parts"
++  [(set (match_operand:DI 0 "register_operand" "=r")
++	(unspec:DI [(match_operand:DI 2 "") (pc)] UNSPEC_LA_PCREL_64_PART1))
++   (set (match_operand:DI 1 "register_operand" "=r")
++	(unspec:DI [(match_dup 2) (pc)] UNSPEC_LA_PCREL_64_PART2))]
++  "TARGET_ABI_LP64 && la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE"
++  {
++    return "pcalau12i\t%0,%r2\n\t"
++	   "addi.d\t%1,$r0,%L2\n\t"
++	   "lu32i.d\t%1,%R2\n\t"
++	   "lu52i.d\t%1,%1,%H2";
++  }
++  [(set_attr "move_type" "move")
++   (set_attr "mode" "DI")
++   (set_attr "length" "16")])
++
+ ;; 32-bit Integer moves
+ 
+ (define_expand "movsi"
+diff --git a/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-1.C b/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-1.C
+new file mode 100644
+index 000000000..ff1f7c165
+--- /dev/null
++++ b/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-1.C
+@@ -0,0 +1,11 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -fno-inline -march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=always -mdirect-extern-access" } */
++
++struct A {
++  virtual ~A();
++};
++
++struct B : virtual A {};
++void var() { B(); }
++
++/* { dg-final { scan-assembler "pcalau12i\t\[^\n\]*%pc_hi20\\(\\.LTHUNK0\\)\n\taddi\\.d\t\[^\n\]*%pc_lo12\\(\\\.LTHUNK0\\)\n\tlu32i\\.d\t\[^\n\]*%pc64_lo20\\(\\.LTHUNK0\\)\n\tlu52i\\.d\t\[^\n\]*%pc64_hi12\\(\\.LTHUNK0\\)" } } */
+diff --git a/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-2.C b/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-2.C
+new file mode 100644
+index 000000000..c9aa16b41
+--- /dev/null
++++ b/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-2.C
+@@ -0,0 +1,6 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -fno-inline -march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=auto -mdirect-extern-access" } */
++
++#include "cmodel-extreme-mi-thunk-1.C"
++
++/* { dg-final { scan-assembler "pcalau12i\t\[^\n\]*%pc_hi20\\(\\.LTHUNK0\\)\n\taddi\\.d\t\[^\n\]*%pc_lo12\\(\\\.LTHUNK0\\)\n\tlu32i\\.d\t\[^\n\]*%pc64_lo20\\(\\.LTHUNK0\\)\n\tlu52i\\.d\t\[^\n\]*%pc64_hi12\\(\\.LTHUNK0\\)" } } */
+diff --git a/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-3.C b/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-3.C
+new file mode 100644
+index 000000000..afb86c8bd
+--- /dev/null
++++ b/src/gcc/testsuite/g++.target/loongarch/cmodel-extreme-mi-thunk-3.C
+@@ -0,0 +1,6 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -fno-inline -march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=none -mdirect-extern-access" } */
++
++#include "cmodel-extreme-mi-thunk-1.C"
++
++/* { dg-final { scan-assembler "la.local\t\[^\n\]*\\.LTHUNK0" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-1.c b/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-1.c
+new file mode 100644
+index 000000000..564ee4017
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-1.c
+@@ -0,0 +1,18 @@
++/* { dg-do compile } */
++/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=always -fdump-rtl-final" } */
++
++int a;
++extern int b;
++__thread int c __attribute__ ((tls_model ("local-exec")));
++__thread int d __attribute__ ((tls_model ("initial-exec")));
++__thread int e __attribute__ ((tls_model ("local-dynamic")));
++__thread int f __attribute__ ((tls_model ("global-dynamic")));
++
++void
++test (void)
++{
++  a = b + c + d + e + f;
++}
++
++/* a, b, d, e, f, and __tls_get_addr.  */
++/* { dg-final { scan-rtl-dump-times "la_pcrel64_two_parts" 6 "final" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-2.c b/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-2.c
+new file mode 100644
+index 000000000..ce834805f
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/cmodel-extreme-2.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-march=loongarch64 -mabi=lp64d -O2 -mcmodel=extreme -fno-plt -mexplicit-relocs=auto -fdump-rtl-final" } */
++
++#include "cmodel-extreme-1.c"
++
++/* a, b, d, e, f, and __tls_get_addr.  */
++/* { dg-final { scan-rtl-dump-times "la_pcrel64_two_parts" 6 "final" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-1.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-1.c
+index db1e0f853..fdb4cf1ff 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-1.c
+@@ -1,31 +1,33 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O0 -fno-pic -fno-plt -mexplicit-relocs -mcmodel=extreme" } */
++/* { dg-options "-mabi=lp64d -O2 -fno-pic -fno-plt -mexplicit-relocs -mcmodel=extreme" } */
+ /* { dg-final { scan-assembler "test:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
+ /* { dg-final { scan-assembler "test2:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
+ 
++#define NOIPA __attribute__ ((noipa))
++
+ extern void g (void);
+-void
++NOIPA void
+ f (void)
+ {}
+ 
+-static void
++NOIPA static void
+ l (void)
+ {}
+ 
+-void
++NOIPA void
+ test (void)
+ {
+   g ();
+ }
+ 
+-void
++NOIPA void
+ test1 (void)
+ {
+   f ();
+ }
+ 
+-void
++NOIPA void
+ test2 (void)
+ {
+   l ();
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-2.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-2.c
+index 21bf81ae8..dfba3882b 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-2.c
+@@ -1,32 +1,7 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O0 -fpic -fno-plt -mexplicit-relocs -mcmodel=extreme" } */
++/* { dg-options "-mabi=lp64d -O2 -fpic -fno-plt -mexplicit-relocs -mcmodel=extreme" } */
+ /* { dg-final { scan-assembler "test:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
+ /* { dg-final { scan-assembler "test2:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
+ 
+-extern void g (void);
+-void
+-f (void)
+-{}
+-
+-static void
+-l (void)
+-{}
+-
+-void
+-test (void)
+-{
+-  g ();
+-}
+-
+-void
+-test1 (void)
+-{
+-  f ();
+-}
+-
+-void
+-test2 (void)
+-{
+-  l ();
+-}
++#include "func-call-extreme-1.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-3.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-3.c
+index a4da44b4a..1f5234f83 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-3.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-3.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O0 -fno-pic -fno-plt -mexplicit-relocs=auto -mcmodel=extreme" } */
++/* { dg-options "-mabi=lp64d -O2 -fno-pic -fno-plt -mexplicit-relocs=auto -mcmodel=extreme" } */
+ /* { dg-final { scan-assembler "test:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
+ /* { dg-final { scan-assembler "test2:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-4.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-4.c
+index 16b00f4c5..c42285006 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-4.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-extreme-4.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-mabi=lp64d -O0 -fpic -fno-plt -mexplicit-relocs=auto -mcmodel=extreme" } */
++/* { dg-options "-mabi=lp64d -O2 -fpic -fno-plt -mexplicit-relocs=auto -mcmodel=extreme" } */
+ /* { dg-final { scan-assembler "test:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i.*%got_pc_hi20.*\n\taddi\.d.*%got_pc_lo12.*\n\tlu32i\.d.*%got64_pc_lo20.*\n\tlu52i\.d.*%got64_pc_hi12.*\n\tldx\.d" } } */
+ /* { dg-final { scan-assembler "test2:.*pcalau12i.*%pc_hi20.*\n\taddi\.d.*%pc_lo12.*\n\tlu32i\.d.*%pc64_lo20.*\n\tlu52i\.d.*pc64_hi12.*\n\tadd\.d" } } */
+-- 
+2.45.2
+

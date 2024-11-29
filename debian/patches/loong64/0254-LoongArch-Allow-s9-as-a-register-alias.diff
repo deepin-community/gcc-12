@@ -1,0 +1,45 @@
+From 68b798d3fe30de40dc161baec23e6153b85fe914 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 25 Jan 2024 23:49:13 +0800
+Subject: [PATCH 254/301] LoongArch: Allow s9 as a register alias
+
+The psABI allows using s9 as an alias of r22.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.h (ADDITIONAL_REGISTER_NAMES): Add
+	s9 as an alias of r22.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/regname-fp-s9.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.h                   | 1 +
+ src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c | 3 +++
+ 2 files changed, 4 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index 15261fdc0..8bcdb8729 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -931,6 +931,7 @@ typedef struct {
+   { "t8",	20 + GP_REG_FIRST },					\
+   { "x",	21 + GP_REG_FIRST },					\
+   { "fp",	22 + GP_REG_FIRST },					\
++  { "s9",	22 + GP_REG_FIRST },					\
+   { "s0",	23 + GP_REG_FIRST },					\
+   { "s1",	24 + GP_REG_FIRST },					\
+   { "s2",	25 + GP_REG_FIRST },					\
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c b/src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c
+new file mode 100644
+index 000000000..d2e3b80f8
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c
+@@ -0,0 +1,3 @@
++/* { dg-do compile } */
++register long s9 asm("s9"); /* { dg-note "conflicts with 's9'" } */
++register long fp asm("fp"); /* { dg-warning "register of 'fp' used for multiple global register variables" } */
+-- 
+2.45.2
+

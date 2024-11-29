@@ -1,0 +1,35 @@
+From 7599c4c96bf700d3cc76a3202ba38c8f7c29d624 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 17 Oct 2023 21:55:05 +0800
+Subject: [PATCH 132/301] LoongArch: Use fcmp.caf.s instead of movgr2cf for
+ zeroing a fcc
+
+During the review of an LLVM change [1], on LA464 we found that zeroing
+an fcc with fcmp.caf.s is much faster than a movgr2cf from $r0.
+
+[1]: https://github.com/llvm/llvm-project/pull/69300
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (movfcc): Use fcmp.caf.s for
+	zeroing a fcc.
+---
+ src/gcc/config/loongarch/loongarch.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index d306efdeb..4d2bec551 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -2151,7 +2151,7 @@
+   [(set (match_operand:FCC 0 "register_operand" "=z")
+ 	(const_int 0))]
+   ""
+-  "movgr2cf\t%0,$r0")
++  "fcmp.caf.s\t%0,$f0,$f0")
+ 
+ ;; Conditional move instructions.
+ 
+-- 
+2.45.2
+
