@@ -1,0 +1,304 @@
+From 133eafc8c209a0e5a2a38e32b42212b96eeae76e Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Mon, 28 Oct 2024 01:53:57 +0000
+Subject: [PATCH 300/301] libphobos: Update build scripts for LoongArch64.
+
+libphobos/ChangeLog:
+
+        * m4/druntime/cpu.m4: Support loongarch* targets.
+        * libdruntime/Makefile.am: Same.
+        * libdruntime/Makefile.in: Regenerate.
+        * configure: Regenerate.
+---
+ src/libphobos/configure               | 21 +++++-
+ src/libphobos/libdruntime/Makefile.am |  3 +
+ src/libphobos/libdruntime/Makefile.in | 94 +++++++++++++++++----------
+ src/libphobos/m4/druntime/cpu.m4      |  5 ++
+ 4 files changed, 85 insertions(+), 38 deletions(-)
+
+diff --git a/src/libphobos/configure b/src/libphobos/configure
+index 9da06f087..6acb2dd89 100755
+--- a/src/libphobos/configure
++++ b/src/libphobos/configure
+@@ -696,6 +696,8 @@ DRUNTIME_CPU_POWERPC_FALSE
+ DRUNTIME_CPU_POWERPC_TRUE
+ DRUNTIME_CPU_MIPS_FALSE
+ DRUNTIME_CPU_MIPS_TRUE
++DRUNTIME_CPU_LOONGARCH_FALSE
++DRUNTIME_CPU_LOONGARCH_TRUE
+ DRUNTIME_CPU_ARM_FALSE
+ DRUNTIME_CPU_ARM_TRUE
+ DRUNTIME_CPU_AARCH64_FALSE
+@@ -11750,7 +11752,7 @@ else
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11753 "configure"
++#line 11755 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -11856,7 +11858,7 @@ else
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11859 "configure"
++#line 11861 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -14137,6 +14139,9 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
+                ;;
+       mips*)   druntime_target_cpu_parsed="mips"
+                ;;
++      loongarch*)
++               druntime_target_cpu_parsed="loongarch"
++               ;;
+       powerpc*)
+                druntime_target_cpu_parsed="powerpc"
+                ;;
+@@ -14174,6 +14179,14 @@ else
+   DRUNTIME_CPU_MIPS_FALSE=
+ fi
+ 
++   if test "$druntime_target_cpu_parsed" = "loongarch"; then
++  DRUNTIME_CPU_LOONGARCH_TRUE=
++  DRUNTIME_CPU_LOONGARCH_FALSE='#'
++else
++  DRUNTIME_CPU_LOONGARCH_TRUE='#'
++  DRUNTIME_CPU_LOONGARCH_FALSE=
++fi
++
+    if test "$druntime_target_cpu_parsed" = "powerpc"; then
+   DRUNTIME_CPU_POWERPC_TRUE=
+   DRUNTIME_CPU_POWERPC_FALSE='#'
+@@ -15738,6 +15751,10 @@ if test -z "${DRUNTIME_CPU_MIPS_TRUE}" && test -z "${DRUNTIME_CPU_MIPS_FALSE}";
+   as_fn_error $? "conditional \"DRUNTIME_CPU_MIPS\" was never defined.
+ Usually this means the macro was only invoked conditionally." "$LINENO" 5
+ fi
++if test -z "${DRUNTIME_CPU_LOONGARCH_TRUE}" && test -z "${DRUNTIME_CPU_LOONGARCH_FALSE}"; then
++  as_fn_error $? "conditional \"DRUNTIME_CPU_LOONGARCH\" was never defined.
++Usually this means the macro was only invoked conditionally." "$LINENO" 5
++fi
+ if test -z "${DRUNTIME_CPU_POWERPC_TRUE}" && test -z "${DRUNTIME_CPU_POWERPC_FALSE}"; then
+   as_fn_error $? "conditional \"DRUNTIME_CPU_POWERPC\" was never defined.
+ Usually this means the macro was only invoked conditionally." "$LINENO" 5
+diff --git a/src/libphobos/libdruntime/Makefile.am b/src/libphobos/libdruntime/Makefile.am
+index 6ca4012b7..65e3f1b44 100644
+--- a/src/libphobos/libdruntime/Makefile.am
++++ b/src/libphobos/libdruntime/Makefile.am
+@@ -86,6 +86,9 @@ endif
+ if DRUNTIME_CPU_MIPS
+     DRUNTIME_SOURCES_CONFIGURED += config/mips/switchcontext.S
+ endif
++if DRUNTIME_CPU_LOONGARCH
++    DRUNTIME_SOURCES_CONFIGURED += config/loongarch/switchcontext.S
++endif
+ if DRUNTIME_CPU_POWERPC
+     DRUNTIME_SOURCES_CONFIGURED += config/powerpc/switchcontext.S
+ endif
+diff --git a/src/libphobos/libdruntime/Makefile.in b/src/libphobos/libdruntime/Makefile.in
+index f7f78d71f..91cd65362 100644
+--- a/src/libphobos/libdruntime/Makefile.in
++++ b/src/libphobos/libdruntime/Makefile.in
+@@ -124,12 +124,13 @@ target_triplet = @target@
+ # CPU specific sources
+ @DRUNTIME_CPU_AARCH64_TRUE@am__append_11 = config/aarch64/switchcontext.S
+ @DRUNTIME_CPU_ARM_TRUE@am__append_12 = config/arm/switchcontext.S
+-@DRUNTIME_CPU_MIPS_TRUE@am__append_13 = config/mips/switchcontext.S
+-@DRUNTIME_CPU_POWERPC_TRUE@am__append_14 = config/powerpc/switchcontext.S
+-@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_TRUE@am__append_15 = config/mingw/switchcontext.S
+-@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_FALSE@am__append_16 = config/x86/switchcontext.S
+-@DRUNTIME_CPU_SYSTEMZ_TRUE@am__append_17 = config/systemz/get_tls_offset.S
+-@DRUNTIME_CPU_S390_TRUE@am__append_18 = config/s390/get_tls_offset.S
++@DRUNTIME_CPU_LOONGARCH_TRUE@am__append_13 = config/loongarch/switchcontext.S
++@DRUNTIME_CPU_MIPS_TRUE@am__append_14 = config/mips/switchcontext.S
++@DRUNTIME_CPU_POWERPC_TRUE@am__append_15 = config/powerpc/switchcontext.S
++@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_TRUE@am__append_16 = config/mingw/switchcontext.S
++@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_FALSE@am__append_17 = config/x86/switchcontext.S
++@DRUNTIME_CPU_SYSTEMZ_TRUE@am__append_18 = config/systemz/get_tls_offset.S
++@DRUNTIME_CPU_S390_TRUE@am__append_19 = config/s390/get_tls_offset.S
+ subdir = libdruntime
+ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
+ am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
+@@ -474,45 +475,49 @@ am__objects_22 = core/sys/solaris/dlfcn.lo core/sys/solaris/elf.lo \
+ @DRUNTIME_OS_SOLARIS_TRUE@am__objects_23 = $(am__objects_22)
+ @DRUNTIME_CPU_AARCH64_TRUE@am__objects_24 = config/aarch64/libgdruntime_la-switchcontext.lo
+ @DRUNTIME_CPU_ARM_TRUE@am__objects_25 = config/arm/libgdruntime_la-switchcontext.lo
+-@DRUNTIME_CPU_MIPS_TRUE@am__objects_26 = config/mips/libgdruntime_la-switchcontext.lo
+-@DRUNTIME_CPU_POWERPC_TRUE@am__objects_27 = config/powerpc/libgdruntime_la-switchcontext.lo
+-@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_TRUE@am__objects_28 = config/mingw/libgdruntime_la-switchcontext.lo
+-@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_FALSE@am__objects_29 = config/x86/libgdruntime_la-switchcontext.lo
+-@DRUNTIME_CPU_SYSTEMZ_TRUE@am__objects_30 = config/systemz/libgdruntime_la-get_tls_offset.lo
+-@DRUNTIME_CPU_S390_TRUE@am__objects_31 = config/s390/libgdruntime_la-get_tls_offset.lo
+-am__objects_32 = $(am__objects_5) $(am__objects_7) $(am__objects_9) \
++@DRUNTIME_CPU_LOONGARCH_TRUE@am__objects_26 = config/loongarch/libgdruntime_la-switchcontext.lo
++@DRUNTIME_CPU_MIPS_TRUE@am__objects_27 = config/mips/libgdruntime_la-switchcontext.lo
++@DRUNTIME_CPU_POWERPC_TRUE@am__objects_28 = config/powerpc/libgdruntime_la-switchcontext.lo
++@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_TRUE@am__objects_29 = config/mingw/libgdruntime_la-switchcontext.lo
++@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_FALSE@am__objects_30 = config/x86/libgdruntime_la-switchcontext.lo
++@DRUNTIME_CPU_SYSTEMZ_TRUE@am__objects_31 = config/systemz/libgdruntime_la-get_tls_offset.lo
++@DRUNTIME_CPU_S390_TRUE@am__objects_32 = config/s390/libgdruntime_la-get_tls_offset.lo
++am__objects_33 = $(am__objects_6) $(am__objects_8) $(am__objects_10) \
+ 	$(am__objects_11) $(am__objects_13) $(am__objects_15) \
+ 	$(am__objects_17) $(am__objects_19) $(am__objects_21) \
+ 	$(am__objects_23) $(am__objects_24) $(am__objects_25) \
+ 	$(am__objects_26) $(am__objects_27) $(am__objects_28) \
+-	$(am__objects_29) $(am__objects_30) $(am__objects_31)
+-am__objects_33 = gcc/config.lo gcc/libbacktrace.lo
+-am__objects_34 = $(am__objects_1) $(am__objects_2) $(am__objects_3) \
+-	$(am__objects_32) $(am__objects_33)
+-am_libgdruntime_la_OBJECTS = $(am__objects_34)
++	$(am__objects_29) $(am__objects_30) $(am__objects_31) \
++	$(am__objects_32)
++am__objects_34 = gcc/config.lo gcc/libbacktrace.lo
++am__objects_35 = $(am__objects_1) $(am__objects_2) $(am__objects_3) \
++	$(am__objects_33) $(am__objects_34)
++am_libgdruntime_la_OBJECTS = $(am__objects_35)
+ libgdruntime_la_OBJECTS = $(am_libgdruntime_la_OBJECTS)
+ am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+-am__objects_35 = core/stdc/libgdruntime_convenience_la-errno_.lo
+-@DRUNTIME_OS_MINGW_TRUE@am__objects_36 = $(am__objects_20) \
++am__objects_36 = core/stdc/libgdruntime_convenience_la-errno_.lo
++@DRUNTIME_OS_MINGW_TRUE@am__objects_37 = $(am__objects_20) \
+ @DRUNTIME_OS_MINGW_TRUE@	config/mingw/libgdruntime_convenience_la-msvc.lo
+-@DRUNTIME_CPU_AARCH64_TRUE@am__objects_37 = config/aarch64/libgdruntime_convenience_la-switchcontext.lo
+-@DRUNTIME_CPU_ARM_TRUE@am__objects_38 = config/arm/libgdruntime_convenience_la-switchcontext.lo
+-@DRUNTIME_CPU_MIPS_TRUE@am__objects_39 = config/mips/libgdruntime_convenience_la-switchcontext.lo
+-@DRUNTIME_CPU_POWERPC_TRUE@am__objects_40 = config/powerpc/libgdruntime_convenience_la-switchcontext.lo
+-@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_TRUE@am__objects_41 = config/mingw/libgdruntime_convenience_la-switchcontext.lo
+-@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_FALSE@am__objects_42 = config/x86/libgdruntime_convenience_la-switchcontext.lo
+-@DRUNTIME_CPU_SYSTEMZ_TRUE@am__objects_43 = config/systemz/libgdruntime_convenience_la-get_tls_offset.lo
+-@DRUNTIME_CPU_S390_TRUE@am__objects_44 = config/s390/libgdruntime_convenience_la-get_tls_offset.lo
+-am__objects_45 = $(am__objects_5) $(am__objects_7) $(am__objects_9) \
++@DRUNTIME_CPU_AARCH64_TRUE@am__objects_38 = config/aarch64/libgdruntime_convenience_la-switchcontext.lo
++@DRUNTIME_CPU_ARM_TRUE@am__objects_39 = config/arm/libgdruntime_convenience_la-switchcontext.lo
++@DRUNTIME_CPU_LOONGARCH_TRUE@am__objects_40 = config/loongarch/libgdruntime_convenience_la-switchcontext.lo
++@DRUNTIME_CPU_MIPS_TRUE@am__objects_41 = config/mips/libgdruntime_convenience_la-switchcontext.lo
++@DRUNTIME_CPU_POWERPC_TRUE@am__objects_42 = config/powerpc/libgdruntime_convenience_la-switchcontext.lo
++@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_TRUE@am__objects_43 = config/mingw/libgdruntime_convenience_la-switchcontext.lo
++@DRUNTIME_CPU_X86_TRUE@@DRUNTIME_OS_MINGW_FALSE@am__objects_44 = config/x86/libgdruntime_convenience_la-switchcontext.lo
++@DRUNTIME_CPU_SYSTEMZ_TRUE@am__objects_45 = config/systemz/libgdruntime_convenience_la-get_tls_offset.lo
++@DRUNTIME_CPU_S390_TRUE@am__objects_46 = config/s390/libgdruntime_convenience_la-get_tls_offset.lo
++am__objects_47 = $(am__objects_5) $(am__objects_7) $(am__objects_9) \
+ 	$(am__objects_11) $(am__objects_13) $(am__objects_15) \
+ 	$(am__objects_17) $(am__objects_19) $(am__objects_36) \
+ 	$(am__objects_23) $(am__objects_37) $(am__objects_38) \
+ 	$(am__objects_39) $(am__objects_40) $(am__objects_41) \
+-	$(am__objects_42) $(am__objects_43) $(am__objects_44)
+-am__objects_46 = $(am__objects_1) $(am__objects_35) $(am__objects_3) \
+-	$(am__objects_45) $(am__objects_33)
+-am__objects_47 = $(am__objects_46)
+-am_libgdruntime_convenience_la_OBJECTS = $(am__objects_47)
++	$(am__objects_42) $(am__objects_43) $(am__objects_44) \
++	$(am__objects_45) $(am__objects_46)
++am__objects_48 = $(am__objects_1) $(am__objects_35) $(am__objects_3) \
++	$(am__objects_47) $(am__objects_33)
++am__objects_49 = $(am__objects_48)
++am_libgdruntime_convenience_la_OBJECTS = $(am__objects_49)
+ libgdruntime_convenience_la_OBJECTS =  \
+ 	$(am_libgdruntime_convenience_la_OBJECTS)
+ AM_V_P = $(am__v_P_@AM_V@)
+@@ -787,7 +792,7 @@ DRUNTIME_SOURCES_CONFIGURED = $(am__append_1) $(am__append_2) \
+ 	$(am__append_9) $(am__append_10) $(am__append_11) \
+ 	$(am__append_12) $(am__append_13) $(am__append_14) \
+ 	$(am__append_15) $(am__append_16) $(am__append_17) \
+-	$(am__append_18)
++	$(am__append_18) $(am__append_19)
+ 
+ # Provide __start_minfo, __stop_minfo if linker doesn't.
+ @DRUNTIME_OS_MINFO_BRACKETING_FALSE@DRTSTUFF = gcc/drtbegin.o gcc/drtend.o
+@@ -1900,6 +1905,11 @@ config/arm/$(am__dirstamp):
+ 	@: > config/arm/$(am__dirstamp)
+ config/arm/libgdruntime_la-switchcontext.lo:  \
+ 	config/arm/$(am__dirstamp)
++config/loongarch/$(am__dirstamp):
++	@$(MKDIR_P) config/loongarch
++	@: > config/loongarch/$(am__dirstamp)
++config/loongarch/libgdruntime_la-switchcontext.lo:  \
++	config/loongarch/$(am__dirstamp)
+ config/mips/$(am__dirstamp):
+ 	@$(MKDIR_P) config/mips
+ 	@: > config/mips/$(am__dirstamp)
+@@ -1940,6 +1950,8 @@ config/aarch64/libgdruntime_convenience_la-switchcontext.lo:  \
+ 	config/aarch64/$(am__dirstamp)
+ config/arm/libgdruntime_convenience_la-switchcontext.lo:  \
+ 	config/arm/$(am__dirstamp)
++config/loongarch/libgdruntime_convenience_la-switchcontext.lo:  \
++ config/loongarch/$(am__dirstamp)
+ config/mips/libgdruntime_convenience_la-switchcontext.lo:  \
+ 	config/mips/$(am__dirstamp)
+ config/powerpc/libgdruntime_convenience_la-switchcontext.lo:  \
+@@ -1964,6 +1976,8 @@ mostlyclean-compile:
+ 	-rm -f config/arm/*.lo
+ 	-rm -f config/mingw/*.$(OBJEXT)
+ 	-rm -f config/mingw/*.lo
++	-rm -f config/loongarch/*.$(OBJEXT)
++	-rm -f config/loongarch/*.lo
+ 	-rm -f config/mips/*.$(OBJEXT)
+ 	-rm -f config/mips/*.lo
+ 	-rm -f config/powerpc/*.$(OBJEXT)
+@@ -2087,7 +2101,10 @@ config/aarch64/libgdruntime_la-switchcontext.lo: config/aarch64/switchcontext.S
+ config/arm/libgdruntime_la-switchcontext.lo: config/arm/switchcontext.S
+ 	$(AM_V_CPPAS)$(LIBTOOL) $(AM_V_lt) $(libgdruntime_la_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CCAS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CCASFLAGS) $(CCASFLAGS) -c -o config/arm/libgdruntime_la-switchcontext.lo `test -f 'config/arm/switchcontext.S' || echo '$(srcdir)/'`config/arm/switchcontext.S
+ 
+-config/mips/libgdruntime_la-switchcontext.lo: config/mips/switchcontext.S
++config/loongarch/libgdruntime_la-switchcontext.lo: config/loongarch/switchcontext.S
++ $(AM_V_CPPAS)$(LIBTOOL) $(AM_V_lt) $(libgdruntime_la_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CCAS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CCASFLAGS)
++
++onfig/mips/libgdruntime_la-switchcontext.lo: config/mips/switchcontext.S
+ 	$(AM_V_CPPAS)$(LIBTOOL) $(AM_V_lt) $(libgdruntime_la_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CCAS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CCASFLAGS) $(CCASFLAGS) -c -o config/mips/libgdruntime_la-switchcontext.lo `test -f 'config/mips/switchcontext.S' || echo '$(srcdir)/'`config/mips/switchcontext.S
+ 
+ config/powerpc/libgdruntime_la-switchcontext.lo: config/powerpc/switchcontext.S
+@@ -2111,6 +2128,9 @@ config/aarch64/libgdruntime_convenience_la-switchcontext.lo: config/aarch64/swit
+ config/arm/libgdruntime_convenience_la-switchcontext.lo: config/arm/switchcontext.S
+ 	$(AM_V_CPPAS)$(LIBTOOL) $(AM_V_lt) $(libgdruntime_convenience_la_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CCAS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CCASFLAGS) $(CCASFLAGS) -c -o config/arm/libgdruntime_convenience_la-switchcontext.lo `test -f 'config/arm/switchcontext.S' || echo '$(srcdir)/'`config/arm/switchcontext.S
+ 
++config/loongarch/libgdruntime_convenience_la-switchcontext.lo: config/loongarch/switchcontext.S
++ $(AM_V_CPPAS)$(LIBTOOL) $(AM_V_lt) $(libgdruntime_convenience_la_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CCAS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM
++
+ config/mips/libgdruntime_convenience_la-switchcontext.lo: config/mips/switchcontext.S
+ 	$(AM_V_CPPAS)$(LIBTOOL) $(AM_V_lt) $(libgdruntime_convenience_la_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CCAS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CCASFLAGS) $(CCASFLAGS) -c -o config/mips/libgdruntime_convenience_la-switchcontext.lo `test -f 'config/mips/switchcontext.S' || echo '$(srcdir)/'`config/mips/switchcontext.S
+ 
+@@ -2158,6 +2178,7 @@ clean-libtool:
+ 	-rm -rf config/aarch64/.libs config/aarch64/_libs
+ 	-rm -rf config/arm/.libs config/arm/_libs
+ 	-rm -rf config/mingw/.libs config/mingw/_libs
++	-rm -rf config/loongarch/.libs config/loongarch/_libs
+ 	-rm -rf config/mips/.libs config/mips/_libs
+ 	-rm -rf config/powerpc/.libs config/powerpc/_libs
+ 	-rm -rf config/s390/.libs config/s390/_libs
+@@ -2319,6 +2340,7 @@ distclean-generic:
+ 	-rm -f config/aarch64/$(am__dirstamp)
+ 	-rm -f config/arm/$(am__dirstamp)
+ 	-rm -f config/mingw/$(am__dirstamp)
++	-rm -f config/loongarch/$(am__dirstamp)
+ 	-rm -f config/mips/$(am__dirstamp)
+ 	-rm -f config/powerpc/$(am__dirstamp)
+ 	-rm -f config/s390/$(am__dirstamp)
+diff --git a/src/libphobos/m4/druntime/cpu.m4 b/src/libphobos/m4/druntime/cpu.m4
+index db3a92c15..3461b2d3c 100644
+--- a/src/libphobos/m4/druntime/cpu.m4
++++ b/src/libphobos/m4/druntime/cpu.m4
+@@ -15,6 +15,9 @@ AC_DEFUN([DRUNTIME_CPU_SOURCES],
+                ;;
+       arm*)    druntime_target_cpu_parsed="arm"
+                ;;
++      loongarch*)
++               druntime_target_cpu_parsed="loongarch"
++               ;;
+       mips*)   druntime_target_cpu_parsed="mips"
+                ;;
+       powerpc*)
+@@ -34,6 +37,8 @@ AC_DEFUN([DRUNTIME_CPU_SOURCES],
+                  [test "$druntime_target_cpu_parsed" = "aarch64"])
+   AM_CONDITIONAL([DRUNTIME_CPU_ARM],
+                  [test "$druntime_target_cpu_parsed" = "arm"])
++  AM_CONDITIONAL([DRUNTIME_CPU_LOONGARCH],
++                 [test "$druntime_target_cpu_parsed" = "loongarch"])
+   AM_CONDITIONAL([DRUNTIME_CPU_MIPS],
+                  [test "$druntime_target_cpu_parsed" = "mips"])
+   AM_CONDITIONAL([DRUNTIME_CPU_POWERPC],
+-- 
+2.45.2
+

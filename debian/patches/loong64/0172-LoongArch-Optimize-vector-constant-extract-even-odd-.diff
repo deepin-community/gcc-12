@@ -1,0 +1,163 @@
+From d190d0ee3e9f3c5d6815596069b321d62f9eea90 Mon Sep 17 00:00:00 2001
+From: Li Wei <liwei@loongson.cn>
+Date: Tue, 28 Nov 2023 15:39:00 +0800
+Subject: [PATCH 172/301] LoongArch: Optimize vector constant
+ extract-{even/odd} permutation.
+
+For vector constant extract-{even/odd} permutation replace the default
+[x]vshuf instruction combination with [x]vilv{l/h} instruction, which
+can reduce instructions and improves performance.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_is_odd_extraction):
+	Supplementary function prototype.
+	(loongarch_is_even_extraction): Adjust.
+	(loongarch_try_expand_lsx_vshuf_const): Adjust.
+	(loongarch_is_extraction_permutation): Adjust.
+	(loongarch_expand_vec_perm_const_2): Adjust.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/lasx-extract-even_odd-opt.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 33 +++++++++++-
+ .../loongarch/lasx-extract-even_odd-opt.c     | 54 +++++++++++++++++++
+ 2 files changed, 85 insertions(+), 2 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/lasx-extract-even_odd-opt.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index cdd8bfba6..356554a5a 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -8666,6 +8666,12 @@ loongarch_expand_vec_perm (rtx target, rtx op0, rtx op1, rtx sel)
+     }
+ }
+ 
++static bool
++loongarch_is_odd_extraction (struct expand_vec_perm_d *);
++
++static bool
++loongarch_is_even_extraction (struct expand_vec_perm_d *);
++
+ static bool
+ loongarch_try_expand_lsx_vshuf_const (struct expand_vec_perm_d *d)
+ {
+@@ -8688,6 +8694,24 @@ loongarch_try_expand_lsx_vshuf_const (struct expand_vec_perm_d *d)
+       if (d->testing_p)
+ 	return true;
+ 
++      /* If match extract-even and extract-odd permutations pattern, use
++       * vselect much better than vshuf.  */
++      if (loongarch_is_odd_extraction (d)
++	  || loongarch_is_even_extraction (d))
++	{
++	  if (loongarch_expand_vselect_vconcat (d->target, d->op0, d->op1,
++						d->perm, d->nelt))
++	    return true;
++
++	  unsigned char perm2[MAX_VECT_LEN];
++	  for (i = 0; i < d->nelt; ++i)
++	    perm2[i] = (d->perm[i] + d->nelt) & (2 * d->nelt - 1);
++
++	  if (loongarch_expand_vselect_vconcat (d->target, d->op1, d->op0,
++						perm2, d->nelt))
++	    return true;
++	}
++
+       for (i = 0; i < d->nelt; i += 1)
+ 	{
+ 	  rperm[i] = GEN_INT (d->perm[i]);
+@@ -8872,7 +8896,7 @@ loongarch_is_even_extraction (struct expand_vec_perm_d *d)
+ 	  result = false;
+ 	  break;
+ 	}
+-      buf += 1;
++      buf += 2;
+     }
+ 
+   return result;
+@@ -8894,7 +8918,7 @@ loongarch_is_extraction_permutation (struct expand_vec_perm_d *d)
+ 	  result = false;
+ 	  break;
+ 	}
+-      buf += 2;
++      buf += 1;
+     }
+ 
+   return result;
+@@ -9371,6 +9395,11 @@ loongarch_expand_vec_perm_const_2 (struct expand_vec_perm_d *d)
+ 	 Selector after: { 1, 3, 1, 3 }.
+ 	 Even extraction selector sample: E_V4DImode, { 0, 2, 4, 6 }
+ 	 Selector after: { 0, 2, 0, 2 }.  */
++
++      /* Better implement of extract-even and extract-odd permutations.  */
++      if (loongarch_expand_vec_perm_even_odd (d))
++	return true;
++
+       for (i = 0; i < d->nelt / 2; i += 1)
+ 	{
+ 	  idx = d->perm[i];
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/lasx-extract-even_odd-opt.c b/src/gcc/testsuite/gcc.target/loongarch/lasx-extract-even_odd-opt.c
+new file mode 100644
+index 000000000..515f0c862
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/lasx-extract-even_odd-opt.c
+@@ -0,0 +1,54 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlasx" } */
++/* { dg-final { scan-assembler "xvilvl.d" } } */
++/* { dg-final { scan-assembler "xvilvh.d" } } */
++
++#define CMUL(a, b, c)                                                         \
++  {                                                                           \
++    (c).ai = (a).ai * (b).ai - (a).bi * (b).bi;                               \
++    (c).bi = (a).ai * (b).bi + (a).bi * (b).ai;                               \
++    (c).ci = (a).ci * (b).ci - (a).di * (b).di;                               \
++    (c).di = (a).ci * (b).di + (a).di * (b).ci;                               \
++  }
++#define CSUM(a, b)                                                            \
++  {                                                                           \
++    (a).ai += (b).ai;                                                         \
++    (a).bi += (b).bi;                                                         \
++    (a).ci += (b).ci;                                                         \
++    (a).di += (b).di;                                                         \
++  }
++
++typedef struct
++{
++  double ai;
++  double bi;
++  double ci;
++  double di;
++} complex;
++
++typedef struct
++{
++  complex e[6][6];
++} matrix;
++
++typedef struct
++{
++  complex c[6];
++} vector;
++
++void
++mult_adj_mat_vec (matrix *a, vector *b, vector *c)
++{
++  register int i, j;
++  register complex x, y;
++  for (i = 0; i < 6; i++)
++    {
++      x.ai = x.bi = x.ci = x.di = 0.0;
++      for (j = 0; j < 6; j++)
++        {
++          CMUL (a->e[j][i], b->c[j], y);
++          CSUM (x, y);
++        }
++      c->c[i] = x;
++    }
++}
+-- 
+2.45.2
+

@@ -1,0 +1,130 @@
+From ff1b1d940f9c810f4f4abf7b601c705040a044d3 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Fri, 25 Oct 2024 02:45:35 +0000
+Subject: [PATCH 181/301] LoongArch: Fix lsx-vshuf.c and lasx-xvshuf_b.c tests
+ fail on LA664 [PR112611]
+
+For [x]vshuf instructions, if the index value in the selector exceeds 63, it triggers
+undefined behavior on LA464, but not on LA664. To ensure compatibility of these two
+tests on both LA464 and LA664, we have modified both tests to ensure that the index
+value in the selector does not exceed 63.
+
+gcc/testsuite/ChangeLog:
+
+        PR target/112611
+        * gcc.target/loongarch/vector/lasx/lasx-xvshuf_b.c: Sure index less than 64.
+        * gcc.target/loongarch/vector/lsx/lsx-vshuf.c: Ditto.
+---
+ .../loongarch/vector/lasx/lasx-xvshuf_b.c          | 14 +++++++-------
+ .../gcc.target/loongarch/vector/lsx/lsx-vshuf.c    | 12 ++++++------
+ 2 files changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvshuf_b.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvshuf_b.c
+index b8ab38711..910d29339 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvshuf_b.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-xvshuf_b.c
+@@ -99,9 +99,9 @@ main ()
+   *((unsigned long *)&__m256i_op1[2]) = 0x7ff0000000000000;
+   *((unsigned long *)&__m256i_op1[1]) = 0x7ff0000000000000;
+   *((unsigned long *)&__m256i_op1[0]) = 0x7ff0000000000000;
+-  *((unsigned long *)&__m256i_op2[3]) = 0x3ff0010000000000;
++  *((unsigned long *)&__m256i_op2[3]) = 0x3f11010000000000;
+   *((unsigned long *)&__m256i_op2[2]) = 0x0000000000000000;
+-  *((unsigned long *)&__m256i_op2[1]) = 0x3ff0010000000000;
++  *((unsigned long *)&__m256i_op2[1]) = 0x3f11010000000000;
+   *((unsigned long *)&__m256i_op2[0]) = 0x0000000000000000;
+   *((unsigned long *)&__m256i_result[3]) = 0x0000000000000000;
+   *((unsigned long *)&__m256i_result[2]) = 0x0000000000000000;
+@@ -200,7 +200,7 @@ main ()
+   *((unsigned long *)&__m256i_op2[0]) = 0x0000000000000000;
+   *((unsigned long *)&__m256i_result[3]) = 0x0000000000000000;
+   *((unsigned long *)&__m256i_result[2]) = 0x0000000000000000;
+-  *((unsigned long *)&__m256i_result[1]) = 0x0000000000000000;
++  *((unsigned long *)&__m256i_result[1]) = 0xffffffff00000000;
+   *((unsigned long *)&__m256i_result[0]) = 0x0000000000000000;
+   __m256i_out = __lasx_xvshuf_h (__m256i_op0, __m256i_op1, __m256i_op2);
+   ASSERTEQ_64 (__LINE__, __m256i_result, __m256i_out);
+@@ -351,7 +351,7 @@ main ()
+   *((unsigned long *)&__m256i_op2[1]) = 0x0000000000000001;
+   *((unsigned long *)&__m256i_op2[0]) = 0x00000000012e2110;
+   *((unsigned long *)&__m256i_result[3]) = 0x0000000000000001;
+-  *((unsigned long *)&__m256i_result[2]) = 0x0000000200000000;
++  *((unsigned long *)&__m256i_result[2]) = 0x0000000000000000;
+   *((unsigned long *)&__m256i_result[1]) = 0x00000000012e2110;
+   *((unsigned long *)&__m256i_result[0]) = 0x0000000000000000;
+   __m256i_out = __lasx_xvshuf_w (__m256i_op0, __m256i_op1, __m256i_op2);
+@@ -426,10 +426,10 @@ main ()
+   *((unsigned long *)&__m256i_op2[2]) = 0x8000000080000000;
+   *((unsigned long *)&__m256i_op2[1]) = 0xdfffffffdfffffff;
+   *((unsigned long *)&__m256i_op2[0]) = 0x8000000080000000;
+-  *((unsigned long *)&__m256i_result[3]) = 0x8000000080000000;
++  *((unsigned long *)&__m256i_result[3]) = 0xdfffffff80000000;
+   *((unsigned long *)&__m256i_result[2]) = 0x7fc00000dfffffff;
+-  *((unsigned long *)&__m256i_result[1]) = 0x8000000080000000;
+-  *((unsigned long *)&__m256i_result[0]) = 0x8000000080000000;
++  *((unsigned long *)&__m256i_result[1]) = 0x7fc0000000000000;
++  *((unsigned long *)&__m256i_result[0]) = 0x8000000000000000;
+   __m256i_out = __lasx_xvshuf_w (__m256i_op0, __m256i_op1, __m256i_op2);
+   ASSERTEQ_64 (__LINE__, __m256i_result, __m256i_out);
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vshuf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vshuf.c
+index f3b800f88..93a3078fa 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vshuf.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vshuf.c
+@@ -33,7 +33,7 @@ main ()
+   *((unsigned long *)&__m128i_op2[1]) = 0x0000000000000000;
+   *((unsigned long *)&__m128i_op2[0]) = 0x3f2f1f0f00000000;
+   *((unsigned long *)&__m128i_result[1]) = 0x0000000000000000;
+-  *((unsigned long *)&__m128i_result[0]) = 0x0000000000000000;
++  *((unsigned long *)&__m128i_result[0]) = 0x00ff00ff00000000;
+   __m128i_out = __lsx_vshuf_b (__m128i_op0, __m128i_op1, __m128i_op2);
+   ASSERTEQ_64 (__LINE__, __m128i_result, __m128i_out);
+ 
+@@ -153,7 +153,7 @@ main ()
+   *((unsigned long *)&__m128i_op1[0]) = 0x000000002bfd9461;
+   *((unsigned long *)&__m128i_op2[1]) = 0x00007fff00007fff;
+   *((unsigned long *)&__m128i_op2[0]) = 0x0000000000000000;
+-  *((unsigned long *)&__m128i_result[1]) = 0x0000000000000000;
++  *((unsigned long *)&__m128i_result[1]) = 0x00007fff00000000;
+   *((unsigned long *)&__m128i_result[0]) = 0x0000000000000000;
+   __m128i_out = __lsx_vshuf_h (__m128i_op0, __m128i_op1, __m128i_op2);
+   ASSERTEQ_64 (__LINE__, __m128i_result, __m128i_out);
+@@ -198,7 +198,7 @@ main ()
+   *((unsigned long *)&__m128i_op2[1]) = 0x00000000000000c0;
+   *((unsigned long *)&__m128i_op2[0]) = 0x00000001ffffff29;
+   *((unsigned long *)&__m128i_result[1]) = 0xffffff29ffffff29;
+-  *((unsigned long *)&__m128i_result[0]) = 0x0000000100000001;
++  *((unsigned long *)&__m128i_result[0]) = 0xffffff2900000001;
+   __m128i_out = __lsx_vshuf_w (__m128i_op0, __m128i_op1, __m128i_op2);
+   ASSERTEQ_64 (__LINE__, __m128i_result, __m128i_out);
+ 
+@@ -219,7 +219,7 @@ main ()
+   *((unsigned long *)&__m128i_op1[0]) = 0x0000000000000000;
+   *((unsigned long *)&__m128i_op2[1]) = 0x0000000020000020;
+   *((unsigned long *)&__m128i_op2[0]) = 0x0000000020000020;
+-  *((unsigned long *)&__m128i_result[1]) = 0x2000002000000000;
++  *((unsigned long *)&__m128i_result[1]) = 0x0000000000000000;
+   *((unsigned long *)&__m128i_result[0]) = 0x2000002020000020;
+   __m128i_out = __lsx_vshuf_w (__m128i_op0, __m128i_op1, __m128i_op2);
+   ASSERTEQ_64 (__LINE__, __m128i_result, __m128i_out);
+@@ -241,7 +241,7 @@ main ()
+   *((unsigned long *)&__m128i_op1[0]) = 0x0000001000000010;
+   *((unsigned long *)&__m128i_op2[1]) = 0x8000000100000000;
+   *((unsigned long *)&__m128i_op2[0]) = 0x8000000000000103;
+-  *((unsigned long *)&__m128i_result[1]) = 0x0000010300000103;
++  *((unsigned long *)&__m128i_result[1]) = 0x8000000000000103;
+   *((unsigned long *)&__m128i_result[0]) = 0x0000010380000001;
+   __m128i_out = __lsx_vshuf_w (__m128i_op0, __m128i_op1, __m128i_op2);
+   ASSERTEQ_64 (__LINE__, __m128i_result, __m128i_out);
+@@ -252,7 +252,7 @@ main ()
+   *((unsigned long *)&__m128i_op1[0]) = 0x0000000000000000;
+   *((unsigned long *)&__m128i_op2[1]) = 0xffffffffffffffff;
+   *((unsigned long *)&__m128i_op2[0]) = 0xffffffffffffffff;
+-  *((unsigned long *)&__m128i_result[1]) = 0x0000000000000000;
++  *((unsigned long *)&__m128i_result[1]) = 0xffffffff00000000;
+   *((unsigned long *)&__m128i_result[0]) = 0xffffffffffffffff;
+   __m128i_out = __lsx_vshuf_w (__m128i_op0, __m128i_op1, __m128i_op2);
+   ASSERTEQ_64 (__LINE__, __m128i_result, __m128i_out);
+-- 
+2.45.2
+

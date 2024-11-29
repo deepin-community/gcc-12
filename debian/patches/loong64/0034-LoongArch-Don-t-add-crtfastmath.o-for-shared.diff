@@ -1,0 +1,34 @@
+From 268407a58cfb632bf2bb3b973c5ddf5ac187f2a6 Mon Sep 17 00:00:00 2001
+From: Richard Biener <rguenther@suse.de>
+Date: Fri, 13 Jan 2023 09:01:12 +0100
+Subject: [PATCH 034/301] LoongArch: Don't add crtfastmath.o for -shared
+
+Don't add crtfastmath.o for -shared to avoid altering the FP
+environment when loading a shared library.
+
+	PR target/55522
+	* config/loongarch/gnu-user.h (GNU_USER_TARGET_MATHFILE_SPEC):
+	Don't add crtfastmath.o for -shared.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/gnu-user.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/gnu-user.h b/src/gcc/config/loongarch/gnu-user.h
+index 028c61b7f..5aea467f5 100644
+--- a/src/gcc/config/loongarch/gnu-user.h
++++ b/src/gcc/config/loongarch/gnu-user.h
+@@ -53,7 +53,7 @@ along with GCC; see the file COPYING3.  If not see
+ /* Similar to standard Linux, but adding -ffast-math support.  */
+ #undef GNU_USER_TARGET_MATHFILE_SPEC
+ #define GNU_USER_TARGET_MATHFILE_SPEC \
+-  "%{Ofast|ffast-math|funsafe-math-optimizations:crtfastmath.o%s}"
++  "%{Ofast|ffast-math|funsafe-math-optimizations:%{!shared:crtfastmath.o%s}}"
+ 
+ #undef LIB_SPEC
+ #define LIB_SPEC GNU_USER_TARGET_LIB_SPEC
+-- 
+2.45.2
+

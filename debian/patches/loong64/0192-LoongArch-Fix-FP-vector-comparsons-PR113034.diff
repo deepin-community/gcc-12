@@ -1,0 +1,866 @@
+From 9cfaf2ff7f7a21534df6db5973072b54c12df9c7 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 17 Dec 2023 01:09:20 +0800
+Subject: [PATCH 192/301] LoongArch: Fix FP vector comparsons [PR113034]
+
+We had the following mappings between <x>vfcmp submenmonics and RTX
+codes:
+
+    (define_code_attr fcc
+      [(unordered "cun")
+       (ordered   "cor")
+       (eq       "ceq")
+       (ne       "cne")
+       (uneq      "cueq")
+       (unle      "cule")
+       (unlt      "cult")
+       (le       "cle")
+       (lt       "clt")])
+
+This is inconsistent with scalar code:
+
+    (define_code_attr fcond [(unordered "cun")
+                             (uneq "cueq")
+                             (unlt "cult")
+                             (unle "cule")
+                             (eq "ceq")
+                             (lt "slt")
+                             (le "sle")
+                             (ordered "cor")
+                             (ltgt "sne")
+                             (ne "cune")
+                             (ge "sge")
+                             (gt "sgt")
+                             (unge "cuge")
+                             (ungt "cugt")])
+
+For every RTX code for which the LSX/LASX code is different from the
+scalar code, the scalar code is correct and the LSX/LASX code is wrong.
+Most seriously, the RTX code NE should be mapped to "cneq", not "cne".
+Rewrite <x>vfcmp define_insns in simd.md using the same mapping as
+scalar fcmp.
+
+Note that GAS does not support [x]vfcmp.{c/s}[u]{ge/gt} (pseudo)
+instruction (although fcmp.{c/s}[u]{ge/gt} is supported), so we need to
+switch the order of inputs and use [x]vfcmp.{c/s}[u]{le/lt} instead.
+
+The <x>vfcmp.{sult/sule/clt/cle}.{s/d} instructions do not have a single
+RTX code, but they can be modeled as an inversed RTX code following a
+"not" operation.  Doing so allows the compiler to optimized vectorized
+__builtin_isless etc. to a single instruction.  This optimization should
+be added for scalar code too and I'll do it later.
+
+Tests are added for mapping between C code, IEC 60559 operations, and
+vfcmp instructions.
+
+[1]:https://gcc.gnu.org/pipermail/gcc-patches/2023-December/640713.html
+
+gcc/ChangeLog:
+
+	PR target/113034
+	* config/loongarch/lasx.md (UNSPEC_LASX_XVFCMP_*): Remove.
+	(lasx_xvfcmp_caf_<flasxfmt>): Remove.
+	(lasx_xvfcmp_cune_<FLASX:flasxfmt>): Remove.
+	(FSC256_UNS): Remove.
+	(fsc256): Remove.
+	(lasx_xvfcmp_<vfcond:fcc>_<FLASX:flasxfmt>): Remove.
+	(lasx_xvfcmp_<fsc256>_<FLASX:flasxfmt>): Remove.
+	* config/loongarch/lsx.md (UNSPEC_LSX_XVFCMP_*): Remove.
+	(lsx_vfcmp_caf_<flsxfmt>): Remove.
+	(lsx_vfcmp_cune_<FLSX:flsxfmt>): Remove.
+	(vfcond): Remove.
+	(fcc): Remove.
+	(FSC_UNS): Remove.
+	(fsc): Remove.
+	(lsx_vfcmp_<vfcond:fcc>_<FLSX:flsxfmt>): Remove.
+	(lsx_vfcmp_<fsc>_<FLSX:flsxfmt>): Remove.
+	* config/loongarch/simd.md
+	(fcond_simd): New define_code_iterator.
+	(<simd_isa>_<x>vfcmp_<fcond:fcond_simd>_<simdfmt>):
+	New define_insn.
+	(fcond_simd_rev): New define_code_iterator.
+	(fcond_rev_asm): New define_code_attr.
+	(<simd_isa>_<x>vfcmp_<fcond:fcond_simd_rev>_<simdfmt>):
+	New define_insn.
+	(fcond_inv): New define_code_iterator.
+	(fcond_inv_rev): New define_code_iterator.
+	(fcond_inv_rev_asm): New define_code_attr.
+	(<simd_isa>_<x>vfcmp_<fcond_inv>_<simdfmt>): New define_insn.
+	(<simd_isa>_<x>vfcmp_<fcond_inv:fcond_inv_rev>_<simdfmt>):
+	New define_insn.
+	(UNSPEC_SIMD_FCMP_CAF, UNSPEC_SIMD_FCMP_SAF,
+	UNSPEC_SIMD_FCMP_SEQ, UNSPEC_SIMD_FCMP_SUN,
+	UNSPEC_SIMD_FCMP_SUEQ, UNSPEC_SIMD_FCMP_CNE,
+	UNSPEC_SIMD_FCMP_SOR, UNSPEC_SIMD_FCMP_SUNE): New unspecs.
+	(SIMD_FCMP): New define_int_iterator.
+	(fcond_unspec): New define_int_attr.
+	(<simd_isa>_<x>vfcmp_<fcond_unspec>_<simdfmt>): New define_insn.
+	* config/loongarch/loongarch.cc (loongarch_expand_lsx_cmp):
+	Remove unneeded special cases.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/113034
+	* gcc.target/loongarch/vfcmp-f.c: New test.
+	* gcc.target/loongarch/vfcmp-d.c: New test.
+	* gcc.target/loongarch/xvfcmp-f.c: New test.
+	* gcc.target/loongarch/xvfcmp-d.c: New test.
+	* gcc.target/loongarch/vector/lasx/lasx-vcond-2.c: Scan for cune
+	instead of cne.
+	* gcc.target/loongarch/vector/lsx/lsx-vcond-2.c: Likewise.
+---
+ src/gcc/config/loongarch/lasx.md              |  76 --------
+ src/gcc/config/loongarch/loongarch.cc         |  60 +-----
+ src/gcc/config/loongarch/lsx.md               |  83 --------
+ src/gcc/config/loongarch/simd.md              | 118 ++++++++++++
+ .../loongarch/vector/lasx/lasx-vcond-2.c      |   4 +-
+ .../loongarch/vector/lsx/lsx-vcond-2.c        |   4 +-
+ .../testsuite/gcc.target/loongarch/vfcmp-d.c  |  28 +++
+ .../testsuite/gcc.target/loongarch/vfcmp-f.c  | 178 ++++++++++++++++++
+ .../testsuite/gcc.target/loongarch/xvfcmp-d.c |  29 +++
+ .../testsuite/gcc.target/loongarch/xvfcmp-f.c |  27 +++
+ 10 files changed, 385 insertions(+), 222 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vfcmp-d.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vfcmp-f.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/xvfcmp-d.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/xvfcmp-f.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index eeac8cd98..921ce0eeb 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -32,9 +32,7 @@
+   UNSPEC_LASX_XVBITREVI
+   UNSPEC_LASX_XVBITSET
+   UNSPEC_LASX_XVBITSETI
+-  UNSPEC_LASX_XVFCMP_CAF
+   UNSPEC_LASX_XVFCLASS
+-  UNSPEC_LASX_XVFCMP_CUNE
+   UNSPEC_LASX_XVFCVT
+   UNSPEC_LASX_XVFCVTH
+   UNSPEC_LASX_XVFCVTL
+@@ -44,17 +42,6 @@
+   UNSPEC_LASX_XVFRINT
+   UNSPEC_LASX_XVFRSQRT
+   UNSPEC_LASX_XVFRSQRTE
+-  UNSPEC_LASX_XVFCMP_SAF
+-  UNSPEC_LASX_XVFCMP_SEQ
+-  UNSPEC_LASX_XVFCMP_SLE
+-  UNSPEC_LASX_XVFCMP_SLT
+-  UNSPEC_LASX_XVFCMP_SNE
+-  UNSPEC_LASX_XVFCMP_SOR
+-  UNSPEC_LASX_XVFCMP_SUEQ
+-  UNSPEC_LASX_XVFCMP_SULE
+-  UNSPEC_LASX_XVFCMP_SULT
+-  UNSPEC_LASX_XVFCMP_SUN
+-  UNSPEC_LASX_XVFCMP_SUNE
+   UNSPEC_LASX_XVFTINT_U
+   UNSPEC_LASX_XVCLO
+   UNSPEC_LASX_XVSAT_S
+@@ -1481,69 +1468,6 @@
+   [(set_attr "type" "simd_fclass")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvfcmp_caf_<flasxfmt>"
+-  [(set (match_operand:<VIMODE256> 0 "register_operand" "=f")
+-	(unspec:<VIMODE256> [(match_operand:FLASX 1 "register_operand" "f")
+-			     (match_operand:FLASX 2 "register_operand" "f")]
+-			    UNSPEC_LASX_XVFCMP_CAF))]
+-  "ISA_HAS_LASX"
+-  "xvfcmp.caf.<flasxfmt>\t%u0,%u1,%u2"
+-  [(set_attr "type" "simd_fcmp")
+-   (set_attr "mode" "<MODE>")])
+-
+-(define_insn "lasx_xvfcmp_cune_<FLASX:flasxfmt>"
+-  [(set (match_operand:<VIMODE256> 0 "register_operand" "=f")
+-	(unspec:<VIMODE256> [(match_operand:FLASX 1 "register_operand" "f")
+-			     (match_operand:FLASX 2 "register_operand" "f")]
+-			    UNSPEC_LASX_XVFCMP_CUNE))]
+-  "ISA_HAS_LASX"
+-  "xvfcmp.cune.<FLASX:flasxfmt>\t%u0,%u1,%u2"
+-  [(set_attr "type" "simd_fcmp")
+-   (set_attr "mode" "<MODE>")])
+-
+-
+-
+-(define_int_iterator FSC256_UNS [UNSPEC_LASX_XVFCMP_SAF UNSPEC_LASX_XVFCMP_SUN
+-				 UNSPEC_LASX_XVFCMP_SOR UNSPEC_LASX_XVFCMP_SEQ
+-				 UNSPEC_LASX_XVFCMP_SNE UNSPEC_LASX_XVFCMP_SUEQ
+-				 UNSPEC_LASX_XVFCMP_SUNE UNSPEC_LASX_XVFCMP_SULE
+-				 UNSPEC_LASX_XVFCMP_SULT UNSPEC_LASX_XVFCMP_SLE
+-				 UNSPEC_LASX_XVFCMP_SLT])
+-
+-(define_int_attr fsc256
+-  [(UNSPEC_LASX_XVFCMP_SAF  "saf")
+-   (UNSPEC_LASX_XVFCMP_SUN  "sun")
+-   (UNSPEC_LASX_XVFCMP_SOR  "sor")
+-   (UNSPEC_LASX_XVFCMP_SEQ  "seq")
+-   (UNSPEC_LASX_XVFCMP_SNE  "sne")
+-   (UNSPEC_LASX_XVFCMP_SUEQ "sueq")
+-   (UNSPEC_LASX_XVFCMP_SUNE "sune")
+-   (UNSPEC_LASX_XVFCMP_SULE "sule")
+-   (UNSPEC_LASX_XVFCMP_SULT "sult")
+-   (UNSPEC_LASX_XVFCMP_SLE  "sle")
+-   (UNSPEC_LASX_XVFCMP_SLT  "slt")])
+-
+-(define_insn "lasx_xvfcmp_<vfcond:fcc>_<FLASX:flasxfmt>"
+-  [(set (match_operand:<VIMODE256> 0 "register_operand" "=f")
+-	(vfcond:<VIMODE256> (match_operand:FLASX 1 "register_operand" "f")
+-			    (match_operand:FLASX 2 "register_operand" "f")))]
+-  "ISA_HAS_LASX"
+-  "xvfcmp.<vfcond:fcc>.<FLASX:flasxfmt>\t%u0,%u1,%u2"
+-  [(set_attr "type" "simd_fcmp")
+-   (set_attr "mode" "<MODE>")])
+-
+-
+-(define_insn "lasx_xvfcmp_<fsc256>_<FLASX:flasxfmt>"
+-  [(set (match_operand:<VIMODE256> 0 "register_operand" "=f")
+-	(unspec:<VIMODE256> [(match_operand:FLASX 1 "register_operand" "f")
+-			     (match_operand:FLASX 2 "register_operand" "f")]
+-			    FSC256_UNS))]
+-  "ISA_HAS_LASX"
+-  "xvfcmp.<fsc256>.<FLASX:flasxfmt>\t%u0,%u1,%u2"
+-  [(set_attr "type" "simd_fcmp")
+-   (set_attr "mode" "<MODE>")])
+-
+-
+ (define_mode_attr fint256
+   [(V8SF "v8si")
+    (V4DF "v4di")])
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index da83c9d73..2e4470349 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -11154,7 +11154,6 @@ static void
+ loongarch_expand_lsx_cmp (rtx dest, enum rtx_code cond, rtx op0, rtx op1)
+ {
+   machine_mode cmp_mode = GET_MODE (op0);
+-  int unspec = -1;
+   bool negate = false;
+ 
+   switch (cmp_mode)
+@@ -11196,66 +11195,9 @@ loongarch_expand_lsx_cmp (rtx dest, enum rtx_code cond, rtx op0, rtx op1)
+ 
+     case E_V4SFmode:
+     case E_V2DFmode:
+-      switch (cond)
+-	{
+-	case UNORDERED:
+-	case ORDERED:
+-	case EQ:
+-	case NE:
+-	case UNEQ:
+-	case UNLE:
+-	case UNLT:
+-	  break;
+-	case LTGT: cond = NE; break;
+-	case UNGE: cond = UNLE; std::swap (op0, op1); break;
+-	case UNGT: cond = UNLT; std::swap (op0, op1); break;
+-	case LE: unspec = UNSPEC_LSX_VFCMP_SLE; break;
+-	case LT: unspec = UNSPEC_LSX_VFCMP_SLT; break;
+-	case GE: unspec = UNSPEC_LSX_VFCMP_SLE; std::swap (op0, op1); break;
+-	case GT: unspec = UNSPEC_LSX_VFCMP_SLT; std::swap (op0, op1); break;
+-	default:
+-		 gcc_unreachable ();
+-	}
+-      if (unspec < 0)
+-	loongarch_emit_binary (cond, dest, op0, op1);
+-      else
+-	{
+-	  rtx x = gen_rtx_UNSPEC (GET_MODE (dest),
+-				  gen_rtvec (2, op0, op1), unspec);
+-	  emit_insn (gen_rtx_SET (dest, x));
+-	}
+-      break;
+-
+     case E_V8SFmode:
+     case E_V4DFmode:
+-      switch (cond)
+-	{
+-	case UNORDERED:
+-	case ORDERED:
+-	case EQ:
+-	case NE:
+-	case UNEQ:
+-	case UNLE:
+-	case UNLT:
+-	  break;
+-	case LTGT: cond = NE; break;
+-	case UNGE: cond = UNLE; std::swap (op0, op1); break;
+-	case UNGT: cond = UNLT; std::swap (op0, op1); break;
+-	case LE: unspec = UNSPEC_LASX_XVFCMP_SLE; break;
+-	case LT: unspec = UNSPEC_LASX_XVFCMP_SLT; break;
+-	case GE: unspec = UNSPEC_LASX_XVFCMP_SLE; std::swap (op0, op1); break;
+-	case GT: unspec = UNSPEC_LASX_XVFCMP_SLT; std::swap (op0, op1); break;
+-	default:
+-		 gcc_unreachable ();
+-	}
+-      if (unspec < 0)
+-	loongarch_emit_binary (cond, dest, op0, op1);
+-      else
+-	{
+-	  rtx x = gen_rtx_UNSPEC (GET_MODE (dest),
+-				  gen_rtvec (2, op0, op1), unspec);
+-	  emit_insn (gen_rtx_SET (dest, x));
+-	}
++      loongarch_emit_binary (cond, dest, op0, op1);
+       break;
+ 
+     default:
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index dbdb42301..57e0ee3d4 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -34,9 +34,7 @@
+   UNSPEC_LSX_VBITSETI
+   UNSPEC_LSX_BRANCH_V
+   UNSPEC_LSX_BRANCH
+-  UNSPEC_LSX_VFCMP_CAF
+   UNSPEC_LSX_VFCLASS
+-  UNSPEC_LSX_VFCMP_CUNE
+   UNSPEC_LSX_VFCVT
+   UNSPEC_LSX_VFCVTH
+   UNSPEC_LSX_VFCVTL
+@@ -46,17 +44,6 @@
+   UNSPEC_LSX_VFRINT
+   UNSPEC_LSX_VFRSQRT
+   UNSPEC_LSX_VFRSQRTE
+-  UNSPEC_LSX_VFCMP_SAF
+-  UNSPEC_LSX_VFCMP_SEQ
+-  UNSPEC_LSX_VFCMP_SLE
+-  UNSPEC_LSX_VFCMP_SLT
+-  UNSPEC_LSX_VFCMP_SNE
+-  UNSPEC_LSX_VFCMP_SOR
+-  UNSPEC_LSX_VFCMP_SUEQ
+-  UNSPEC_LSX_VFCMP_SULE
+-  UNSPEC_LSX_VFCMP_SULT
+-  UNSPEC_LSX_VFCMP_SUN
+-  UNSPEC_LSX_VFCMP_SUNE
+   UNSPEC_LSX_VFTINT_U
+   UNSPEC_LSX_VSAT_S
+   UNSPEC_LSX_VSAT_U
+@@ -1377,76 +1364,6 @@
+   [(set_attr "type" "simd_fclass")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vfcmp_caf_<flsxfmt>"
+-  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
+-	(unspec:<VIMODE> [(match_operand:FLSX 1 "register_operand" "f")
+-			  (match_operand:FLSX 2 "register_operand" "f")]
+-			 UNSPEC_LSX_VFCMP_CAF))]
+-  "ISA_HAS_LSX"
+-  "vfcmp.caf.<flsxfmt>\t%w0,%w1,%w2"
+-  [(set_attr "type" "simd_fcmp")
+-   (set_attr "mode" "<MODE>")])
+-
+-(define_insn "lsx_vfcmp_cune_<FLSX:flsxfmt>"
+-  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
+-	(unspec:<VIMODE> [(match_operand:FLSX 1 "register_operand" "f")
+-			  (match_operand:FLSX 2 "register_operand" "f")]
+-			 UNSPEC_LSX_VFCMP_CUNE))]
+-  "ISA_HAS_LSX"
+-  "vfcmp.cune.<FLSX:flsxfmt>\t%w0,%w1,%w2"
+-  [(set_attr "type" "simd_fcmp")
+-   (set_attr "mode" "<MODE>")])
+-
+-(define_code_iterator vfcond [unordered ordered eq ne le lt uneq unle unlt])
+-
+-(define_code_attr fcc
+-  [(unordered "cun")
+-   (ordered   "cor")
+-   (eq	      "ceq")
+-   (ne	      "cne")
+-   (uneq      "cueq")
+-   (unle      "cule")
+-   (unlt      "cult")
+-   (le	      "cle")
+-   (lt	      "clt")])
+-
+-(define_int_iterator FSC_UNS [UNSPEC_LSX_VFCMP_SAF UNSPEC_LSX_VFCMP_SUN UNSPEC_LSX_VFCMP_SOR
+-			      UNSPEC_LSX_VFCMP_SEQ UNSPEC_LSX_VFCMP_SNE UNSPEC_LSX_VFCMP_SUEQ
+-			      UNSPEC_LSX_VFCMP_SUNE UNSPEC_LSX_VFCMP_SULE UNSPEC_LSX_VFCMP_SULT
+-			      UNSPEC_LSX_VFCMP_SLE UNSPEC_LSX_VFCMP_SLT])
+-
+-(define_int_attr fsc
+-  [(UNSPEC_LSX_VFCMP_SAF  "saf")
+-   (UNSPEC_LSX_VFCMP_SUN  "sun")
+-   (UNSPEC_LSX_VFCMP_SOR  "sor")
+-   (UNSPEC_LSX_VFCMP_SEQ  "seq")
+-   (UNSPEC_LSX_VFCMP_SNE  "sne")
+-   (UNSPEC_LSX_VFCMP_SUEQ "sueq")
+-   (UNSPEC_LSX_VFCMP_SUNE "sune")
+-   (UNSPEC_LSX_VFCMP_SULE "sule")
+-   (UNSPEC_LSX_VFCMP_SULT "sult")
+-   (UNSPEC_LSX_VFCMP_SLE  "sle")
+-   (UNSPEC_LSX_VFCMP_SLT  "slt")])
+-
+-(define_insn "lsx_vfcmp_<vfcond:fcc>_<FLSX:flsxfmt>"
+-  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
+-	(vfcond:<VIMODE> (match_operand:FLSX 1 "register_operand" "f")
+-			 (match_operand:FLSX 2 "register_operand" "f")))]
+-  "ISA_HAS_LSX"
+-  "vfcmp.<vfcond:fcc>.<FLSX:flsxfmt>\t%w0,%w1,%w2"
+-  [(set_attr "type" "simd_fcmp")
+-   (set_attr "mode" "<MODE>")])
+-
+-(define_insn "lsx_vfcmp_<fsc>_<FLSX:flsxfmt>"
+-  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
+-	(unspec:<VIMODE> [(match_operand:FLSX 1 "register_operand" "f")
+-			  (match_operand:FLSX 2 "register_operand" "f")]
+-			 FSC_UNS))]
+-  "ISA_HAS_LSX"
+-  "vfcmp.<fsc>.<FLSX:flsxfmt>\t%w0,%w1,%w2"
+-  [(set_attr "type" "simd_fcmp")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_mode_attr fint
+   [(V4SF "v4si")
+    (V2DF "v2di")])
+diff --git a/src/gcc/config/loongarch/simd.md b/src/gcc/config/loongarch/simd.md
+index 843b1a41f..13202f79b 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -279,6 +279,124 @@
+   [(set_attr "type" "simd_int_arith")
+    (set_attr "mode" "<MODE>")])
+ 
++;; <x>vfcmp.*.{s/d} with defined RTX code
++;; There are no fcmp.{sugt/suge/cgt/cge}.{s/d} menmonics in GAS, so we have
++;; to reverse the operands ourselves :(.
++(define_code_iterator fcond_simd [unordered uneq unlt unle eq lt le
++				  ordered ltgt ne])
++(define_insn "<simd_isa>_<x>vfcmp_<fcond>_<simdfmt>"
++  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
++	(fcond_simd:<VIMODE>
++	  (match_operand:FVEC 1 "register_operand" "f")
++	  (match_operand:FVEC 2 "register_operand" "f")))]
++  ""
++  "<x>vfcmp.<fcond>.<simdfmt>\t%<wu>0,%<wu>1,%<wu>2"
++  [(set_attr "type" "simd_fcmp")
++   (set_attr "mode" "<MODE>")])
++
++;; There are no fcmp.{sge/sgt/cuge/cugt}.{s/d} menmonics in GAS, so we have
++;; to reverse the operands ourselves.
++(define_code_iterator fcond_simd_rev [ge gt unge ungt])
++
++(define_code_attr fcond_rev_asm
++  [(ge		"sle")
++   (gt		"slt")
++   (unge	"cule")
++   (ungt	"cult")])
++
++(define_insn "<simd_isa>_<x>vfcmp_<fcond>_<simdfmt>"
++  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
++	(fcond_simd_rev:<VIMODE>
++	  (match_operand:FVEC 1 "register_operand" "f")
++	  (match_operand:FVEC 2 "register_operand" "f")))]
++  ""
++  "<x>vfcmp.<fcond_rev_asm>.<simdfmt>\t%<wu>0,%<wu>2,%<wu>1";
++  [(set_attr "type" "simd_fcmp")
++   (set_attr "mode" "<MODE>")])
++
++;; <x>vfcmp.*.{s/d} without defined RTX code, but with defined RTX code for
++;; its inverse.  Again, there are no fcmp.{sugt/suge/cgt/cge}.{s/d}
++;; menmonics in GAS, so we have to reverse the operands ourselves.
++(define_code_iterator fcond_inv [ge gt unge ungt])
++(define_code_iterator fcond_inv_rev [le lt unle unlt])
++(define_code_attr fcond_inv
++  [(ge		"sult")
++   (gt		"sule")
++   (unge	"clt")
++   (ungt	"cle")
++   (le		"sugt")
++   (lt		"suge")
++   (unle	"cgt")
++   (unlt	"cge")])
++(define_code_attr fcond_inv_rev_asm
++  [(le		"sult")
++   (lt		"sule")
++   (unle	"clt")
++   (unlt	"cle")])
++
++(define_insn "<simd_isa>_<x>vfcmp_<fcond_inv>_<simdfmt>"
++  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
++	(not:<VIMODE>
++	  (fcond_inv:<VIMODE>
++	    (match_operand:FVEC 1 "register_operand" "f")
++	    (match_operand:FVEC 2 "register_operand" "f"))))]
++  ""
++  "<x>vfcmp.<fcond_inv>.<simdfmt>\t%<wu>0,%<wu>1,%<wu>2"
++  [(set_attr "type" "simd_fcmp")
++   (set_attr "mode" "<MODE>")])
++
++(define_insn "<simd_isa>_<x>vfcmp_<fcond_inv>_<simdfmt>"
++  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
++	(not:<VIMODE>
++	  (fcond_inv_rev:<VIMODE>
++	    (match_operand:FVEC 1 "register_operand" "f")
++	    (match_operand:FVEC 2 "register_operand" "f"))))]
++  ""
++  "<x>vfcmp.<fcond_inv_rev_asm>.<simdfmt>\t%<wu>0,%<wu>2,%<wu>1"
++  [(set_attr "type" "simd_fcmp")
++   (set_attr "mode" "<MODE>")])
++
++;; <x>vfcmp.*.{s/d} instructions only as instrinsics
++(define_c_enum "unspec"
++  [UNSPEC_SIMD_FCMP_CAF
++   UNSPEC_SIMD_FCMP_SAF
++   UNSPEC_SIMD_FCMP_SEQ
++   UNSPEC_SIMD_FCMP_SUN
++   UNSPEC_SIMD_FCMP_SUEQ
++   UNSPEC_SIMD_FCMP_CNE
++   UNSPEC_SIMD_FCMP_SOR
++   UNSPEC_SIMD_FCMP_SUNE])
++
++(define_int_iterator SIMD_FCMP
++  [UNSPEC_SIMD_FCMP_CAF
++   UNSPEC_SIMD_FCMP_SAF
++   UNSPEC_SIMD_FCMP_SEQ
++   UNSPEC_SIMD_FCMP_SUN
++   UNSPEC_SIMD_FCMP_SUEQ
++   UNSPEC_SIMD_FCMP_CNE
++   UNSPEC_SIMD_FCMP_SOR
++   UNSPEC_SIMD_FCMP_SUNE])
++
++(define_int_attr fcond_unspec
++  [(UNSPEC_SIMD_FCMP_CAF	"caf")
++   (UNSPEC_SIMD_FCMP_SAF	"saf")
++   (UNSPEC_SIMD_FCMP_SEQ	"seq")
++   (UNSPEC_SIMD_FCMP_SUN	"sun")
++   (UNSPEC_SIMD_FCMP_SUEQ	"sueq")
++   (UNSPEC_SIMD_FCMP_CNE	"cne")
++   (UNSPEC_SIMD_FCMP_SOR	"sor")
++   (UNSPEC_SIMD_FCMP_SUNE	"sune")])
++
++(define_insn "<simd_isa>_<x>vfcmp_<fcond_unspec>_<simdfmt>"
++  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
++	(unspec:<VIMODE> [(match_operand:FVEC 1 "register_operand" "f")
++			  (match_operand:FVEC 2 "register_operand" "f")]
++			 SIMD_FCMP))]
++  ""
++  "<x>vfcmp.<fcond_unspec>.<simdfmt>\t%<wu>0,%<wu>1,%<wu>2"
++  [(set_attr "type" "simd_fcmp")
++   (set_attr "mode" "<MODE>")])
++
+ ; The LoongArch SX Instructions.
+ (include "lsx.md")
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
+index 55d5a084c..f2f523622 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
+@@ -69,8 +69,8 @@ TEST_CMP (nugt)
+ 
+ /* { dg-final { scan-assembler-times {\txvfcmp\.ceq\.s} 3 } } */
+ /* { dg-final { scan-assembler-times {\txvfcmp\.ceq\.d} 3 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cne\.s} 3 } } */
+-/* { dg-final { scan-assembler-times {\txvfcmp\.cne\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cune\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cune\.d} 3 } } */
+ /* { dg-final { scan-assembler-times {\txvfcmp\.slt\.s} 6 } } */
+ /* { dg-final { scan-assembler-times {\txvfcmp\.slt\.d} 6 } } */
+ /* { dg-final { scan-assembler-times {\txvfcmp\.sle\.s} 6 } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
+index 2214afd0a..486bedba4 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
+@@ -69,8 +69,8 @@ TEST_CMP (nugt)
+ 
+ /* { dg-final { scan-assembler-times {\tvfcmp\.ceq\.s} 3 } } */
+ /* { dg-final { scan-assembler-times {\tvfcmp\.ceq\.d} 3 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cne\.s} 3 } } */
+-/* { dg-final { scan-assembler-times {\tvfcmp\.cne\.d} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cune\.s} 3 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cune\.d} 3 } } */
+ /* { dg-final { scan-assembler-times {\tvfcmp\.slt\.s} 6 } } */
+ /* { dg-final { scan-assembler-times {\tvfcmp\.slt\.d} 6 } } */
+ /* { dg-final { scan-assembler-times {\tvfcmp\.sle\.s} 6 } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vfcmp-d.c b/src/gcc/testsuite/gcc.target/loongarch/vfcmp-d.c
+new file mode 100644
+index 000000000..8b870ef38
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vfcmp-d.c
+@@ -0,0 +1,28 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx -ffixed-f0 -ffixed-f1 -ffixed-f2 -fno-vect-cost-model" } */
++
++#define F double
++#define I long long
++
++#include "vfcmp-f.c"
++
++/* { dg-final { scan-assembler "compare_quiet_equal:.*\tvfcmp\\.ceq\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_equal:.*\tvfcmp\\.cune\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_not_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater:.*\tvfcmp\\.slt\\.d\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_signaling_greater\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater_equal:.*\tvfcmp\\.sle\\.d\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_signaling_greater_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less:.*\tvfcmp\\.slt\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_signaling_less\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less_equal:.*\tvfcmp\\.sle\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_signaling_less_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_not_greater:.*\tvfcmp\\.sule\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_signaling_not_greater\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less_unordered:.*\tvfcmp\\.sult\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_signaling_less_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_not_less:.*\tvfcmp\\.sule\\.d\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_signaling_not_less\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater_unordered:.*\tvfcmp\\.sult\\.d\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_signaling_greater_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less:.*\tvfcmp\\.clt\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_less\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less_equal:.*\tvfcmp\\.cle\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_less_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater:.*\tvfcmp\\.clt\\.d\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_quiet_greater\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater_equal:.*\tvfcmp\\.cle\\.d\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_quiet_greater_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_less:.*\tvfcmp\\.cule\\.d\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_quiet_not_less\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater_unordered:.*\tvfcmp\\.cult\\.d\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_quiet_greater_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_greater:.*\tvfcmp\\.cule\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_not_greater\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less_unordered:.*\tvfcmp\\.cult\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_less_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_unordered:.*\tvfcmp\\.cun\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_ordered:.*\tvfcmp\\.cor\\.d\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_ordered\n" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vfcmp-f.c b/src/gcc/testsuite/gcc.target/loongarch/vfcmp-f.c
+new file mode 100644
+index 000000000..b9110b90c
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vfcmp-f.c
+@@ -0,0 +1,178 @@
++/* Test mapping IEC 60559 operations to SIMD instructions.
++   For details read C23 Annex F.3 and LoongArch Vol. 1 section 3.2.2.1.  */
++
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx -ffixed-f0 -ffixed-f1 -ffixed-f2 -fno-vect-cost-model" } */
++
++#ifndef F
++#define F float
++#endif
++
++#ifndef I
++#define I int
++#endif
++
++#ifndef VL
++#define VL 16
++#endif
++
++typedef F VF __attribute__ ((vector_size (VL)));
++typedef I VI __attribute__ ((vector_size (VL)));
++
++register VF a asm ("f0");
++register VF b asm ("f1");
++register VI c asm ("f2");
++
++void
++compare_quiet_equal (void)
++{
++  c = (a == b);
++}
++
++void
++compare_quiet_not_equal (void)
++{
++  c = (a != b);
++}
++
++void
++compare_signaling_greater (void)
++{
++  c = (a > b);
++}
++
++void
++compare_signaling_greater_equal (void)
++{
++  c = (a >= b);
++}
++
++void
++compare_signaling_less (void)
++{
++  c = (a < b);
++}
++
++void
++compare_signaling_less_equal (void)
++{
++  c = (a <= b);
++}
++
++void
++compare_signaling_not_greater (void)
++{
++  c = ~(a > b);
++}
++
++void
++compare_signaling_less_unordered (void)
++{
++  c = ~(a >= b);
++}
++
++void
++compare_signaling_not_less (void)
++{
++  c = ~(a < b);
++}
++
++void
++compare_signaling_greater_unordered (void)
++{
++  c = ~(a <= b);
++}
++
++void
++compare_quiet_less (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_isless (a[i], b[i]) ? -1 : 0;
++}
++
++void
++compare_quiet_less_equal (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_islessequal (a[i], b[i]) ? -1 : 0;
++}
++
++void
++compare_quiet_greater (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_isgreater (a[i], b[i]) ? -1 : 0;
++}
++
++void
++compare_quiet_greater_equal (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_isgreaterequal (a[i], b[i]) ? -1 : 0;
++}
++
++void
++compare_quiet_not_less (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_isless (a[i], b[i]) ? 0 : -1;
++}
++
++void
++compare_quiet_greater_unordered (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_islessequal (a[i], b[i]) ? 0 : -1;
++}
++
++void
++compare_quiet_not_greater (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_isgreater (a[i], b[i]) ? 0 : -1;
++}
++
++void
++compare_quiet_less_unordered (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_isgreaterequal (a[i], b[i]) ? 0 : -1;
++}
++
++void
++compare_quiet_unordered (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_isunordered (a[i], b[i]) ? -1 : 0;
++}
++
++void
++compare_quiet_ordered (void)
++{
++  for (int i = 0; i < sizeof (c) / sizeof (c[0]); i++)
++    c[i] = __builtin_isunordered (a[i], b[i]) ? 0 : -1;
++}
++
++/* The "-<function_name>" matches the .size directive after the function
++   body, so we can ensure the instruction is in the correct function.  */
++
++/* { dg-final { scan-assembler "compare_quiet_equal:.*\tvfcmp\\.ceq\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_equal:.*\tvfcmp\\.cune\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_not_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater:.*\tvfcmp\\.slt\\.s\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_signaling_greater\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater_equal:.*\tvfcmp\\.sle\\.s\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_signaling_greater_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less:.*\tvfcmp\\.slt\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_signaling_less\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less_equal:.*\tvfcmp\\.sle\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_signaling_less_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_not_greater:.*\tvfcmp\\.sule\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_signaling_not_greater\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less_unordered:.*\tvfcmp\\.sult\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_signaling_less_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_not_less:.*\tvfcmp\\.sule\\.s\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_signaling_not_less\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater_unordered:.*\tvfcmp\\.sult\\.s\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_signaling_greater_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less:.*\tvfcmp\\.clt\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_less\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less_equal:.*\tvfcmp\\.cle\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_less_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater:.*\tvfcmp\\.clt\\.s\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_quiet_greater\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater_equal:.*\tvfcmp\\.cle\\.s\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_quiet_greater_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_less:.*\tvfcmp\\.cule\\.s\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_quiet_not_less\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater_unordered:.*\tvfcmp\\.cult\\.s\t\\\$vr2,\\\$vr1,\\\$vr0.*-compare_quiet_greater_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_greater:.*\tvfcmp\\.cule\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_not_greater\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less_unordered:.*\tvfcmp\\.cult\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_less_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_unordered:.*\tvfcmp\\.cun\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_ordered:.*\tvfcmp\\.cor\\.s\t\\\$vr2,\\\$vr0,\\\$vr1.*-compare_quiet_ordered\n" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/xvfcmp-d.c b/src/gcc/testsuite/gcc.target/loongarch/xvfcmp-d.c
+new file mode 100644
+index 000000000..d8017caaa
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/xvfcmp-d.c
+@@ -0,0 +1,29 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx -ffixed-f0 -ffixed-f1 -ffixed-f2 -fno-vect-cost-model" } */
++
++#define F double
++#define I long long
++#define VL 32
++
++#include "vfcmp-f.c"
++
++/* { dg-final { scan-assembler "compare_quiet_equal:.*\txvfcmp\\.ceq\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_equal:.*\txvfcmp\\.cune\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_not_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater:.*\txvfcmp\\.slt\\.d\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_signaling_greater\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater_equal:.*\txvfcmp\\.sle\\.d\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_signaling_greater_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less:.*\txvfcmp\\.slt\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_signaling_less\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less_equal:.*\txvfcmp\\.sle\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_signaling_less_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_not_greater:.*\txvfcmp\\.sule\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_signaling_not_greater\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less_unordered:.*\txvfcmp\\.sult\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_signaling_less_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_not_less:.*\txvfcmp\\.sule\\.d\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_signaling_not_less\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater_unordered:.*\txvfcmp\\.sult\\.d\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_signaling_greater_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less:.*\txvfcmp\\.clt\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_less\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less_equal:.*\txvfcmp\\.cle\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_less_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater:.*\txvfcmp\\.clt\\.d\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_quiet_greater\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater_equal:.*\txvfcmp\\.cle\\.d\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_quiet_greater_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_less:.*\txvfcmp\\.cule\\.d\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_quiet_not_less\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater_unordered:.*\txvfcmp\\.cult\\.d\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_quiet_greater_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_greater:.*\txvfcmp\\.cule\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_not_greater\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less_unordered:.*\txvfcmp\\.cult\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_less_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_unordered:.*\txvfcmp\\.cun\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_ordered:.*\txvfcmp\\.cor\\.d\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_ordered\n" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/xvfcmp-f.c b/src/gcc/testsuite/gcc.target/loongarch/xvfcmp-f.c
+new file mode 100644
+index 000000000..b54556475
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/xvfcmp-f.c
+@@ -0,0 +1,27 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx -ffixed-f0 -ffixed-f1 -ffixed-f2" } */
++
++#define VL 32
++
++#include "vfcmp-f.c"
++
++/* { dg-final { scan-assembler "compare_quiet_equal:.*\txvfcmp\\.ceq\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_equal:.*\txvfcmp\\.cune\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_not_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater:.*\txvfcmp\\.slt\\.s\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_signaling_greater\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater_equal:.*\txvfcmp\\.sle\\.s\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_signaling_greater_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less:.*\txvfcmp\\.slt\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_signaling_less\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less_equal:.*\txvfcmp\\.sle\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_signaling_less_equal\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_not_greater:.*\txvfcmp\\.sule\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_signaling_not_greater\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_less_unordered:.*\txvfcmp\\.sult\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_signaling_less_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_not_less:.*\txvfcmp\\.sule\\.s\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_signaling_not_less\n" } } */
++/* { dg-final { scan-assembler "compare_signaling_greater_unordered:.*\txvfcmp\\.sult\\.s\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_signaling_greater_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less:.*\txvfcmp\\.clt\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_less\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less_equal:.*\txvfcmp\\.cle\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_less_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater:.*\txvfcmp\\.clt\\.s\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_quiet_greater\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater_equal:.*\txvfcmp\\.cle\\.s\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_quiet_greater_equal\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_less:.*\txvfcmp\\.cule\\.s\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_quiet_not_less\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_greater_unordered:.*\txvfcmp\\.cult\\.s\t\\\$xr2,\\\$xr1,\\\$xr0.*-compare_quiet_greater_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_not_greater:.*\txvfcmp\\.cule\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_not_greater\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_less_unordered:.*\txvfcmp\\.cult\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_less_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_unordered:.*\txvfcmp\\.cun\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_unordered\n" } } */
++/* { dg-final { scan-assembler "compare_quiet_ordered:.*\txvfcmp\\.cor\\.s\t\\\$xr2,\\\$xr0,\\\$xr1.*-compare_quiet_ordered\n" } } */
+-- 
+2.45.2
+

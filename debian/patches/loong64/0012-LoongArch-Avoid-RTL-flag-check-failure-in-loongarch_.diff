@@ -1,0 +1,55 @@
+From ebbd69c35d039efa436080c67b5e3ae65a2c2674 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 24 Aug 2022 21:31:34 +0800
+Subject: [PATCH 012/301] LoongArch: Avoid RTL flag check failure in
+ loongarch_classify_symbol
+
+SYMBOL_REF_TLS_MODEL invokes SYMBOL_REF_FLAGS, and SYMBOL_REF_FLAGS
+invokes RTL_FLAG_CHECK1 and aborts when RTL code is not SYMBOL_REF.
+
+r13-1833 removed "gcc_assert (SYMBOL_REF_P (x))" before invoking
+"SYMBOL_REF_TLS_MODEL (x)", indicating that it's now possible that "x"
+is not a SYMBOL_REF.  So we need to check if "x" is SYMBOL_REF first.
+
+This fixes a test failure happening with r13-2173 with RTL flag
+checking enabled:
+
+    pr106096.C:26:1: internal compiler error: RTL flag check:
+    SYMBOL_REF_FLAGS used with unexpected rtx code 'const' in
+    loongarch_classify_symbol
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_classify_symbol):
+	Return early if the rtx is not SYMBOL_REF.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/loongarch.cc | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 51a01cd3e..a848ea0ea 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -1635,14 +1635,13 @@ loongarch_rtx_constant_in_small_data_p (machine_mode mode)
+ static enum loongarch_symbol_type
+ loongarch_classify_symbol (const_rtx x)
+ {
+-  if (LABEL_REF_P (x))
++  if (!SYMBOL_REF_P (x))
+     return SYMBOL_PCREL;
+ 
+   if (SYMBOL_REF_TLS_MODEL (x))
+     return SYMBOL_TLS;
+ 
+-  if (SYMBOL_REF_P (x)
+-      && !loongarch_symbol_binds_local_p (x))
++  if (!loongarch_symbol_binds_local_p (x))
+     return SYMBOL_GOT_DISP;
+ 
+   return SYMBOL_PCREL;
+-- 
+2.45.2
+

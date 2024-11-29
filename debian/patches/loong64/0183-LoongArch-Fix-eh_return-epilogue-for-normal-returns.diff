@@ -1,0 +1,236 @@
+From 0311ec0f14cd13299c2629dae56ad72b533b5a16 Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Fri, 8 Dec 2023 18:01:18 +0800
+Subject: [PATCH 183/301] LoongArch: Fix eh_return epilogue for normal returns.
+
+On LoongArch, the regitsters $r4 - $r7 (EH_RETURN_DATA_REGNO) will be saved
+and restored in the function prologue and epilogue if the given function calls
+__builtin_eh_return.  This causes the return value to be overwritten on normal
+return paths and breaks a rare case of libgcc's _Unwind_RaiseException.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc: Do not restore the saved eh_return
+	data registers ($r4-$r7) for a normal return of a function that calls
+	__builtin_eh_return elsewhere.
+	* config/loongarch/loongarch-protos.h: Same.
+	* config/loongarch/loongarch.md: Same.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/eh_return-normal-return.c: New test.
+---
+ src/gcc/config/loongarch/loongarch-protos.h   |  2 +-
+ src/gcc/config/loongarch/loongarch.cc         | 34 ++++++++++++-----
+ src/gcc/config/loongarch/loongarch.md         | 23 ++++++++++-
+ .../loongarch/eh_return-normal-return.c       | 38 +++++++++++++++++++
+ 4 files changed, 84 insertions(+), 13 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/eh_return-normal-return.c
+
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index 117669e9f..e5fcf3111 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -60,7 +60,7 @@ enum loongarch_symbol_type {
+ extern rtx loongarch_emit_move (rtx, rtx);
+ extern HOST_WIDE_INT loongarch_initial_elimination_offset (int, int);
+ extern void loongarch_expand_prologue (void);
+-extern void loongarch_expand_epilogue (bool);
++extern void loongarch_expand_epilogue (int);
+ extern bool loongarch_can_use_return_insn (void);
+ 
+ extern bool loongarch_symbolic_constant_p (rtx, enum loongarch_symbol_type *);
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index b1d625fda..4b5a1023f 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -1012,7 +1012,8 @@ loongarch_save_restore_reg (machine_mode mode, int regno, HOST_WIDE_INT offset,
+ 
+ static void
+ loongarch_for_each_saved_reg (HOST_WIDE_INT sp_offset,
+-			      loongarch_save_restore_fn fn)
++			      loongarch_save_restore_fn fn,
++			      bool skip_eh_data_regs_p)
+ {
+   HOST_WIDE_INT offset;
+ 
+@@ -1021,7 +1022,14 @@ loongarch_for_each_saved_reg (HOST_WIDE_INT sp_offset,
+   for (int regno = GP_REG_FIRST; regno <= GP_REG_LAST; regno++)
+     if (BITSET_P (cfun->machine->frame.mask, regno - GP_REG_FIRST))
+       {
+-	if (!cfun->machine->reg_is_wrapped_separately[regno])
++	/* Special care needs to be taken for $r4-$r7 (EH_RETURN_DATA_REGNO)
++	   when returning normally from a function that calls
++	   __builtin_eh_return.  In this case, these registers are saved but
++	   should not be restored, or the return value may be clobbered.  */
++
++	if (!(cfun->machine->reg_is_wrapped_separately[regno]
++	      || (skip_eh_data_regs_p
++	      && GP_ARG_FIRST <= regno && regno < GP_ARG_FIRST + 4)))
+ 	  loongarch_save_restore_reg (word_mode, regno, offset, fn);
+ 
+ 	offset -= UNITS_PER_WORD;
+@@ -1294,7 +1302,7 @@ loongarch_expand_prologue (void)
+ 			    GEN_INT (-step1));
+       RTX_FRAME_RELATED_P (emit_insn (insn)) = 1;
+       size -= step1;
+-      loongarch_for_each_saved_reg (size, loongarch_save_reg);
++      loongarch_for_each_saved_reg (size, loongarch_save_reg, false);
+     }
+ 
+   /* Set up the frame pointer, if we're using one.  */
+@@ -1379,11 +1387,13 @@ loongarch_can_use_return_insn (void)
+   return reload_completed && cfun->machine->frame.total_size == 0;
+ }
+ 
+-/* Expand an "epilogue" or "sibcall_epilogue" pattern; SIBCALL_P
+-   says which.  */
++/* Expand function epilogue using the following insn patterns:
++   "epilogue"	      (style == NORMAL_RETURN)
++   "sibcall_epilogue" (style == SIBCALL_RETURN)
++   "eh_return"	      (style == EXCEPTION_RETURN) */
+ 
+ void
+-loongarch_expand_epilogue (bool sibcall_p)
++loongarch_expand_epilogue (int style)
+ {
+   /* Split the frame into two.  STEP1 is the amount of stack we should
+      deallocate before restoring the registers.  STEP2 is the amount we
+@@ -1400,7 +1410,8 @@ loongarch_expand_epilogue (bool sibcall_p)
+   bool need_barrier_p
+     = (get_frame_size () + cfun->machine->frame.arg_pointer_offset) != 0;
+ 
+-  if (!sibcall_p && loongarch_can_use_return_insn ())
++  /* Handle simple returns.  */
++  if (style == NORMAL_RETURN && loongarch_can_use_return_insn ())
+     {
+       emit_jump_insn (gen_return ());
+       return;
+@@ -1476,7 +1487,9 @@ loongarch_expand_epilogue (bool sibcall_p)
+ 
+   /* Restore the registers.  */
+   loongarch_for_each_saved_reg (frame->total_size - step2,
+-				loongarch_restore_reg);
++				loongarch_restore_reg,
++				crtl->calls_eh_return
++				&& style != EXCEPTION_RETURN);
+ 
+   if (need_barrier_p)
+     loongarch_emit_stack_tie ();
+@@ -1497,11 +1510,12 @@ loongarch_expand_epilogue (bool sibcall_p)
+     }
+ 
+   /* Add in the __builtin_eh_return stack adjustment.  */
+-  if (crtl->calls_eh_return)
++  if (crtl->calls_eh_return && style == EXCEPTION_RETURN)
+     emit_insn (gen_add3_insn (stack_pointer_rtx, stack_pointer_rtx,
+ 			      EH_RETURN_STACKADJ_RTX));
+ 
+-  if (!sibcall_p)
++  /* Emit return unless doing sibcall.  */
++  if (style != SIBCALL_RETURN)
+     emit_jump_insn (gen_simple_return_internal (ra));
+ }
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index c6edd1dda..222f1ae83 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -125,6 +125,11 @@
+    (T1_REGNUM			13)
+    (S0_REGNUM			23)
+ 
++   ;; Return path styles
++   (NORMAL_RETURN		0)
++   (SIBCALL_RETURN		1)
++   (EXCEPTION_RETURN		2)
++
+    ;; PIC long branch sequences are never longer than 100 bytes.
+    (MAX_PIC_BRANCH_LENGTH	100)
+ ])
+@@ -3276,7 +3281,7 @@
+   [(const_int 2)]
+   ""
+ {
+-  loongarch_expand_epilogue (false);
++  loongarch_expand_epilogue (NORMAL_RETURN);
+   DONE;
+ })
+ 
+@@ -3284,7 +3289,7 @@
+   [(const_int 2)]
+   ""
+ {
+-  loongarch_expand_epilogue (true);
++  loongarch_expand_epilogue (SIBCALL_RETURN);
+   DONE;
+ })
+ 
+@@ -3341,6 +3346,20 @@
+     emit_insn (gen_eh_set_ra_di (operands[0]));
+   else
+     emit_insn (gen_eh_set_ra_si (operands[0]));
++
++  emit_jump_insn (gen_eh_return_internal ());
++  emit_barrier ();
++  DONE;
++})
++
++(define_insn_and_split "eh_return_internal"
++  [(eh_return)]
++  ""
++  "#"
++  "epilogue_completed"
++  [(const_int 0)]
++{
++  loongarch_expand_epilogue (EXCEPTION_RETURN);
+   DONE;
+ })
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/eh_return-normal-return.c b/src/gcc/testsuite/gcc.target/loongarch/eh_return-normal-return.c
+new file mode 100644
+index 000000000..f8f3965f8
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/eh_return-normal-return.c
+@@ -0,0 +1,38 @@
++/* { dg-do run } */
++/* { dg-options "-O2" } */
++
++#include <stdlib.h>
++
++int foo ()  __attribute__((noinline));
++int main ();
++
++int
++foo () {
++
++  int t;
++
++  /* prevent optimization using asm */
++  asm ("" : "=r" (t) : "0" (-1));
++  asm ("" : "=r" (t) : "0" (t ? 1 : 0));
++
++  if (t == 0)
++    /* never reached */
++    __builtin_eh_return (0, __builtin_return_address (0));
++
++  else if (t == 1)
++    /* return here */
++    return 202312;
++
++  else
++    /* never reached: prevent vrp optimization in main */
++    return 0;
++}
++
++int
++main ()
++{
++  if (foo() == 202312)
++    return 0; 
++  else
++    abort ();
++}
+-- 
+2.45.2
+

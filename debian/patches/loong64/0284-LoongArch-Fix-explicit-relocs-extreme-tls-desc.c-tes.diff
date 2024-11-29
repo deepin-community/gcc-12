@@ -1,0 +1,45 @@
+From 6c4f225c0d08778ec0a1b9ae180f2fe3865cb767 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Fri, 28 Jun 2024 15:04:26 +0800
+Subject: [PATCH 284/301] LoongArch: Fix explicit-relocs-{extreme-,}tls-desc.c
+ tests.
+
+After r15-1579, ADD and LD/ST pairs will be merged into LDX/STX.
+Cause these two tests to fail. To guarantee that these two tests pass,
+add the compilation option '-fno-late-combine-instructions'.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c:
+	Add compilation options '-fno-late-combine-instructions'.
+	* gcc.target/loongarch/explicit-relocs-tls-desc.c: Likewise.
+---
+ .../gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c     | 2 +-
+ .../testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c   | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c
+index 3797556e1..e9eb0d6f7 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-extreme-tls-desc.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -fPIC -mexplicit-relocs -mtls-dialect=desc -mcmodel=extreme" } */
++/* { dg-options "-O2 -fPIC -mexplicit-relocs -mtls-dialect=desc -mcmodel=extreme -fno-late-combine-instructions" } */
+ 
+ __thread int a __attribute__((visibility("hidden")));
+ extern __thread int b __attribute__((visibility("default")));
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c
+index f66903091..fed478458 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/explicit-relocs-tls-desc.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -fPIC -mexplicit-relocs -mtls-dialect=desc" } */
++/* { dg-options "-O2 -fPIC -mexplicit-relocs -mtls-dialect=desc -fno-late-combine-instructions" } */
+ 
+ __thread int a __attribute__((visibility("hidden")));
+ extern __thread int b __attribute__((visibility("default")));
+-- 
+2.45.2
+

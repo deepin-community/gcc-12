@@ -1,0 +1,561 @@
+From c432ef81f6c1bd67f39c1518f44ddaba76b33535 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Thu, 16 Nov 2023 15:06:11 +0800
+Subject: [PATCH 151/301] LoongArch: Add code generation support for call36
+ function calls.
+
+When compiling with '-mcmodel=medium', the function call is made through
+'pcaddu18i+jirl' if binutils supports call36, otherwise the
+native implementation 'pcalau12i+jirl' is used.
+
+gcc/ChangeLog:
+
+	* config.in: Regenerate.
+	* config/loongarch/loongarch-opts.h (HAVE_AS_SUPPORT_CALL36): Define macro.
+	* config/loongarch/loongarch.cc (loongarch_legitimize_call_address):
+	If binutils supports call36, the function call is not split over expand.
+	* config/loongarch/loongarch.md: Add call36 generation code.
+	* config/loongarch/predicates.md: Likewise.
+	* configure: Regenerate.
+	* configure.ac: Check whether binutils supports call36.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/func-call-medium-5.c: If the assembler supports call36,
+	the test is abandoned.
+	* gcc.target/loongarch/func-call-medium-6.c: Likewise.
+	* gcc.target/loongarch/func-call-medium-7.c: Likewise.
+	* gcc.target/loongarch/func-call-medium-8.c: Likewise.
+	* lib/target-supports.exp: Added a function to see if the assembler supports
+	the call36 relocation.
+	* gcc.target/loongarch/func-call-medium-call36-1.c: New test.
+	* gcc.target/loongarch/func-call-medium-call36.c: New test.
+
+Co-authored-by: Xi Ruoyao <xry111@xry111.site>
+---
+ src/gcc/config.in                             |   6 +
+ src/gcc/config/loongarch/loongarch-opts.h     |   4 +
+ src/gcc/config/loongarch/loongarch.cc         |  12 +-
+ src/gcc/config/loongarch/loongarch.md         | 171 +++++++++++++++---
+ src/gcc/config/loongarch/predicates.md        |   7 +-
+ src/gcc/configure                             |  32 ++++
+ src/gcc/configure.ac                          |   6 +
+ .../gcc.target/loongarch/func-call-medium-5.c |   1 +
+ .../gcc.target/loongarch/func-call-medium-6.c |   1 +
+ .../gcc.target/loongarch/func-call-medium-7.c |   1 +
+ .../gcc.target/loongarch/func-call-medium-8.c |   1 +
+ .../loongarch/func-call-medium-call36-1.c     |  21 +++
+ .../loongarch/func-call-medium-call36.c       |  32 ++++
+ src/gcc/testsuite/lib/target-supports.exp     |   9 +
+ 14 files changed, 268 insertions(+), 36 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/func-call-medium-call36-1.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/func-call-medium-call36.c
+
+diff --git a/src/gcc/config.in b/src/gcc/config.in
+index a95d45360..c71bb58aa 100644
+--- a/src/gcc/config.in
++++ b/src/gcc/config.in
+@@ -782,6 +782,12 @@
+ #endif
+ 
+ 
++/* Define if your assembler supports call36 relocation. */
++#ifndef USED_FOR_TARGET
++#undef HAVE_AS_SUPPORT_CALL36
++#endif
++
++
+ /* Define if your assembler and linker support thread-local storage. */
+ #ifndef USED_FOR_TARGET
+ #undef HAVE_AS_TLS
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index dfbe9dd5c..22ce1a122 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -99,6 +99,10 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+ #define HAVE_AS_EXPLICIT_RELOCS 0
+ #endif
+ 
++#ifndef HAVE_AS_SUPPORT_CALL36
++#define HAVE_AS_SUPPORT_CALL36 0
++#endif
++
+ #ifndef HAVE_AS_MRELAX_OPTION
+ #define HAVE_AS_MRELAX_OPTION 0
+ #endif
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 70fad5927..94fc97077 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -3002,12 +3002,16 @@ loongarch_legitimize_call_address (rtx addr)
+ 
+   enum loongarch_symbol_type symbol_type = loongarch_classify_symbol (addr);
+ 
+-  /* Split function call insn 'bl sym' or 'bl %plt(sym)' to :
+-     pcalau12i $rd, %pc_hi20(sym)
+-     jr $rd, %pc_lo12(sym).  */
++  /* If add the compilation option '-cmodel=medium', and the assembler does
++     not support call36.  The following sequence of instructions will be
++     used for the function call:
++	pcalau12i $rd, %pc_hi20(sym)
++	jr $rd, %pc_lo12(sym)
++  */
+ 
+   if (TARGET_CMODEL_MEDIUM
+-      && TARGET_EXPLICIT_RELOCS
++      && !HAVE_AS_SUPPORT_CALL36
++      && (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE)
+       && (SYMBOL_REF_P (addr) || LABEL_REF_P (addr))
+       && (symbol_type == SYMBOL_PCREL
+ 	  || (symbol_type == SYMBOL_GOT_DISP && flag_plt)))
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index ed86c95bd..52e40a208 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -3274,7 +3274,13 @@
+ 					    XEXP (target, 1),
+ 					    operands[1]));
+   else
+-    emit_call_insn (gen_sibcall_internal (target, operands[1]));
++    {
++      rtx call = emit_call_insn (gen_sibcall_internal (target, operands[1]));
++
++      if (TARGET_CMODEL_MEDIUM && !REG_P (target))
++	clobber_reg (&CALL_INSN_FUNCTION_USAGE (call),
++		     gen_rtx_REG (Pmode, T0_REGNUM));
++    }
+   DONE;
+ })
+ 
+@@ -3282,10 +3288,25 @@
+   [(call (mem:SI (match_operand 0 "call_insn_operand" "j,c,b"))
+ 	 (match_operand 1 "" ""))]
+   "SIBLING_CALL_P (insn)"
+-  "@
+-   jr\t%0
+-   b\t%0
+-   b\t%%plt(%0)"
++{
++  switch (which_alternative)
++    {
++    case 0:
++      return "jr\t%0";
++    case 1:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r12,%%call36(%0)\n\tjirl\t$r0,$r12,0";
++      else
++	return "b\t%0";
++    case 2:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r12,%%call36(%0)\n\tjirl\t$r0,$r12,0";
++      else
++	return "b\t%%plt(%0)";
++    default:
++      gcc_unreachable ();
++    }
++}
+   [(set_attr "jirl" "indirect,direct,direct")])
+ 
+ (define_insn "@sibcall_internal_1<mode>"
+@@ -3318,9 +3339,17 @@
+ 							   operands[2],
+ 							   arg2));
+       else
+-	emit_call_insn (gen_sibcall_value_multiple_internal (arg1, target,
+-							   operands[2],
+-							   arg2));
++	{
++	  rtx call
++	    = emit_call_insn (gen_sibcall_value_multiple_internal (arg1,
++								   target,
++								   operands[2],
++								   arg2));
++
++	  if (TARGET_CMODEL_MEDIUM && !REG_P (target))
++	    clobber_reg (&CALL_INSN_FUNCTION_USAGE (call),
++			gen_rtx_REG (Pmode, T0_REGNUM));
++	}
+     }
+    else
+     {
+@@ -3334,8 +3363,15 @@
+ 						  XEXP (target, 1),
+ 						  operands[2]));
+       else
+-	emit_call_insn (gen_sibcall_value_internal (operands[0], target,
+-						  operands[2]));
++	{
++	  rtx call = emit_call_insn (gen_sibcall_value_internal (operands[0],
++								 target,
++								 operands[2]));
++
++	  if (TARGET_CMODEL_MEDIUM && !REG_P (target))
++	    clobber_reg (&CALL_INSN_FUNCTION_USAGE (call),
++			gen_rtx_REG (Pmode, T0_REGNUM));
++	}
+     }
+   DONE;
+ })
+@@ -3345,10 +3381,25 @@
+ 	(call (mem:SI (match_operand 1 "call_insn_operand" "j,c,b"))
+ 	      (match_operand 2 "" "")))]
+   "SIBLING_CALL_P (insn)"
+-  "@
+-   jr\t%1
+-   b\t%1
+-   b\t%%plt(%1)"
++{
++  switch (which_alternative)
++    {
++    case 0:
++      return "jr\t%1";
++    case 1:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r12,%%call36(%1)\n\tjirl\t$r0,$r12,0";
++      else
++	return "b\t%1";
++    case 2:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r12,%%call36(%1)\n\tjirl\t$r0,$r12,0";
++      else
++	return "b\t%%plt(%1)";
++    default:
++      gcc_unreachable ();
++    }
++}
+   [(set_attr "jirl" "indirect,direct,direct")])
+ 
+ (define_insn "@sibcall_value_internal_1<mode>"
+@@ -3368,10 +3419,25 @@
+ 	(call (mem:SI (match_dup 1))
+ 	      (match_dup 2)))]
+   "SIBLING_CALL_P (insn)"
+-  "@
+-   jr\t%1
+-   b\t%1
+-   b\t%%plt(%1)"
++{
++  switch (which_alternative)
++    {
++    case 0:
++      return "jr\t%1";
++    case 1:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r12,%%call36(%1)\n\tjirl\t$r0,$r12,0";
++      else
++	return "b\t%1";
++    case 2:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r12,%%call36(%1)\n\tjirl\t$r0,$r12,0";
++      else
++	return "b\t%%plt(%1)";
++    default:
++      gcc_unreachable ();
++    }
++}
+   [(set_attr "jirl" "indirect,direct,direct")])
+ 
+ (define_insn "@sibcall_value_multiple_internal_1<mode>"
+@@ -3411,10 +3477,25 @@
+ 	 (match_operand 1 "" ""))
+    (clobber (reg:SI RETURN_ADDR_REGNUM))]
+   ""
+-  "@
+-   jirl\t$r1,%0,0
+-   bl\t%0
+-   bl\t%%plt(%0)"
++{
++  switch (which_alternative)
++    {
++    case 0:
++      return "jirl\t$r1,%0,0";
++    case 1:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r1,%%call36(%0)\n\tjirl\t$r1,$r1,0";
++      else
++	return "bl\t%0";
++    case 2:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r1,%%call36(%0)\n\tjirl\t$r1,$r1,0";
++      else
++	return "bl\t%%plt(%0)";
++    default:
++      gcc_unreachable ();
++    }
++}
+   [(set_attr "jirl" "indirect,direct,direct")])
+ 
+ (define_insn "@call_internal_1<mode>"
+@@ -3473,10 +3554,25 @@
+ 	      (match_operand 2 "" "")))
+    (clobber (reg:SI RETURN_ADDR_REGNUM))]
+   ""
+-  "@
+-   jirl\t$r1,%1,0
+-   bl\t%1
+-   bl\t%%plt(%1)"
++{
++  switch (which_alternative)
++    {
++    case 0:
++      return "jirl\t$r1,%1,0";
++    case 1:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r1,%%call36(%1)\n\tjirl\t$r1,$r1,0";
++      else
++	return "bl\t%1";
++    case 2:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r1,%%call36(%1)\n\tjirl\t$r1,$r1,0";
++      else
++	return "bl\t%%plt(%1)";
++    default:
++      gcc_unreachable ();
++    }
++}
+   [(set_attr "jirl" "indirect,direct,direct")])
+ 
+ (define_insn "@call_value_internal_1<mode>"
+@@ -3498,10 +3594,25 @@
+ 	      (match_dup 2)))
+    (clobber (reg:SI RETURN_ADDR_REGNUM))]
+   ""
+-  "@
+-   jirl\t$r1,%1,0
+-   bl\t%1
+-   bl\t%%plt(%1)"
++{
++  switch (which_alternative)
++    {
++    case 0:
++      return "jirl\t$r1,%1,0";
++    case 1:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r1,%%call36(%1)\n\tjirl\t$r1,$r1,0";
++      else
++	return "bl\t%1";
++    case 2:
++      if (TARGET_CMODEL_MEDIUM)
++	return "pcaddu18i\t$r1,%%call36(%1)\n\tjirl\t$r1,$r1,0";
++      else
++	return "bl\t%%plt(%1)";
++    default:
++      gcc_unreachable ();
++    }
++}
+   [(set_attr "jirl" "indirect,direct,direct")])
+ 
+ (define_insn "@call_value_multiple_internal_1<mode>"
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 1d669f560..2aae87db4 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -443,7 +443,9 @@
+     {
+     case SYMBOL_PCREL:
+       if (TARGET_CMODEL_EXTREME
+-	  || (TARGET_CMODEL_MEDIUM && !TARGET_EXPLICIT_RELOCS))
++	  || (TARGET_CMODEL_MEDIUM
++	      && HAVE_AS_SUPPORT_CALL36
++	      && (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)))
+ 	return false;
+       else
+ 	return 1;
+@@ -452,7 +454,8 @@
+       if (TARGET_CMODEL_EXTREME
+ 	  || !flag_plt
+ 	  || (flag_plt && TARGET_CMODEL_MEDIUM
+-	      && !TARGET_EXPLICIT_RELOCS))
++	      && HAVE_AS_SUPPORT_CALL36
++	      && (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)))
+ 	return false;
+       else
+ 	return 1;
+diff --git a/src/gcc/configure b/src/gcc/configure
+index e61c796d5..0b04325d7 100755
+--- a/src/gcc/configure
++++ b/src/gcc/configure
+@@ -28941,6 +28941,38 @@ if test $gcc_cv_as_loongarch_explicit_relocs = yes; then
+ 
+ $as_echo "#define HAVE_AS_EXPLICIT_RELOCS 1" >>confdefs.h
+ 
++fi
++
++    { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for call36 relocation support" >&5
++$as_echo_n "checking assembler for call36 relocation support... " >&6; }
++if ${gcc_cv_as_loongarch_call36+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  gcc_cv_as_loongarch_call36=no
++  if test x$gcc_cv_as != x; then
++    $as_echo 'pcaddu18i $r1, %call36(a)
++       jirl $r1, $r1, 0' > conftest.s
++    if { ac_try='$gcc_cv_as $gcc_cv_as_flags  -o conftest.o conftest.s >&5'
++  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
++  (eval $ac_try) 2>&5
++  ac_status=$?
++  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
++  test $ac_status = 0; }; }
++    then
++	gcc_cv_as_loongarch_call36=yes
++    else
++      echo "configure: failed program was" >&5
++      cat conftest.s >&5
++    fi
++    rm -f conftest.o conftest.s
++  fi
++fi
++{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $gcc_cv_as_loongarch_call36" >&5
++$as_echo "$gcc_cv_as_loongarch_call36" >&6; }
++if test $gcc_cv_as_loongarch_call36 = yes; then
++
++$as_echo "#define HAVE_AS_SUPPORT_CALL36 1" >>confdefs.h
++
+ fi
+ 
+     { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for eh_frame pcrel encoding support" >&5
+diff --git a/src/gcc/configure.ac b/src/gcc/configure.ac
+index 4581b4dd5..81480c696 100644
+--- a/src/gcc/configure.ac
++++ b/src/gcc/configure.ac
+@@ -5352,6 +5352,12 @@ configured with --enable-newlib-nano-formatted-io.])
+       [a:pcalau12i $t0,%pc_hi20(a)],,
+       [AC_DEFINE(HAVE_AS_EXPLICIT_RELOCS, 1,
+    [Define if your assembler supports explicit relocation.])])
++    gcc_GAS_CHECK_FEATURE([call36 relocation support],
++      gcc_cv_as_loongarch_call36,,
++      [pcaddu18i $r1, %call36(a)
++       jirl $r1, $r1, 0],,
++      [AC_DEFINE(HAVE_AS_SUPPORT_CALL36, 1,
++   [Define if your assembler supports call36 relocation.])])
+     gcc_GAS_CHECK_FEATURE([eh_frame pcrel encoding support],
+       gcc_cv_as_loongarch_eh_frame_pcrel_encoding_support,,
+       [.cfi_startproc
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c
+index 8a47b5afc..cae880bd8 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-5.c
+@@ -1,4 +1,5 @@
+ /* { dg-do compile } */
++/* { dg-skip-if "dg-require-effective-target loongarch_call36_support" { *-*-* } } */
+ /* { dg-options "-mabi=lp64d -O0 -fpic -fplt -mexplicit-relocs -mcmodel=medium" } */
+ /* { dg-final { scan-assembler "test:.*pcalau12i.*%pc_hi20\\(g\\)\n\tjirl.*pc_lo12\\(g\\)" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i.*%pc_hi20\\(f\\)\n\tjirl.*%pc_lo12\\(f\\)" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c
+index 1e75e60e0..33819542d 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-6.c
+@@ -1,4 +1,5 @@
+ /* { dg-do compile } */
++/* { dg-skip-if "dg-require-effective-target loongarch_call36_support" { *-*-* } } */
+ /* { dg-options "-mabi=lp64d -O0 -fno-pic -fplt -mexplicit-relocs -mcmodel=medium" } */
+ /* { dg-final { scan-assembler "test:.*pcalau12i.*%pc_hi20\\(g\\)\n\tjirl.*pc_lo12\\(g\\)" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i.*%pc_hi20\\(f\\)\n\tjirl.*%pc_lo12\\(f\\)" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c
+index 9e89085ca..969b59d04 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-7.c
+@@ -1,4 +1,5 @@
+ /* { dg-do compile } */
++/* { dg-skip-if "dg-require-effective-target loongarch_call36_support" { *-*-* } } */
+ /* { dg-options "-mabi=lp64d -O0 -fpic -fno-plt -mexplicit-relocs -mcmodel=medium" } */
+ /* { dg-final { scan-assembler "test:.*pcalau12i\t.*%got_pc_hi20\\(g\\)\n\tld\.d\t.*%got_pc_lo12\\(g\\)\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i\t.*%got_pc_hi20\\(f\\)\n\tld\.d\t.*%got_pc_lo12\\(f\\)\n\tjirl" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c
+index fde9c6e0e..786ff395f 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-8.c
+@@ -1,4 +1,5 @@
+ /* { dg-do compile } */
++/* { dg-skip-if "dg-require-effective-target loongarch_call36_support" { *-*-* } } */
+ /* { dg-options "-mabi=lp64d -O0 -fno-pic -fno-plt -mexplicit-relocs -mcmodel=medium" } */
+ /* { dg-final { scan-assembler "test:.*pcalau12i\t.*%got_pc_hi20\\(g\\)\n\tld\.d\t.*%got_pc_lo12\\(g\\)\n\tjirl" } } */
+ /* { dg-final { scan-assembler "test1:.*pcalau12i\t.*%pc_hi20\\(f\\)\n\tjirl.*%pc_lo12\\(f\\)" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-call36-1.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-call36-1.c
+new file mode 100644
+index 000000000..872ff32f8
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-call36-1.c
+@@ -0,0 +1,21 @@
++/* { dg-do compile } */
++/* { dg-require-effective-target loongarch_call36_support } */
++/* { dg-options "-mcmodel=medium -mexplicit-relocs -fdump-rtl-final -O2" } */
++/* { dg-final { scan-assembler "test:.*pcaddu18i\t\\\$r1,%call36\\(func\\)" } } */
++/* { dg-final { scan-assembler "test_value:.*pcaddu18i\t\\\$r1,%call36\\(func_value\\)" } } */
++
++extern void func (void);
++int
++test (void)
++{
++  func ();
++}
++
++
++extern int func_value (void);
++float
++test_value (void)
++{
++  func_value ();
++}
++
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-call36.c b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-call36.c
+new file mode 100644
+index 000000000..98ccd260d
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/func-call-medium-call36.c
+@@ -0,0 +1,32 @@
++/* { dg-do compile } */
++/* { dg-require-effective-target loongarch_call36_support } */
++/* { dg-options "-mcmodel=medium -mexplicit-relocs -fdump-rtl-final -O2" } */
++/* { dg-final { scan-rtl-dump-times "\\(clobber \\(reg:DI 12 \\\$r12\\)\\)" 3 "final" } } */
++/* { dg-final { scan-assembler "test:.*pcaddu18i\t\\\$r12,%call36\\(func\\)" } } */
++/* { dg-final { scan-assembler "test_value:.*pcaddu18i\t\\\$r12,%call36\\(func_value\\)" } } */
++/* { dg-final { scan-assembler "test_multi:.*pcaddu18i\t\\\$r12,%call36\\(func_multi\\)" } } */
++
++extern void func (void);
++void
++test (void)
++{
++  func();
++}
++
++
++extern int func_value (void);
++int
++test_value (void)
++{
++  func_value ();
++}
++
++struct t {float a; float b;};
++
++extern struct t func_multi (void);
++struct t
++test_multi (void)
++{
++  func_multi ();
++}
++
+diff --git a/src/gcc/testsuite/lib/target-supports.exp b/src/gcc/testsuite/lib/target-supports.exp
+index 948696c6b..033a0c380 100644
+--- a/src/gcc/testsuite/lib/target-supports.exp
++++ b/src/gcc/testsuite/lib/target-supports.exp
+@@ -10582,6 +10582,15 @@ proc check_effective_target_loongarch_asx_hw { } {
+     } "-mlasx"]
+ }
+ 
++# Check whether LoongArch binutils supports call36 relocation.
++proc check_effective_target_loongarch_call36_support { } {
++  return [check_no_compiler_messages loongarch_call36_support object {
++/* Assembly code */
++   pcaddu18i $r1,%call36(a)
++   jirl $r1,$r1,0
++  } ""]
++}
++
+ # Return 1 if the target does *not* require strict alignment.
+ 
+ proc check_effective_target_non_strict_align {} {
+-- 
+2.45.2
+

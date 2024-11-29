@@ -1,0 +1,123 @@
+From 57e418b252d62bccdb3d7714c2c0a25c80d6c7f7 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 11 Jul 2024 19:43:48 +0800
+Subject: [PATCH 298/301] LoongArch: Add support to annotate tablejump
+
+This is per the request from the kernel developers.  For generating the
+ORC unwind info, the objtool program needs to analysis the control flow
+of a .o file.  If a jump table is used, objtool has to correlate the
+jump instruction with the table.
+
+On x86 (where objtool was initially developed) it's simple: a relocation
+entry natrually correlates them because one single instruction is used
+for table-based jump.  But on an RISC machine objtool would have to
+reconstruct the data flow if it must find out the correlation on its
+own.
+
+So, emit an additional section to store the correlation info as pairs of
+addresses, each pair contains the address of a jump instruction (jr) and
+the address of the jump table.  This is very trivial to implement in
+GCC.
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/loongarch.opt.in
+	(mannotate-tablejump): New option.
+	* config/loongarch/loongarch.opt: Regenerate.
+	* config/loongarch/loongarch.md (tablejump<mode>): Emit
+	additional correlation info between the jump instruction and the
+	jump table, if -mannotate-tablejump.
+	* doc/invoke.texi: Document -mannotate-tablejump.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/jump-table-annotate.c: New test.
+
+Suggested-by: Tiezhu Yang <yangtiezhu@loongson.cn>
+---
+ src/gcc/config/loongarch/genopts/loongarch.opt.in |  4 ++++
+ src/gcc/config/loongarch/loongarch.md             | 12 +++++++++++-
+ src/gcc/config/loongarch/loongarch.opt            |  4 ++++
+ .../gcc.target/loongarch/jump-table-annotate.c    | 15 +++++++++++++++
+ 4 files changed, 34 insertions(+), 1 deletion(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/jump-table-annotate.c
+
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index 0ecd10922..20795f6bd 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -301,3 +301,7 @@ default value is 4.
+ ; CPUCFG independently, so we use bit flags to specify them.
+ TargetVariable
+ HOST_WIDE_INT la_isa_evolution = 0
++
++mannotate-tablejump
++Target Mask(ANNOTATE_TABLEJUMP) Save
++Annotate table jump instruction (jr {reg}) to correlate it with the jump table.
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 15960a79f..66236a7c7 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -3496,12 +3496,22 @@
+   DONE;
+ })
+ 
++(define_mode_attr mode_size [(DI "8") (SI "4")])
++
+ (define_insn "@tablejump<mode>"
+   [(set (pc)
+ 	(match_operand:P 0 "register_operand" "e"))
+    (use (label_ref (match_operand 1 "" "")))]
+   ""
+-  "jr\t%0"
++  {
++    return TARGET_ANNOTATE_TABLEJUMP
++      ? "1:jr\t%0\n\t"
++	".pushsection\t.discard.tablejump_annotate\n\t"
++	"\t.<mode_size>byte\t1b\n\t"
++	"\t.<mode_size>byte\t%1\n\t"
++	".popsection"
++      : "jr\t%0";
++  }
+   [(set_attr "type" "jump")
+    (set_attr "mode" "none")])
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 69b3b965c..16fed6ec3 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -310,6 +310,10 @@ default value is 4.
+ TargetVariable
+ HOST_WIDE_INT la_isa_evolution = 0
+ 
++mannotate-tablejump
++Target Mask(ANNOTATE_TABLEJUMP) Save
++Annotate table jump instruction (jr {reg}) to correlate it with the jump table
++
+ mfrecipe
+ Target Mask(ISA_FRECIPE) Var(la_isa_evolution)
+ Support frecipe.{s/d} and frsqrte.{s/d} instructions.
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/jump-table-annotate.c b/src/gcc/testsuite/gcc.target/loongarch/jump-table-annotate.c
+new file mode 100644
+index 000000000..9d58e60e3
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/jump-table-annotate.c
+@@ -0,0 +1,15 @@
++/* { dg-do compile } */
++/* { dg-additional-options "-mannotate-tablejump" } */
++
++extern void asdf(int);
++void foo(int x) {
++  switch (x) {
++  case 0: asdf(10); break;
++  case 1: asdf(11); break;
++  case 2: asdf(12); break;
++  case 3: asdf(13); break;
++  case 4: asdf(14); break;
++  }
++}
++
++/* { dg-final { scan-assembler "\\.discard\\.tablejump_annotate" } } */
+-- 
+2.45.2
+

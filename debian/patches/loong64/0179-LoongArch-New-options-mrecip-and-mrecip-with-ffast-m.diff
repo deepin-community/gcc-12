@@ -1,0 +1,1022 @@
+From fd21de7de7e2003ec8c487c308ef62c81104902c Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Wed, 6 Dec 2023 15:04:52 +0800
+Subject: [PATCH 179/301] LoongArch: New options -mrecip and -mrecip= with
+ ffast-math.
+
+When both the -mrecip and -mfrecipe options are enabled, use approximate reciprocal
+instructions and approximate reciprocal square root instructions with additional
+Newton-Raphson steps to implement single precision floating-point division, square
+root and reciprocal square root operations, for a better performance.
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/loongarch.opt.in (recip_mask): New variable.
+	(-mrecip, -mrecip): New options.
+	* config/loongarch/lasx.md (div<mode>3): New expander.
+	(*div<mode>3): Rename.
+	(sqrt<mode>2): New expander.
+	(*sqrt<mode>2): Rename.
+	(rsqrt<mode>2): New expander.
+	* config/loongarch/loongarch-protos.h (loongarch_emit_swrsqrtsf): New prototype.
+	(loongarch_emit_swdivsf): Ditto.
+	* config/loongarch/loongarch.cc (loongarch_option_override_internal): Set
+	recip_mask for -mrecip and -mrecip= options.
+	(loongarch_emit_swrsqrtsf): New function.
+	(loongarch_emit_swdivsf): Ditto.
+	* config/loongarch/loongarch.h (RECIP_MASK_NONE, RECIP_MASK_DIV, RECIP_MASK_SQRT
+	RECIP_MASK_RSQRT, RECIP_MASK_VEC_DIV, RECIP_MASK_VEC_SQRT, RECIP_MASK_VEC_RSQRT
+	RECIP_MASK_ALL): New bitmasks.
+	(TARGET_RECIP_DIV, TARGET_RECIP_SQRT, TARGET_RECIP_RSQRT, TARGET_RECIP_VEC_DIV
+	TARGET_RECIP_VEC_SQRT, TARGET_RECIP_VEC_RSQRT): New tests.
+	* config/loongarch/loongarch.md (sqrt<mode>2): New expander.
+	(*sqrt<mode>2): Rename.
+	(rsqrt<mode>2): New expander.
+	* config/loongarch/loongarch.opt (recip_mask): New variable.
+	(-mrecip, -mrecip): New options.
+	* config/loongarch/lsx.md (div<mode>3): New expander.
+	(*div<mode>3): Rename.
+	(sqrt<mode>2): New expander.
+	(*sqrt<mode>2): Rename.
+	(rsqrt<mode>2): New expander.
+	* config/loongarch/predicates.md (reg_or_vecotr_1_operand): New predicate.
+	* doc/invoke.texi (LoongArch Options): Document new options.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/divf.c: New test.
+	* gcc.target/loongarch/recip-divf.c: New test.
+	* gcc.target/loongarch/recip-sqrtf.c: New test.
+	* gcc.target/loongarch/sqrtf.c: New test.
+	* gcc.target/loongarch/vector/lasx/lasx-divf.c: New test.
+	* gcc.target/loongarch/vector/lasx/lasx-recip-divf.c: New test.
+	* gcc.target/loongarch/vector/lasx/lasx-recip-sqrtf.c: New test.
+	* gcc.target/loongarch/vector/lasx/lasx-recip.c: New test.
+	* gcc.target/loongarch/vector/lasx/lasx-sqrtf.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-divf.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-recip-divf.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-recip-sqrtf.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-recip.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-sqrtf.c: New test.
+---
+ .../config/loongarch/genopts/loongarch.opt.in |  11 +
+ src/gcc/config/loongarch/lasx.md              |  53 ++++-
+ src/gcc/config/loongarch/loongarch-protos.h   |   2 +
+ src/gcc/config/loongarch/loongarch.cc         | 188 ++++++++++++++++++
+ src/gcc/config/loongarch/loongarch.h          |  18 ++
+ src/gcc/config/loongarch/loongarch.md         |  49 ++++-
+ src/gcc/config/loongarch/loongarch.opt        |  11 +
+ src/gcc/config/loongarch/lsx.md               |  53 ++++-
+ src/gcc/config/loongarch/predicates.md        |   4 +
+ src/gcc/testsuite/gcc.target/loongarch/divf.c |  10 +
+ .../gcc.target/loongarch/recip-divf.c         |   9 +
+ .../gcc.target/loongarch/recip-sqrtf.c        |  23 +++
+ .../testsuite/gcc.target/loongarch/sqrtf.c    |  24 +++
+ .../loongarch/vector/lasx/lasx-divf.c         |  13 ++
+ .../loongarch/vector/lasx/lasx-recip-divf.c   |  12 ++
+ .../loongarch/vector/lasx/lasx-recip-sqrtf.c  |  28 +++
+ .../loongarch/vector/lasx/lasx-recip.c        |  24 +++
+ .../loongarch/vector/lasx/lasx-sqrtf.c        |  29 +++
+ .../loongarch/vector/lsx/lsx-divf.c           |  13 ++
+ .../loongarch/vector/lsx/lsx-recip-divf.c     |  12 ++
+ .../loongarch/vector/lsx/lsx-recip-sqrtf.c    |  28 +++
+ .../loongarch/vector/lsx/lsx-recip.c          |  24 +++
+ .../loongarch/vector/lsx/lsx-sqrtf.c          |  29 +++
+ 23 files changed, 657 insertions(+), 10 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/divf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/recip-divf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/recip-sqrtf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/sqrtf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-divf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip-divf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip-sqrtf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-sqrtf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-divf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip-divf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip-sqrtf.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-sqrtf.c
+
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index cd5e75e4f..102202b03 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -23,6 +23,9 @@ config/loongarch/loongarch-opts.h
+ HeaderInclude
+ config/loongarch/loongarch-str.h
+ 
++TargetVariable
++unsigned int recip_mask = 0
++
+ ; ISA related options
+ ;; Base ISA
+ Enum
+@@ -194,6 +197,14 @@ mexplicit-relocs
+ Target Var(la_opt_explicit_relocs_backward) Init(M_OPT_UNSET)
+ Use %reloc() assembly operators (for backward compatibility).
+ 
++mrecip
++Target RejectNegative Var(loongarch_recip)
++Generate approximate reciprocal divide and square root for better throughput.
++
++mrecip=
++Target RejectNegative Joined Var(loongarch_recip_name)
++Control generation of reciprocal estimates.
++
+ ; The code model option names for -mcmodel.
+ Enum
+ Name(cmodel) Type(int)
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index ad49a3ffb..eeac8cd98 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -1194,7 +1194,25 @@
+   [(set_attr "type" "simd_fmul")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "div<mode>3"
++(define_expand "div<mode>3"
++  [(set (match_operand:FLASX 0 "register_operand")
++    (div:FLASX (match_operand:FLASX 1 "reg_or_vecotr_1_operand")
++	       (match_operand:FLASX 2 "register_operand")))]
++  "ISA_HAS_LASX"
++{
++  if (<MODE>mode == V8SFmode
++    && TARGET_RECIP_VEC_DIV
++    && optimize_insn_for_speed_p ()
++    && flag_finite_math_only && !flag_trapping_math
++    && flag_unsafe_math_optimizations)
++  {
++    loongarch_emit_swdivsf (operands[0], operands[1],
++	operands[2], V8SFmode);
++    DONE;
++  }
++})
++
++(define_insn "*div<mode>3"
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+ 	(div:FLASX (match_operand:FLASX 1 "register_operand" "f")
+ 		   (match_operand:FLASX 2 "register_operand" "f")))]
+@@ -1223,7 +1241,23 @@
+   [(set_attr "type" "simd_fmadd")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "sqrt<mode>2"
++(define_expand "sqrt<mode>2"
++  [(set (match_operand:FLASX 0 "register_operand")
++    (sqrt:FLASX (match_operand:FLASX 1 "register_operand")))]
++  "ISA_HAS_LASX"
++{
++  if (<MODE>mode == V8SFmode
++      && TARGET_RECIP_VEC_SQRT
++      && flag_unsafe_math_optimizations
++      && optimize_insn_for_speed_p ()
++      && flag_finite_math_only && !flag_trapping_math)
++    {
++      loongarch_emit_swrsqrtsf (operands[0], operands[1], V8SFmode, 0);
++      DONE;
++    }
++})
++
++(define_insn "*sqrt<mode>2"
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+ 	(sqrt:FLASX (match_operand:FLASX 1 "register_operand" "f")))]
+   "ISA_HAS_LASX"
+@@ -1646,7 +1680,20 @@
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "rsqrt<mode>2"
++(define_expand "rsqrt<mode>2"
++  [(set (match_operand:FLASX 0 "register_operand" "=f")
++    (unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
++	     UNSPEC_LASX_XVFRSQRT))]
++  "ISA_HAS_LASX"
++ {
++   if (<MODE>mode == V8SFmode && TARGET_RECIP_VEC_RSQRT)
++     {
++       loongarch_emit_swrsqrtsf (operands[0], operands[1], V8SFmode, 1);
++       DONE;
++     }
++})
++
++(define_insn "*rsqrt<mode>2"
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+     (unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
+ 		  UNSPEC_LASX_XVFRSQRT))]
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index 51d38177b..117669e9f 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -220,5 +220,7 @@ extern rtx loongarch_gen_const_int_vector_shuffle (machine_mode, int);
+ extern tree loongarch_build_builtin_va_list (void);
+ 
+ extern rtx loongarch_build_signbit_mask (machine_mode, bool, bool);
++extern void loongarch_emit_swrsqrtsf (rtx, rtx, machine_mode, bool);
++extern void loongarch_emit_swdivsf (rtx, rtx, rtx, machine_mode);
+ extern bool loongarch_explicit_relocs_p (enum loongarch_symbol_type);
+ #endif /* ! GCC_LOONGARCH_PROTOS_H */
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 7aa8e616e..f6d3c851f 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -7546,6 +7546,71 @@ loongarch_option_override_internal (struct gcc_options *opts,
+ 
+   /* Function to allocate machine-dependent function status.  */
+   init_machine_status = &loongarch_init_machine_status;
++
++  /* -mrecip options.  */
++  static struct
++    {
++      const char *string;	    /* option name.  */
++      unsigned int mask;	    /* mask bits to set.  */
++    }
++  const recip_options[] = {
++	{ "all",       RECIP_MASK_ALL },
++	{ "none",      RECIP_MASK_NONE },
++	{ "div",       RECIP_MASK_DIV },
++	{ "sqrt",      RECIP_MASK_SQRT },
++	{ "rsqrt",     RECIP_MASK_RSQRT },
++	{ "vec-div",   RECIP_MASK_VEC_DIV },
++	{ "vec-sqrt",  RECIP_MASK_VEC_SQRT },
++	{ "vec-rsqrt", RECIP_MASK_VEC_RSQRT },
++  };
++
++  if (loongarch_recip_name)
++    {
++      char *p = ASTRDUP (loongarch_recip_name);
++      char *q;
++      unsigned int mask, i;
++      bool invert;
++
++      while ((q = strtok (p, ",")) != NULL)
++	{
++	  p = NULL;
++	  if (*q == '!')
++	    {
++	      invert = true;
++	      q++;
++	    }
++	  else
++	    invert = false;
++
++	  if (!strcmp (q, "default"))
++	    mask = RECIP_MASK_ALL;
++	  else
++	    {
++	      for (i = 0; i < ARRAY_SIZE (recip_options); i++)
++		if (!strcmp (q, recip_options[i].string))
++		  {
++		    mask = recip_options[i].mask;
++		    break;
++		  }
++
++	      if (i == ARRAY_SIZE (recip_options))
++		{
++		  error ("unknown option for %<-mrecip=%s%>", q);
++		  invert = false;
++		  mask = RECIP_MASK_NONE;
++		}
++	    }
++
++	  if (invert)
++	    recip_mask &= ~mask;
++	  else
++	    recip_mask |= mask;
++	}
++    }
++  if (loongarch_recip)
++    recip_mask |= RECIP_MASK_ALL;
++  if (!TARGET_FRECIPE)
++    recip_mask = RECIP_MASK_NONE;
+ }
+ 
+ 
+@@ -11468,6 +11533,126 @@ loongarch_build_signbit_mask (machine_mode mode, bool vect, bool invert)
+   return force_reg (vec_mode, v);
+ }
+ 
++/* Use rsqrte instruction and Newton-Rhapson to compute the approximation of
++   a single precision floating point [reciprocal] square root.  */
++
++void loongarch_emit_swrsqrtsf (rtx res, rtx a, machine_mode mode, bool recip)
++{
++  rtx x0, e0, e1, e2, mhalf, monehalf;
++  REAL_VALUE_TYPE r;
++  int unspec;
++
++  x0 = gen_reg_rtx (mode);
++  e0 = gen_reg_rtx (mode);
++  e1 = gen_reg_rtx (mode);
++  e2 = gen_reg_rtx (mode);
++
++  real_arithmetic (&r, ABS_EXPR, &dconsthalf, NULL);
++  mhalf = const_double_from_real_value (r, SFmode);
++
++  real_arithmetic (&r, PLUS_EXPR, &dconsthalf, &dconst1);
++  monehalf = const_double_from_real_value (r, SFmode);
++  unspec = UNSPEC_RSQRTE;
++
++  if (VECTOR_MODE_P (mode))
++    {
++      mhalf = loongarch_build_const_vector (mode, true, mhalf);
++      monehalf = loongarch_build_const_vector (mode, true, monehalf);
++      unspec = GET_MODE_SIZE (mode) == 32 ? UNSPEC_LASX_XVFRSQRTE
++					  : UNSPEC_LSX_VFRSQRTE;
++    }
++
++  /* rsqrt(a) =  rsqrte(a) * (1.5 - 0.5 * a * rsqrte(a) * rsqrte(a))
++     sqrt(a)  =  a * rsqrte(a) * (1.5 - 0.5 * a * rsqrte(a) * rsqrte(a))  */
++
++  a = force_reg (mode, a);
++
++  /* x0 = rsqrt(a) estimate.  */
++  emit_insn (gen_rtx_SET (x0, gen_rtx_UNSPEC (mode, gen_rtvec (1, a),
++					      unspec)));
++
++  /* If (a == 0.0) Filter out infinity to prevent NaN for sqrt(0.0).  */
++  if (!recip)
++    {
++      rtx zero = force_reg (mode, CONST0_RTX (mode));
++
++      if (VECTOR_MODE_P (mode))
++	{
++	  machine_mode imode = related_int_vector_mode (mode).require ();
++	  rtx mask = gen_reg_rtx (imode);
++	  emit_insn (gen_rtx_SET (mask, gen_rtx_NE (imode, a, zero)));
++	  emit_insn (gen_rtx_SET (x0, gen_rtx_AND (mode, x0,
++						   gen_lowpart (mode, mask))));
++	}
++      else
++	{
++	  rtx target = emit_conditional_move (x0, { GT, a, zero, mode },
++					      x0, zero, mode, 0);
++	  if (target != x0)
++	    emit_move_insn (x0, target);
++	}
++    }
++
++  /* e0 = x0 * a  */
++  emit_insn (gen_rtx_SET (e0, gen_rtx_MULT (mode, x0, a)));
++  /* e1 = e0 * x0  */
++  emit_insn (gen_rtx_SET (e1, gen_rtx_MULT (mode, e0, x0)));
++
++  /* e2 = 1.5 - e1 * 0.5  */
++  mhalf = force_reg (mode, mhalf);
++  monehalf = force_reg (mode, monehalf);
++  emit_insn (gen_rtx_SET (e2, gen_rtx_FMA (mode,
++					   gen_rtx_NEG (mode, e1),
++							mhalf, monehalf)));
++
++  if (recip)
++    /* res = e2 * x0  */
++    emit_insn (gen_rtx_SET (res, gen_rtx_MULT (mode, x0, e2)));
++  else
++    /* res = e2 * e0  */
++    emit_insn (gen_rtx_SET (res, gen_rtx_MULT (mode, e2, e0)));
++}
++
++/* Use recipe instruction and Newton-Rhapson to compute the approximation of
++   a single precision floating point divide.  */
++
++void loongarch_emit_swdivsf (rtx res, rtx a, rtx b, machine_mode mode)
++{
++  rtx x0, e0, mtwo;
++  REAL_VALUE_TYPE r;
++  x0 = gen_reg_rtx (mode);
++  e0 = gen_reg_rtx (mode);
++  int unspec = UNSPEC_RECIPE;
++
++  real_arithmetic (&r, ABS_EXPR, &dconst2, NULL);
++  mtwo = const_double_from_real_value (r, SFmode);
++
++  if (VECTOR_MODE_P (mode))
++    {
++      mtwo = loongarch_build_const_vector (mode, true, mtwo);
++      unspec = GET_MODE_SIZE (mode) == 32 ? UNSPEC_LASX_XVFRECIPE
++					  : UNSPEC_LSX_VFRECIPE;
++    }
++
++  mtwo = force_reg (mode, mtwo);
++
++  /* a / b = a * recipe(b) * (2.0 - b * recipe(b))  */
++
++  /* x0 = 1./b estimate.  */
++  emit_insn (gen_rtx_SET (x0, gen_rtx_UNSPEC (mode, gen_rtvec (1, b),
++					      unspec)));
++  /* 2.0 - b * x0  */
++  emit_insn (gen_rtx_SET (e0, gen_rtx_FMA (mode,
++					   gen_rtx_NEG (mode, b), x0, mtwo)));
++
++  /* x0 = a * x0  */
++  if (a != CONST1_RTX (mode))
++    emit_insn (gen_rtx_SET (x0, gen_rtx_MULT (mode, a, x0)));
++
++  /* res = e0 * x0  */
++  emit_insn (gen_rtx_SET (res, gen_rtx_MULT (mode, e0, x0)));
++}
++
+ static bool
+ loongarch_builtin_support_vector_misalignment (machine_mode mode,
+ 					       const_tree type,
+@@ -11663,6 +11848,9 @@ loongarch_asm_code_end (void)
+ #define TARGET_VECTORIZE_AUTOVECTORIZE_VECTOR_MODES \
+   loongarch_autovectorize_vector_modes
+ 
++#undef TARGET_OPTAB_SUPPORTED_P
++#define TARGET_OPTAB_SUPPORTED_P loongarch_optab_supported_p
++
+ #undef TARGET_INIT_BUILTINS
+ #define TARGET_INIT_BUILTINS loongarch_init_builtins
+ #undef TARGET_BUILTIN_DECL
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index 8b28be0e4..fbc0f53e4 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -702,6 +702,24 @@ enum reg_class
+    && (GET_MODE_CLASS (MODE) == MODE_VECTOR_INT		\
+        || GET_MODE_CLASS (MODE) == MODE_VECTOR_FLOAT))
+ 
++#define RECIP_MASK_NONE         0x00
++#define RECIP_MASK_DIV          0x01
++#define RECIP_MASK_SQRT         0x02
++#define RECIP_MASK_RSQRT        0x04
++#define RECIP_MASK_VEC_DIV      0x08
++#define RECIP_MASK_VEC_SQRT     0x10
++#define RECIP_MASK_VEC_RSQRT    0x20
++#define RECIP_MASK_ALL (RECIP_MASK_DIV | RECIP_MASK_SQRT \
++			| RECIP_MASK_RSQRT | RECIP_MASK_VEC_SQRT \
++			| RECIP_MASK_VEC_DIV | RECIP_MASK_VEC_RSQRT)
++
++#define TARGET_RECIP_DIV        ((recip_mask & RECIP_MASK_DIV) != 0 || TARGET_uARCH_LA664)
++#define TARGET_RECIP_SQRT       ((recip_mask & RECIP_MASK_SQRT) != 0 || TARGET_uARCH_LA664)
++#define TARGET_RECIP_RSQRT      ((recip_mask & RECIP_MASK_RSQRT) != 0 || TARGET_uARCH_LA664)
++#define TARGET_RECIP_VEC_DIV    ((recip_mask & RECIP_MASK_VEC_DIV) != 0 || TARGET_uARCH_LA664)
++#define TARGET_RECIP_VEC_SQRT   ((recip_mask & RECIP_MASK_VEC_SQRT) != 0 || TARGET_uARCH_LA664)
++#define TARGET_RECIP_VEC_RSQRT  ((recip_mask & RECIP_MASK_VEC_RSQRT) != 0 || TARGET_uARCH_LA664)
++
+ /* 1 if N is a possible register number for function argument passing.
+    We have no FP argument registers when soft-float.  */
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 4dfe583e2..c6edd1dda 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -893,9 +893,21 @@
+ ;; Float division and modulus.
+ (define_expand "div<mode>3"
+   [(set (match_operand:ANYF 0 "register_operand")
+-	(div:ANYF (match_operand:ANYF 1 "reg_or_1_operand")
+-		  (match_operand:ANYF 2 "register_operand")))]
+-  "")
++    (div:ANYF (match_operand:ANYF 1 "reg_or_1_operand")
++	      (match_operand:ANYF 2 "register_operand")))]
++  ""
++{
++  if (<MODE>mode == SFmode
++    && TARGET_RECIP_DIV
++    && optimize_insn_for_speed_p ()
++    && flag_finite_math_only && !flag_trapping_math
++    && flag_unsafe_math_optimizations)
++  {
++    loongarch_emit_swdivsf (operands[0], operands[1],
++	operands[2], SFmode);
++    DONE;
++  }
++})
+ 
+ (define_insn "*div<mode>3"
+   [(set (match_operand:ANYF 0 "register_operand" "=f")
+@@ -1126,7 +1138,23 @@
+ ;;
+ ;;  ....................
+ 
+-(define_insn "sqrt<mode>2"
++(define_expand "sqrt<mode>2"
++  [(set (match_operand:ANYF 0 "register_operand")
++    (sqrt:ANYF (match_operand:ANYF 1 "register_operand")))]
++  ""
++ {
++  if (<MODE>mode == SFmode
++      && TARGET_RECIP_SQRT
++      && flag_unsafe_math_optimizations
++      && !optimize_insn_for_size_p ()
++      && flag_finite_math_only && !flag_trapping_math)
++    {
++      loongarch_emit_swrsqrtsf (operands[0], operands[1], SFmode, 0);
++      DONE;
++    }
++ })
++
++(define_insn "*sqrt<mode>2"
+   [(set (match_operand:ANYF 0 "register_operand" "=f")
+ 	(sqrt:ANYF (match_operand:ANYF 1 "register_operand" "f")))]
+   ""
+@@ -1135,6 +1163,19 @@
+    (set_attr "mode" "<UNITMODE>")
+    (set_attr "insn_count" "1")])
+ 
++(define_expand "rsqrt<mode>2"
++  [(set (match_operand:ANYF 0 "register_operand")
++    (unspec:ANYF [(match_operand:ANYF 1 "register_operand")]
++	   UNSPEC_RSQRT))]
++  "TARGET_HARD_FLOAT"
++{
++   if (<MODE>mode == SFmode && TARGET_RECIP_RSQRT)
++     {
++       loongarch_emit_swrsqrtsf (operands[0], operands[1], SFmode, 1);
++       DONE;
++     }
++})
++
+ (define_insn "*rsqrt<mode>2"
+   [(set (match_operand:ANYF 0 "register_operand" "=f")
+     (unspec:ANYF [(match_operand:ANYF 1 "register_operand" "f")]
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index e7bc8bed4..56f6a9564 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -31,6 +31,9 @@ config/loongarch/loongarch-opts.h
+ HeaderInclude
+ config/loongarch/loongarch-str.h
+ 
++TargetVariable
++unsigned int recip_mask = 0
++
+ ; ISA related options
+ ;; Base ISA
+ Enum
+@@ -202,6 +205,14 @@ mexplicit-relocs
+ Target Var(la_opt_explicit_relocs_backward) Init(M_OPT_UNSET)
+ Use %reloc() assembly operators (for backward compatibility).
+ 
++mrecip
++Target RejectNegative Var(loongarch_recip)
++Generate approximate reciprocal divide and square root for better throughput.
++
++mrecip=
++Target RejectNegative Joined Var(loongarch_recip_name)
++Control generation of reciprocal estimates.
++
+ ; The code model option names for -mcmodel.
+ Enum
+ Name(cmodel) Type(int)
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index f2774f021..dbdb42301 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -1083,7 +1083,25 @@
+   [(set_attr "type" "simd_fmul")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "div<mode>3"
++(define_expand "div<mode>3"
++  [(set (match_operand:FLSX 0 "register_operand")
++    (div:FLSX (match_operand:FLSX 1 "reg_or_vecotr_1_operand")
++	      (match_operand:FLSX 2 "register_operand")))]
++  "ISA_HAS_LSX"
++{
++  if (<MODE>mode == V4SFmode
++    && TARGET_RECIP_VEC_DIV
++    && optimize_insn_for_speed_p ()
++    && flag_finite_math_only && !flag_trapping_math
++    && flag_unsafe_math_optimizations)
++  {
++    loongarch_emit_swdivsf (operands[0], operands[1],
++	operands[2], V4SFmode);
++    DONE;
++  }
++})
++
++(define_insn "*div<mode>3"
+   [(set (match_operand:FLSX 0 "register_operand" "=f")
+ 	(div:FLSX (match_operand:FLSX 1 "register_operand" "f")
+ 		  (match_operand:FLSX 2 "register_operand" "f")))]
+@@ -1112,7 +1130,23 @@
+   [(set_attr "type" "simd_fmadd")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "sqrt<mode>2"
++(define_expand "sqrt<mode>2"
++  [(set (match_operand:FLSX 0 "register_operand")
++    (sqrt:FLSX (match_operand:FLSX 1 "register_operand")))]
++  "ISA_HAS_LSX"
++{
++  if (<MODE>mode == V4SFmode
++      && TARGET_RECIP_VEC_SQRT
++      && flag_unsafe_math_optimizations
++      && optimize_insn_for_speed_p ()
++      && flag_finite_math_only && !flag_trapping_math)
++    {
++      loongarch_emit_swrsqrtsf (operands[0], operands[1], V4SFmode, 0);
++      DONE;
++    }
++})
++
++(define_insn "*sqrt<mode>2"
+   [(set (match_operand:FLSX 0 "register_operand" "=f")
+ 	(sqrt:FLSX (match_operand:FLSX 1 "register_operand" "f")))]
+   "ISA_HAS_LSX"
+@@ -1559,7 +1593,20 @@
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "rsqrt<mode>2"
++(define_expand "rsqrt<mode>2"
++  [(set (match_operand:FLSX 0 "register_operand" "=f")
++    (unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
++	     UNSPEC_LSX_VFRSQRT))]
++ "ISA_HAS_LSX"
++{
++ if (<MODE>mode == V4SFmode && TARGET_RECIP_VEC_RSQRT)
++   {
++     loongarch_emit_swrsqrtsf (operands[0], operands[1], V4SFmode, 1);
++     DONE;
++   }
++})
++
++(define_insn "*rsqrt<mode>2"
+   [(set (match_operand:FLSX 0 "register_operand" "=f")
+     (unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
+ 		 UNSPEC_LSX_VFRSQRT))]
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 572550dbc..88e54c915 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -235,6 +235,10 @@
+   (ior (match_operand 0 "const_1_operand")
+        (match_operand 0 "register_operand")))
+ 
++(define_predicate "reg_or_vecotr_1_operand"
++  (ior (match_operand 0 "const_vector_1_operand")
++       (match_operand 0 "register_operand")))
++
+ ;; These are used in vec_merge, hence accept bitmask as const_int.
+ (define_predicate "const_exp_2_operand"
+   (and (match_code "const_int")
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/divf.c b/src/gcc/testsuite/gcc.target/loongarch/divf.c
+new file mode 100644
+index 000000000..6c831817c
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/divf.c
+@@ -0,0 +1,10 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mfrecipe -fno-unsafe-math-optimizations" } */
++/* { dg-final { scan-assembler "fdiv.s" } } */
++/* { dg-final { scan-assembler-not "frecipe.s" } } */
++
++float
++foo(float a, float b)
++{
++  return a / b;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/recip-divf.c b/src/gcc/testsuite/gcc.target/loongarch/recip-divf.c
+new file mode 100644
+index 000000000..db5e3e488
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/recip-divf.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mfrecipe" } */
++/* { dg-final { scan-assembler "frecipe.s" } } */
++
++float
++foo(float a, float b)
++{
++  return a / b;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/recip-sqrtf.c b/src/gcc/testsuite/gcc.target/loongarch/recip-sqrtf.c
+new file mode 100644
+index 000000000..7f45db6cd
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/recip-sqrtf.c
+@@ -0,0 +1,23 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mfrecipe" } */
++/* { dg-final { scan-assembler-times "frsqrte.s" 3 } } */
++
++extern float sqrtf (float);
++
++float
++foo1 (float a, float b)
++{
++  return a/sqrtf(b);
++}
++
++float
++foo2 (float a, float b)
++{
++  return sqrtf(a/b);
++}
++
++float
++foo3 (float a)
++{
++  return sqrtf(a);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/sqrtf.c b/src/gcc/testsuite/gcc.target/loongarch/sqrtf.c
+new file mode 100644
+index 000000000..c2720faac
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/sqrtf.c
+@@ -0,0 +1,24 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mfrecipe -fno-unsafe-math-optimizations" } */
++/* { dg-final { scan-assembler-times "fsqrt.s" 3 } } */
++/* { dg-final { scan-assembler-not "frsqrte.s" } } */
++
++extern float sqrtf (float);
++
++float
++foo1 (float a, float b)
++{
++  return a/sqrtf(b);
++}
++
++float
++foo2 (float a, float b)
++{
++  return sqrtf(a/b);
++}
++
++float
++foo3 (float a)
++{
++  return sqrtf(a);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-divf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-divf.c
+new file mode 100644
+index 000000000..748a82200
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-divf.c
+@@ -0,0 +1,13 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mrecip -mlasx -mfrecipe -fno-unsafe-math-optimizations" } */
++/* { dg-final { scan-assembler "xvfdiv.s" } } */
++/* { dg-final { scan-assembler-not "xvfrecipe.s" } } */
++
++float a[8],b[8],c[8];
++
++void 
++foo ()
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = a[i] / b[i];
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip-divf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip-divf.c
+new file mode 100644
+index 000000000..6532756f0
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip-divf.c
+@@ -0,0 +1,12 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mlasx -mfrecipe" } */
++/* { dg-final { scan-assembler "xvfrecipe.s" } } */
++
++float a[8],b[8],c[8];
++
++void
++foo ()
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = a[i] / b[i];
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip-sqrtf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip-sqrtf.c
+new file mode 100644
+index 000000000..a623dff8f
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip-sqrtf.c
+@@ -0,0 +1,28 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mlasx -mfrecipe" } */
++/* { dg-final { scan-assembler-times "xvfrsqrte.s" 3 } } */
++
++float a[8], b[8], c[8];
++
++extern float sqrtf (float);
++
++void
++foo1 (void)
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = a[i] / sqrtf (b[i]);
++}
++
++void
++foo2 (void)
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = sqrtf (a[i] / b[i]);
++}
++
++void
++foo3 (void)
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = sqrtf (a[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip.c
+new file mode 100644
+index 000000000..083c86840
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-recip.c
+@@ -0,0 +1,24 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler "xvfrecip.s" } } */
++/* { dg-final { scan-assembler "xvfrecip.d" } } */
++/* { dg-final { scan-assembler-not "xvfdiv.s" } } */
++/* { dg-final { scan-assembler-not "xvfdiv.d" } } */
++
++float a[8], b[8];
++
++void 
++foo1(void)
++{
++  for (int i = 0; i < 8; i++)
++    a[i] = 1 / (b[i]);
++}
++
++double da[4], db[4];
++
++void
++foo2(void)
++{
++  for (int i = 0; i < 4; i++)
++    da[i] = 1 / (db[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-sqrtf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-sqrtf.c
+new file mode 100644
+index 000000000..a005a3886
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-sqrtf.c
+@@ -0,0 +1,29 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -fno-unsafe-math-optimizations  -mrecip -mlasx -mfrecipe" } */
++/* { dg-final { scan-assembler-times "xvfsqrt.s" 3 } } */
++/* { dg-final { scan-assembler-not "xvfrsqrte.s" } } */
++
++float a[8], b[8], c[8];
++
++extern float sqrtf (float);
++
++void
++foo1 (void)
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = a[i] / sqrtf (b[i]);
++}
++
++void
++foo2 (void)
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = sqrtf (a[i] / b[i]);
++}
++
++void
++foo3 (void)
++{
++  for (int i = 0; i < 8; i++)
++    c[i] = sqrtf (a[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-divf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-divf.c
+new file mode 100644
+index 000000000..1219b1ef8
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-divf.c
+@@ -0,0 +1,13 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mlsx -mfrecipe -fno-unsafe-math-optimizations" } */
++/* { dg-final { scan-assembler "vfdiv.s" } } */
++/* { dg-final { scan-assembler-not "vfrecipe.s" } } */
++
++float a[4],b[4],c[4];
++
++void
++foo ()
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = a[i] / b[i];
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip-divf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip-divf.c
+new file mode 100644
+index 000000000..edbe8d909
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip-divf.c
+@@ -0,0 +1,12 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mlsx -mfrecipe" } */
++/* { dg-final { scan-assembler "vfrecipe.s" } } */
++
++float a[4],b[4],c[4];
++
++void
++foo ()
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = a[i] / b[i];
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip-sqrtf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip-sqrtf.c
+new file mode 100644
+index 000000000..d356f915e
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip-sqrtf.c
+@@ -0,0 +1,28 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mlsx -mfrecipe" } */
++/* { dg-final { scan-assembler-times "vfrsqrte.s" 3 } } */
++
++float a[4], b[4], c[4];
++
++extern float sqrtf (float);
++
++void
++foo1 (void)
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = a[i] / sqrtf (b[i]);
++}
++
++void
++foo2 (void)
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = sqrtf (a[i] / b[i]);
++}
++
++void
++foo3 (void)
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = sqrtf (a[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip.c
+new file mode 100644
+index 000000000..c4d6af4db
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-recip.c
+@@ -0,0 +1,24 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler "vfrecip.s" } } */
++/* { dg-final { scan-assembler "vfrecip.d" } } */
++/* { dg-final { scan-assembler-not "vfdiv.s" } } */
++/* { dg-final { scan-assembler-not "vfdiv.d" } } */
++
++float a[4], b[4];
++
++void
++foo1(void)
++{
++  for (int i = 0; i < 4; i++)
++    a[i] = 1 / (b[i]);
++}
++
++double da[2], db[2];
++
++void
++foo2(void)
++{
++  for (int i = 0; i < 2; i++)
++    da[i] = 1 / (db[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-sqrtf.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-sqrtf.c
+new file mode 100644
+index 000000000..3ff6570a6
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-sqrtf.c
+@@ -0,0 +1,29 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mrecip -mlsx -mfrecipe -fno-unsafe-math-optimizations" } */
++/* { dg-final { scan-assembler-times "vfsqrt.s" 3 } } */
++/* { dg-final { scan-assembler-not "vfrsqrte.s" } } */
++
++float a[4], b[4], c[4];
++
++extern float sqrtf (float);
++
++void
++foo1 (void)
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = a[i] / sqrtf (b[i]);
++}
++
++void
++foo2 (void)
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = sqrtf (a[i] / b[i]);
++}
++
++void
++foo3 (void)
++{
++  for (int i = 0; i < 4; i++)
++    c[i] = sqrtf (a[i]);
++}
+-- 
+2.45.2
+

@@ -1,0 +1,75 @@
+From b87b7bc8a4443f7f9cb54605512f87e3ce012431 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 16 Nov 2023 09:30:14 +0800
+Subject: [PATCH 157/301] LoongArch: Don't emit dbar 0x700 if -mld-seq-sa
+
+This option (CPUCFG word 0x3 bit 23) means "the hardware guarantee that
+two loads on the same address won't be reordered with each other".  Thus
+we can omit the "load-load" barrier dbar 0x700.
+
+This is only a micro-optimization because dbar 0x700 is already treated
+as nop if the hardware supports LD_SEQ_SA.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_print_operand): Don't
+	print dbar 0x700 if TARGET_LD_SEQ_SA.
+	* config/loongarch/sync.md (atomic_load<mode>): Likewise.
+---
+ src/gcc/config/loongarch/loongarch.cc | 9 ++++++---
+ src/gcc/config/loongarch/sync.md      | 9 +++++----
+ 2 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index a0df25e98..208ee2be0 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -5993,7 +5993,7 @@ loongarch_print_operand_reloc (FILE *file, rtx op, bool hi64_part,
+    'x' Print the low 16 bits of CONST_INT OP in hexadecimal format.
+    'Y' Print loongarch_fp_conditions[INTVAL (OP)]
+    'y' Print exact log2 of CONST_INT OP in decimal.
+-   'Z' Print OP and a comma for 8CC, otherwise print nothing.
++   'Z' Print OP and a comma for 8CC, otherwise print nothing. */
+ 
+ static void
+ loongarch_print_operand (FILE *file, rtx op, int letter)
+@@ -6052,8 +6052,11 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+       break;
+ 
+     case 'G':
+-      if (loongarch_memmodel_needs_release_fence ((enum memmodel) INTVAL (op)))
+-	fputs ("dbar\t0", file);
++       if (loongarch_cas_failure_memorder_needs_acquire (
++            memmodel_from_int (INTVAL (op))))
++        fputs ("dbar\t0b10100", file);
++       else if (!TARGET_LD_SEQ_SA)
++        fputs ("dbar\t0x700", file);      
+       break;
+ 
+     case 'h':
+diff --git a/src/gcc/config/loongarch/sync.md b/src/gcc/config/loongarch/sync.md
+index f4673c856..65443c899 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -119,13 +119,14 @@
+     case MEMMODEL_SEQ_CST:
+       return "dbar\t0x11\\n\\t"
+ 	     "ld.<size>\t%0,%1\\n\\t"
+-	     "dbar\t0x14\\n\\t";
++	     "dbar\t0x14";
+     case MEMMODEL_ACQUIRE:
+       return "ld.<size>\t%0,%1\\n\\t"
+-	     "dbar\t0x14\\n\\t";
++	     "dbar\t0x14";
+     case MEMMODEL_RELAXED:
+-      return "ld.<size>\t%0,%1\\n\\t"
+-	     "dbar\t0x700\\n\\t";
++      return TARGET_LD_SEQ_SA ? "ld.<size>\t%0,%1\\n\\t"
++			      : "ld.<size>\t%0,%1\\n\\t"
++				"dbar\t0x700";
+ 
+     default:
+       /* The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST,
+-- 
+2.45.2
+

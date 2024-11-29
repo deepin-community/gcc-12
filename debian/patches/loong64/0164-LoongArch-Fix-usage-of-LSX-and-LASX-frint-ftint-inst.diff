@@ -1,0 +1,1295 @@
+From 924120f11701902efb6c488e194a2c6755ffb065 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 18 Nov 2023 04:48:20 +0800
+Subject: [PATCH 164/301] LoongArch: Fix usage of LSX and LASX frint/ftint
+ instructions [PR112578]
+
+The usage LSX and LASX frint/ftint instructions had some problems:
+
+1. These instructions raises FE_INEXACT, which is not allowed with
+   -fno-fp-int-builtin-inexact for most C2x section F.10.6 functions
+   (the only exceptions are rint, lrint, and llrint).
+2. The "frint" instruction without explicit rounding mode is used for
+   roundM2, this is incorrect because roundM2 is defined "rounding
+   operand 1 to the *nearest* integer, rounding away from zero in the
+   event of a tie".  We actually don't have such an instruction.  Our
+   frintrne instruction is roundevenM2 (unfortunately, this is not
+   documented).
+3. These define_insn's are written in a way not so easy to hack.
+
+So I removed these instructions and created a "simd.md" file, then added
+them and the corresponding expanders there.  The advantage of the
+simd.md file is we don't need to duplicate the RTL template twice (in
+lsx.md and lasx.md).
+
+gcc/ChangeLog:
+
+	PR target/112578
+	* config/loongarch/lsx.md (UNSPEC_LSX_VFTINT_S,
+	UNSPEC_LSX_VFTINTRNE, UNSPEC_LSX_VFTINTRP,
+	UNSPEC_LSX_VFTINTRM, UNSPEC_LSX_VFRINTRNE_S,
+	UNSPEC_LSX_VFRINTRNE_D, UNSPEC_LSX_VFRINTRZ_S,
+	UNSPEC_LSX_VFRINTRZ_D, UNSPEC_LSX_VFRINTRP_S,
+	UNSPEC_LSX_VFRINTRP_D, UNSPEC_LSX_VFRINTRM_S,
+	UNSPEC_LSX_VFRINTRM_D): Remove.
+	(ILSX, FLSX): Move into ...
+	(VIMODE): Move into ...
+	(FRINT_S, FRINT_D): Remove.
+	(frint_pattern_s, frint_pattern_d, frint_suffix): Remove.
+	(lsx_vfrint_<flsxfmt>, lsx_vftint_s_<ilsxfmt>_<flsxfmt>,
+	lsx_vftintrne_w_s, lsx_vftintrne_l_d, lsx_vftintrp_w_s,
+	lsx_vftintrp_l_d, lsx_vftintrm_w_s, lsx_vftintrm_l_d,
+	lsx_vfrintrne_s, lsx_vfrintrne_d, lsx_vfrintrz_s,
+	lsx_vfrintrz_d, lsx_vfrintrp_s, lsx_vfrintrp_d,
+	lsx_vfrintrm_s, lsx_vfrintrm_d,
+	<FRINT_S:frint_pattern_s>v4sf2,
+	<FRINT_D:frint_pattern_d>v2df2, round<mode>2,
+	fix_trunc<mode>2): Remove.
+	* config/loongarch/lasx.md: Likewise.
+	* config/loongarch/simd.md: New file.
+	(ILSX, ILASX, FLSX, FLASX, VIMODE): ... here.
+	(IVEC, FVEC): New mode iterators.
+	(VIMODE): ... here.  Extend it to work for all LSX/LASX vector
+	modes.
+	(x, wu, simd_isa, WVEC, vimode, simdfmt, simdifmt_for_f,
+	elebits): New mode attributes.
+	(UNSPEC_SIMD_FRINTRP, UNSPEC_SIMD_FRINTRZ, UNSPEC_SIMD_FRINT,
+	UNSPEC_SIMD_FRINTRM, UNSPEC_SIMD_FRINTRNE): New unspecs.
+	(SIMD_FRINT): New int iterator.
+	(simd_frint_rounding, simd_frint_pattern): New int attributes.
+	(<simd_isa>_<x>vfrint<simd_frint_rounding>_<simdfmt>): New
+	define_insn template for frint instructions.
+	(<simd_isa>_<x>vftint<simd_frint_rounding>_<simdifmt_for_f>_<simdfmt>):
+	Likewise, but for ftint instructions.
+	(<simd_frint_pattern><mode>2): New define_expand with
+	flag_fp_int_builtin_inexact checked.
+	(l<simd_frint_pattern><mode><vimode>2): Likewise.
+	(ftrunc<mode>2): New define_expand.  It does not require
+	flag_fp_int_builtin_inexact.
+	(fix_trunc<mode><vimode>2): New define_insn_and_split.  It does
+	not require flag_fp_int_builtin_inexact.
+	(include): Add lsx.md and lasx.md.
+	* config/loongarch/loongarch.md (include): Include simd.md,
+	instead of including lsx.md and lasx.md directly.
+	* config/loongarch/loongarch-builtins.cc
+	(CODE_FOR_lsx_vftint_w_s, CODE_FOR_lsx_vftint_l_d,
+	CODE_FOR_lasx_xvftint_w_s, CODE_FOR_lasx_xvftint_l_d):
+	Remove.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/112578
+	* gcc.target/loongarch/vect-frint.c: New test.
+	* gcc.target/loongarch/vect-frint-no-inexact.c: New test.
+	* gcc.target/loongarch/vect-ftint.c: New test.
+	* gcc.target/loongarch/vect-ftint-no-inexact.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 239 -----------------
+ .../config/loongarch/loongarch-builtins.cc    |   4 -
+ src/gcc/config/loongarch/loongarch.md         |   7 +-
+ src/gcc/config/loongarch/lsx.md               | 243 ------------------
+ src/gcc/config/loongarch/simd.md              | 213 +++++++++++++++
+ .../loongarch/vect-frint-no-inexact.c         |  48 ++++
+ .../gcc.target/loongarch/vect-frint.c         |  85 ++++++
+ .../loongarch/vect-ftint-no-inexact.c         |  44 ++++
+ .../gcc.target/loongarch/vect-ftint.c         |  83 ++++++
+ 9 files changed, 475 insertions(+), 491 deletions(-)
+ create mode 100644 src/gcc/config/loongarch/simd.md
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-frint-no-inexact.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-frint.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-ftint.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 2e11f0612..d4a56c307 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -53,7 +53,6 @@
+   UNSPEC_LASX_XVFCMP_SULT
+   UNSPEC_LASX_XVFCMP_SUN
+   UNSPEC_LASX_XVFCMP_SUNE
+-  UNSPEC_LASX_XVFTINT_S
+   UNSPEC_LASX_XVFTINT_U
+   UNSPEC_LASX_XVCLO
+   UNSPEC_LASX_XVSAT_S
+@@ -92,12 +91,6 @@
+   UNSPEC_LASX_XVEXTRINS
+   UNSPEC_LASX_XVMSKLTZ
+   UNSPEC_LASX_XVSIGNCOV
+-  UNSPEC_LASX_XVFTINTRNE_W_S
+-  UNSPEC_LASX_XVFTINTRNE_L_D
+-  UNSPEC_LASX_XVFTINTRP_W_S
+-  UNSPEC_LASX_XVFTINTRP_L_D
+-  UNSPEC_LASX_XVFTINTRM_W_S
+-  UNSPEC_LASX_XVFTINTRM_L_D
+   UNSPEC_LASX_XVFTINT_W_D
+   UNSPEC_LASX_XVFFINT_S_L
+   UNSPEC_LASX_XVFTINTRZ_W_D
+@@ -116,14 +109,6 @@
+   UNSPEC_LASX_XVFTINTRML_L_S
+   UNSPEC_LASX_XVFTINTRNEL_L_S
+   UNSPEC_LASX_XVFTINTRNEH_L_S
+-  UNSPEC_LASX_XVFRINTRNE_S
+-  UNSPEC_LASX_XVFRINTRNE_D
+-  UNSPEC_LASX_XVFRINTRZ_S
+-  UNSPEC_LASX_XVFRINTRZ_D
+-  UNSPEC_LASX_XVFRINTRP_S
+-  UNSPEC_LASX_XVFRINTRP_D
+-  UNSPEC_LASX_XVFRINTRM_S
+-  UNSPEC_LASX_XVFRINTRM_D
+   UNSPEC_LASX_XVREPLVE0_Q
+   UNSPEC_LASX_XVPERM_W
+   UNSPEC_LASX_XVPERMI_Q
+@@ -206,9 +191,6 @@
+ ;; Only used for copy256_{u,s}.w.
+ (define_mode_iterator LASX_W    [V8SI V8SF])
+ 
+-;; Only integer modes in LASX.
+-(define_mode_iterator ILASX [V4DI V8SI V16HI V32QI])
+-
+ ;; As ILASX but excludes V32QI.
+ (define_mode_iterator ILASX_DWH [V4DI V8SI V16HI])
+ 
+@@ -224,9 +206,6 @@
+ ;; Only integer modes smaller than a word.
+ (define_mode_iterator ILASX_HB  [V16HI V32QI])
+ 
+-;; Only floating-point modes in LASX.
+-(define_mode_iterator FLASX  [V4DF V8SF])
+-
+ ;; Only used for immediate set shuffle elements instruction.
+ (define_mode_iterator LASX_WHB_W [V8SI V16HI V32QI V8SF])
+ 
+@@ -500,37 +479,6 @@
+    (V16HI "w")
+    (V32QI "w")])
+ 
+-(define_int_iterator FRINT256_S [UNSPEC_LASX_XVFRINTRP_S
+-			       UNSPEC_LASX_XVFRINTRZ_S
+-			       UNSPEC_LASX_XVFRINT
+-			       UNSPEC_LASX_XVFRINTRM_S])
+-
+-(define_int_iterator FRINT256_D [UNSPEC_LASX_XVFRINTRP_D
+-			       UNSPEC_LASX_XVFRINTRZ_D
+-			       UNSPEC_LASX_XVFRINT
+-			       UNSPEC_LASX_XVFRINTRM_D])
+-
+-(define_int_attr frint256_pattern_s
+-  [(UNSPEC_LASX_XVFRINTRP_S  "ceil")
+-   (UNSPEC_LASX_XVFRINTRZ_S  "btrunc")
+-   (UNSPEC_LASX_XVFRINT	     "rint")
+-   (UNSPEC_LASX_XVFRINTRM_S  "floor")])
+-
+-(define_int_attr frint256_pattern_d
+-  [(UNSPEC_LASX_XVFRINTRP_D  "ceil")
+-   (UNSPEC_LASX_XVFRINTRZ_D  "btrunc")
+-   (UNSPEC_LASX_XVFRINT	     "rint")
+-   (UNSPEC_LASX_XVFRINTRM_D  "floor")])
+-
+-(define_int_attr frint256_suffix
+-  [(UNSPEC_LASX_XVFRINTRP_S  "rp")
+-   (UNSPEC_LASX_XVFRINTRP_D  "rp")
+-   (UNSPEC_LASX_XVFRINTRZ_S  "rz")
+-   (UNSPEC_LASX_XVFRINTRZ_D  "rz")
+-   (UNSPEC_LASX_XVFRINT	     "")
+-   (UNSPEC_LASX_XVFRINTRM_S  "rm")
+-   (UNSPEC_LASX_XVFRINTRM_D  "rm")])
+-
+ (define_expand "vec_init<mode><unitmode>"
+   [(match_operand:LASX 0 "register_operand")
+    (match_operand:LASX 1 "")]
+@@ -1688,15 +1636,6 @@
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvfrint_<flasxfmt>"
+-  [(set (match_operand:FLASX 0 "register_operand" "=f")
+-	(unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
+-		      UNSPEC_LASX_XVFRINT))]
+-  "ISA_HAS_LASX"
+-  "xvfrint.<flasxfmt>\t%u0,%u1"
+-  [(set_attr "type" "simd_fcvt")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lasx_xvfrsqrt_<flasxfmt>"
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+ 	(unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
+@@ -1706,16 +1645,6 @@
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvftint_s_<ilasxfmt>_<flasxfmt>"
+-  [(set (match_operand:<VIMODE256> 0 "register_operand" "=f")
+-	(unspec:<VIMODE256> [(match_operand:FLASX 1 "register_operand" "f")]
+-			    UNSPEC_LASX_XVFTINT_S))]
+-  "ISA_HAS_LASX"
+-  "xvftint.<ilasxfmt>.<flasxfmt>\t%u0,%u1"
+-  [(set_attr "type" "simd_fcvt")
+-   (set_attr "cnv_mode" "<FINTCNV256_2>")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lasx_xvftint_u_<ilasxfmt_u>_<flasxfmt>"
+   [(set (match_operand:<VIMODE256> 0 "register_operand" "=f")
+ 	(unspec:<VIMODE256> [(match_operand:FLASX 1 "register_operand" "f")]
+@@ -1726,18 +1655,6 @@
+    (set_attr "cnv_mode" "<FINTCNV256_2>")
+    (set_attr "mode" "<MODE>")])
+ 
+-
+-
+-(define_insn "fix_trunc<FLASX:mode><mode256_i>2"
+-  [(set (match_operand:<VIMODE256> 0 "register_operand" "=f")
+-	(fix:<VIMODE256> (match_operand:FLASX 1 "register_operand" "f")))]
+-  "ISA_HAS_LASX"
+-  "xvftintrz.<ilasxfmt>.<flasxfmt>\t%u0,%u1"
+-  [(set_attr "type" "simd_fcvt")
+-   (set_attr "cnv_mode" "<FINTCNV256_2>")
+-   (set_attr "mode" "<MODE>")])
+-
+-
+ (define_insn "fixuns_trunc<FLASX:mode><mode256_i>2"
+   [(set (match_operand:<VIMODE256> 0 "register_operand" "=f")
+ 	(unsigned_fix:<VIMODE256> (match_operand:FLASX 1 "register_operand" "f")))]
+@@ -3245,60 +3162,6 @@
+   [(set_attr "type" "simd_fmadd")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvftintrne_w_s"
+-  [(set (match_operand:V8SI 0 "register_operand" "=f")
+-	(unspec:V8SI [(match_operand:V8SF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFTINTRNE_W_S))]
+-  "ISA_HAS_LASX"
+-  "xvftintrne.w.s\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V8SF")])
+-
+-(define_insn "lasx_xvftintrne_l_d"
+-  [(set (match_operand:V4DI 0 "register_operand" "=f")
+-	(unspec:V4DI [(match_operand:V4DF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFTINTRNE_L_D))]
+-  "ISA_HAS_LASX"
+-  "xvftintrne.l.d\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4DF")])
+-
+-(define_insn "lasx_xvftintrp_w_s"
+-  [(set (match_operand:V8SI 0 "register_operand" "=f")
+-	(unspec:V8SI [(match_operand:V8SF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFTINTRP_W_S))]
+-  "ISA_HAS_LASX"
+-  "xvftintrp.w.s\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V8SF")])
+-
+-(define_insn "lasx_xvftintrp_l_d"
+-  [(set (match_operand:V4DI 0 "register_operand" "=f")
+-	(unspec:V4DI [(match_operand:V4DF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFTINTRP_L_D))]
+-  "ISA_HAS_LASX"
+-  "xvftintrp.l.d\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4DF")])
+-
+-(define_insn "lasx_xvftintrm_w_s"
+-  [(set (match_operand:V8SI 0 "register_operand" "=f")
+-	(unspec:V8SI [(match_operand:V8SF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFTINTRM_W_S))]
+-  "ISA_HAS_LASX"
+-  "xvftintrm.w.s\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V8SF")])
+-
+-(define_insn "lasx_xvftintrm_l_d"
+-  [(set (match_operand:V4DI 0 "register_operand" "=f")
+-	(unspec:V4DI [(match_operand:V4DF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFTINTRM_L_D))]
+-  "ISA_HAS_LASX"
+-  "xvftintrm.l.d\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4DF")])
+-
+ (define_insn "lasx_xvftint_w_d"
+   [(set (match_operand:V8SI 0 "register_operand" "=f")
+ 	(unspec:V8SI [(match_operand:V4DF 1 "register_operand" "f")
+@@ -3467,108 +3330,6 @@
+   [(set_attr "type" "simd_shift")
+    (set_attr "mode" "V8SF")])
+ 
+-(define_insn "lasx_xvfrintrne_s"
+-  [(set (match_operand:V8SF 0 "register_operand" "=f")
+-	(unspec:V8SF [(match_operand:V8SF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFRINTRNE_S))]
+-  "ISA_HAS_LASX"
+-  "xvfrintrne.s\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V8SF")])
+-
+-(define_insn "lasx_xvfrintrne_d"
+-  [(set (match_operand:V4DF 0 "register_operand" "=f")
+-	(unspec:V4DF [(match_operand:V4DF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFRINTRNE_D))]
+-  "ISA_HAS_LASX"
+-  "xvfrintrne.d\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4DF")])
+-
+-(define_insn "lasx_xvfrintrz_s"
+-  [(set (match_operand:V8SF 0 "register_operand" "=f")
+-	(unspec:V8SF [(match_operand:V8SF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFRINTRZ_S))]
+-  "ISA_HAS_LASX"
+-  "xvfrintrz.s\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V8SF")])
+-
+-(define_insn "lasx_xvfrintrz_d"
+-  [(set (match_operand:V4DF 0 "register_operand" "=f")
+-	(unspec:V4DF [(match_operand:V4DF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFRINTRZ_D))]
+-  "ISA_HAS_LASX"
+-  "xvfrintrz.d\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4DF")])
+-
+-(define_insn "lasx_xvfrintrp_s"
+-  [(set (match_operand:V8SF 0 "register_operand" "=f")
+-	(unspec:V8SF [(match_operand:V8SF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFRINTRP_S))]
+-  "ISA_HAS_LASX"
+-  "xvfrintrp.s\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V8SF")])
+-
+-(define_insn "lasx_xvfrintrp_d"
+-  [(set (match_operand:V4DF 0 "register_operand" "=f")
+-	(unspec:V4DF [(match_operand:V4DF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFRINTRP_D))]
+-  "ISA_HAS_LASX"
+-  "xvfrintrp.d\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4DF")])
+-
+-(define_insn "lasx_xvfrintrm_s"
+-  [(set (match_operand:V8SF 0 "register_operand" "=f")
+-	(unspec:V8SF [(match_operand:V8SF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFRINTRM_S))]
+-  "ISA_HAS_LASX"
+-  "xvfrintrm.s\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V8SF")])
+-
+-(define_insn "lasx_xvfrintrm_d"
+-  [(set (match_operand:V4DF 0 "register_operand" "=f")
+-	(unspec:V4DF [(match_operand:V4DF 1 "register_operand" "f")]
+-		     UNSPEC_LASX_XVFRINTRM_D))]
+-  "ISA_HAS_LASX"
+-  "xvfrintrm.d\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4DF")])
+-
+-;; Vector versions of the floating-point frint patterns.
+-;; Expands to btrunc, ceil, floor, rint.
+-(define_insn "<FRINT256_S:frint256_pattern_s>v8sf2"
+- [(set (match_operand:V8SF 0 "register_operand" "=f")
+-	(unspec:V8SF [(match_operand:V8SF 1 "register_operand" "f")]
+-			 FRINT256_S))]
+-  "ISA_HAS_LASX"
+-  "xvfrint<FRINT256_S:frint256_suffix>.s\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V8SF")])
+-
+-(define_insn "<FRINT256_D:frint256_pattern_d>v4df2"
+- [(set (match_operand:V4DF 0 "register_operand" "=f")
+-	(unspec:V4DF [(match_operand:V4DF 1 "register_operand" "f")]
+-			 FRINT256_D))]
+-  "ISA_HAS_LASX"
+-  "xvfrint<FRINT256_D:frint256_suffix>.d\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4DF")])
+-
+-;; Expands to round.
+-(define_insn "round<mode>2"
+- [(set (match_operand:FLASX 0 "register_operand" "=f")
+-	(unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
+-			 UNSPEC_LASX_XVFRINT))]
+-  "ISA_HAS_LASX"
+-  "xvfrint.<flasxfmt>\t%u0,%u1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "<MODE>")])
+-
+ ;; Offset load and broadcast
+ (define_expand "lasx_xvldrepl_<lasxfmt_f>"
+   [(match_operand:LASX 0 "register_operand")
+diff --git a/src/gcc/config/loongarch/loongarch-builtins.cc b/src/gcc/config/loongarch/loongarch-builtins.cc
+index 2d9743d86..fb458feac 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -419,8 +419,6 @@ AVAIL_ALL (lasx, ISA_HAS_LASX)
+ #define CODE_FOR_lsx_vabsd_hu CODE_FOR_lsx_vabsd_u_hu
+ #define CODE_FOR_lsx_vabsd_wu CODE_FOR_lsx_vabsd_u_wu
+ #define CODE_FOR_lsx_vabsd_du CODE_FOR_lsx_vabsd_u_du
+-#define CODE_FOR_lsx_vftint_w_s CODE_FOR_lsx_vftint_s_w_s
+-#define CODE_FOR_lsx_vftint_l_d CODE_FOR_lsx_vftint_s_l_d
+ #define CODE_FOR_lsx_vftint_wu_s CODE_FOR_lsx_vftint_u_wu_s
+ #define CODE_FOR_lsx_vftint_lu_d CODE_FOR_lsx_vftint_u_lu_d
+ #define CODE_FOR_lsx_vandn_v CODE_FOR_vandnv16qi3
+@@ -725,8 +723,6 @@ AVAIL_ALL (lasx, ISA_HAS_LASX)
+ #define CODE_FOR_lasx_xvssrlrn_bu_h CODE_FOR_lasx_xvssrlrn_u_bu_h
+ #define CODE_FOR_lasx_xvssrlrn_hu_w CODE_FOR_lasx_xvssrlrn_u_hu_w
+ #define CODE_FOR_lasx_xvssrlrn_wu_d CODE_FOR_lasx_xvssrlrn_u_wu_d
+-#define CODE_FOR_lasx_xvftint_w_s CODE_FOR_lasx_xvftint_s_w_s
+-#define CODE_FOR_lasx_xvftint_l_d CODE_FOR_lasx_xvftint_s_l_d
+ #define CODE_FOR_lasx_xvftint_wu_s CODE_FOR_lasx_xvftint_u_wu_s
+ #define CODE_FOR_lasx_xvftint_lu_d CODE_FOR_lasx_xvftint_u_lu_d
+ #define CODE_FOR_lasx_xvsllwil_h_b CODE_FOR_lasx_xvsllwil_s_h_b
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index c4e7af107..d1c766cbf 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -4026,11 +4026,8 @@
+ (include "generic.md")
+ (include "la464.md")
+ 
+-; The LoongArch SX Instructions.
+-(include "lsx.md")
+-
+-; The LoongArch ASX Instructions.
+-(include "lasx.md")
++; The LoongArch SIMD Instructions.
++(include "simd.md")
+ 
+ (define_c_enum "unspec" [
+   UNSPEC_ADDRESS_FIRST
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 5e8d8d74b..c1c3719e3 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -55,7 +55,6 @@
+   UNSPEC_LSX_VFCMP_SULT
+   UNSPEC_LSX_VFCMP_SUN
+   UNSPEC_LSX_VFCMP_SUNE
+-  UNSPEC_LSX_VFTINT_S
+   UNSPEC_LSX_VFTINT_U
+   UNSPEC_LSX_VSAT_S
+   UNSPEC_LSX_VSAT_U
+@@ -89,9 +88,6 @@
+   UNSPEC_LSX_VEXTRINS
+   UNSPEC_LSX_VMSKLTZ
+   UNSPEC_LSX_VSIGNCOV
+-  UNSPEC_LSX_VFTINTRNE
+-  UNSPEC_LSX_VFTINTRP
+-  UNSPEC_LSX_VFTINTRM
+   UNSPEC_LSX_VFTINT_W_D
+   UNSPEC_LSX_VFFINT_S_L
+   UNSPEC_LSX_VFTINTRZ_W_D
+@@ -110,14 +106,6 @@
+   UNSPEC_LSX_VFTINTRNEL_L_S
+   UNSPEC_LSX_VFTINTRNEH_L_S
+   UNSPEC_LSX_VFTINTH_L_H
+-  UNSPEC_LSX_VFRINTRNE_S
+-  UNSPEC_LSX_VFRINTRNE_D
+-  UNSPEC_LSX_VFRINTRZ_S
+-  UNSPEC_LSX_VFRINTRZ_D
+-  UNSPEC_LSX_VFRINTRP_S
+-  UNSPEC_LSX_VFRINTRP_D
+-  UNSPEC_LSX_VFRINTRM_S
+-  UNSPEC_LSX_VFRINTRM_D
+   UNSPEC_LSX_VSSRARN_S
+   UNSPEC_LSX_VSSRARN_U
+   UNSPEC_LSX_VSSRLN_U
+@@ -221,9 +209,6 @@
+ ;; Only used for copy_{u,s}.w and vilvh.
+ (define_mode_iterator LSX_W    [V4SI V4SF])
+ 
+-;; Only integer modes.
+-(define_mode_iterator ILSX     [V2DI V4SI V8HI V16QI])
+-
+ ;; As ILSX but excludes V16QI.
+ (define_mode_iterator ILSX_DWH [V2DI V4SI V8HI])
+ 
+@@ -242,21 +227,9 @@
+ ;;;; Only integer modes for fixed-point madd_q/maddr_q.
+ ;;(define_mode_iterator ILSX_WH  [V4SI V8HI])
+ 
+-;; Only floating-point modes.
+-(define_mode_iterator FLSX     [V2DF V4SF])
+-
+ ;; Only used for immediate set shuffle elements instruction.
+ (define_mode_iterator LSX_WHB_W [V4SI V8HI V16QI V4SF])
+ 
+-;; The attribute gives the integer vector mode with same size.
+-(define_mode_attr VIMODE
+-  [(V2DF "V2DI")
+-   (V4SF "V4SI")
+-   (V2DI "V2DI")
+-   (V4SI "V4SI")
+-   (V8HI "V8HI")
+-   (V16QI "V16QI")])
+-
+ ;; The attribute gives half modes for vector modes.
+ (define_mode_attr VHMODE
+   [(V8HI "V16QI")
+@@ -400,38 +373,6 @@
+    (V4SI  "uimm5")
+    (V2DI  "uimm6")])
+ 
+-
+-(define_int_iterator FRINT_S [UNSPEC_LSX_VFRINTRP_S
+-			    UNSPEC_LSX_VFRINTRZ_S
+-			    UNSPEC_LSX_VFRINT
+-			    UNSPEC_LSX_VFRINTRM_S])
+-
+-(define_int_iterator FRINT_D [UNSPEC_LSX_VFRINTRP_D
+-			    UNSPEC_LSX_VFRINTRZ_D
+-			    UNSPEC_LSX_VFRINT
+-			    UNSPEC_LSX_VFRINTRM_D])
+-
+-(define_int_attr frint_pattern_s
+-  [(UNSPEC_LSX_VFRINTRP_S  "ceil")
+-   (UNSPEC_LSX_VFRINTRZ_S  "btrunc")
+-   (UNSPEC_LSX_VFRINT	   "rint")
+-   (UNSPEC_LSX_VFRINTRM_S  "floor")])
+-
+-(define_int_attr frint_pattern_d
+-  [(UNSPEC_LSX_VFRINTRP_D  "ceil")
+-   (UNSPEC_LSX_VFRINTRZ_D  "btrunc")
+-   (UNSPEC_LSX_VFRINT	   "rint")
+-   (UNSPEC_LSX_VFRINTRM_D  "floor")])
+-
+-(define_int_attr frint_suffix
+-  [(UNSPEC_LSX_VFRINTRP_S  "rp")
+-   (UNSPEC_LSX_VFRINTRP_D  "rp")
+-   (UNSPEC_LSX_VFRINTRZ_S  "rz")
+-   (UNSPEC_LSX_VFRINTRZ_D  "rz")
+-   (UNSPEC_LSX_VFRINT	   "")
+-   (UNSPEC_LSX_VFRINTRM_S  "rm")
+-   (UNSPEC_LSX_VFRINTRM_D  "rm")])
+-
+ (define_expand "vec_init<mode><unitmode>"
+   [(match_operand:LSX 0 "register_operand")
+    (match_operand:LSX 1 "")]
+@@ -1616,15 +1557,6 @@
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vfrint_<flsxfmt>"
+-  [(set (match_operand:FLSX 0 "register_operand" "=f")
+-	(unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINT))]
+-  "ISA_HAS_LSX"
+-  "vfrint.<flsxfmt>\t%w0,%w1"
+-  [(set_attr "type" "simd_fcvt")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lsx_vfrsqrt_<flsxfmt>"
+   [(set (match_operand:FLSX 0 "register_operand" "=f")
+ 	(unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
+@@ -1634,16 +1566,6 @@
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vftint_s_<ilsxfmt>_<flsxfmt>"
+-  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
+-	(unspec:<VIMODE> [(match_operand:FLSX 1 "register_operand" "f")]
+-			 UNSPEC_LSX_VFTINT_S))]
+-  "ISA_HAS_LSX"
+-  "vftint.<ilsxfmt>.<flsxfmt>\t%w0,%w1"
+-  [(set_attr "type" "simd_fcvt")
+-   (set_attr "cnv_mode" "<FINTCNV_2>")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lsx_vftint_u_<ilsxfmt_u>_<flsxfmt>"
+   [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
+ 	(unspec:<VIMODE> [(match_operand:FLSX 1 "register_operand" "f")]
+@@ -1654,15 +1576,6 @@
+    (set_attr "cnv_mode" "<FINTCNV_2>")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "fix_trunc<FLSX:mode><mode_i>2"
+-  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
+-	(fix:<VIMODE> (match_operand:FLSX 1 "register_operand" "f")))]
+-  "ISA_HAS_LSX"
+-  "vftintrz.<ilsxfmt>.<flsxfmt>\t%w0,%w1"
+-  [(set_attr "type" "simd_fcvt")
+-   (set_attr "cnv_mode" "<FINTCNV_2>")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "fixuns_trunc<FLSX:mode><mode_i>2"
+   [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
+ 	(unsigned_fix:<VIMODE> (match_operand:FLSX 1 "register_operand" "f")))]
+@@ -2965,60 +2878,6 @@
+   [(set_attr "type" "simd_fmadd")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vftintrne_w_s"
+-  [(set (match_operand:V4SI 0 "register_operand" "=f")
+-	(unspec:V4SI [(match_operand:V4SF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFTINTRNE))]
+-  "ISA_HAS_LSX"
+-  "vftintrne.w.s\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4SF")])
+-
+-(define_insn "lsx_vftintrne_l_d"
+-  [(set (match_operand:V2DI 0 "register_operand" "=f")
+-	(unspec:V2DI [(match_operand:V2DF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFTINTRNE))]
+-  "ISA_HAS_LSX"
+-  "vftintrne.l.d\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V2DF")])
+-
+-(define_insn "lsx_vftintrp_w_s"
+-  [(set (match_operand:V4SI 0 "register_operand" "=f")
+-	(unspec:V4SI [(match_operand:V4SF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFTINTRP))]
+-  "ISA_HAS_LSX"
+-  "vftintrp.w.s\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4SF")])
+-
+-(define_insn "lsx_vftintrp_l_d"
+-  [(set (match_operand:V2DI 0 "register_operand" "=f")
+-	(unspec:V2DI [(match_operand:V2DF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFTINTRP))]
+-  "ISA_HAS_LSX"
+-  "vftintrp.l.d\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V2DF")])
+-
+-(define_insn "lsx_vftintrm_w_s"
+-  [(set (match_operand:V4SI 0 "register_operand" "=f")
+-	(unspec:V4SI [(match_operand:V4SF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFTINTRM))]
+-  "ISA_HAS_LSX"
+-  "vftintrm.w.s\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4SF")])
+-
+-(define_insn "lsx_vftintrm_l_d"
+-  [(set (match_operand:V2DI 0 "register_operand" "=f")
+-	(unspec:V2DI [(match_operand:V2DF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFTINTRM))]
+-  "ISA_HAS_LSX"
+-  "vftintrm.l.d\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V2DF")])
+-
+ (define_insn "lsx_vftint_w_d"
+   [(set (match_operand:V4SI 0 "register_operand" "=f")
+ 	(unspec:V4SI [(match_operand:V2DF 1 "register_operand" "f")
+@@ -3187,108 +3046,6 @@
+   [(set_attr "type" "simd_shift")
+    (set_attr "mode" "V4SF")])
+ 
+-(define_insn "lsx_vfrintrne_s"
+-  [(set (match_operand:V4SF 0 "register_operand" "=f")
+-	(unspec:V4SF [(match_operand:V4SF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINTRNE_S))]
+-  "ISA_HAS_LSX"
+-  "vfrintrne.s\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4SF")])
+-
+-(define_insn "lsx_vfrintrne_d"
+-  [(set (match_operand:V2DF 0 "register_operand" "=f")
+-	(unspec:V2DF [(match_operand:V2DF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINTRNE_D))]
+-  "ISA_HAS_LSX"
+-  "vfrintrne.d\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V2DF")])
+-
+-(define_insn "lsx_vfrintrz_s"
+-  [(set (match_operand:V4SF 0 "register_operand" "=f")
+-	(unspec:V4SF [(match_operand:V4SF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINTRZ_S))]
+-  "ISA_HAS_LSX"
+-  "vfrintrz.s\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4SF")])
+-
+-(define_insn "lsx_vfrintrz_d"
+-  [(set (match_operand:V2DF 0 "register_operand" "=f")
+-	(unspec:V2DF [(match_operand:V2DF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINTRZ_D))]
+-  "ISA_HAS_LSX"
+-  "vfrintrz.d\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V2DF")])
+-
+-(define_insn "lsx_vfrintrp_s"
+-  [(set (match_operand:V4SF 0 "register_operand" "=f")
+-	(unspec:V4SF [(match_operand:V4SF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINTRP_S))]
+-  "ISA_HAS_LSX"
+-  "vfrintrp.s\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4SF")])
+-
+-(define_insn "lsx_vfrintrp_d"
+-  [(set (match_operand:V2DF 0 "register_operand" "=f")
+-	(unspec:V2DF [(match_operand:V2DF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINTRP_D))]
+-  "ISA_HAS_LSX"
+-  "vfrintrp.d\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V2DF")])
+-
+-(define_insn "lsx_vfrintrm_s"
+-  [(set (match_operand:V4SF 0 "register_operand" "=f")
+-	(unspec:V4SF [(match_operand:V4SF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINTRM_S))]
+-  "ISA_HAS_LSX"
+-  "vfrintrm.s\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4SF")])
+-
+-(define_insn "lsx_vfrintrm_d"
+-  [(set (match_operand:V2DF 0 "register_operand" "=f")
+-	(unspec:V2DF [(match_operand:V2DF 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRINTRM_D))]
+-  "ISA_HAS_LSX"
+-  "vfrintrm.d\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V2DF")])
+-
+-;; Vector versions of the floating-point frint patterns.
+-;; Expands to btrunc, ceil, floor, rint.
+-(define_insn "<FRINT_S:frint_pattern_s>v4sf2"
+- [(set (match_operand:V4SF 0 "register_operand" "=f")
+-	(unspec:V4SF [(match_operand:V4SF 1 "register_operand" "f")]
+-			 FRINT_S))]
+-  "ISA_HAS_LSX"
+-  "vfrint<FRINT_S:frint_suffix>.s\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V4SF")])
+-
+-(define_insn "<FRINT_D:frint_pattern_d>v2df2"
+- [(set (match_operand:V2DF 0 "register_operand" "=f")
+-	(unspec:V2DF [(match_operand:V2DF 1 "register_operand" "f")]
+-			 FRINT_D))]
+-  "ISA_HAS_LSX"
+-  "vfrint<FRINT_D:frint_suffix>.d\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "V2DF")])
+-
+-;; Expands to round.
+-(define_insn "round<mode>2"
+- [(set (match_operand:FLSX 0 "register_operand" "=f")
+-	(unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
+-			 UNSPEC_LSX_VFRINT))]
+-  "ISA_HAS_LSX"
+-  "vfrint.<flsxfrint>\t%w0,%w1"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "<MODE>")])
+-
+ ;; Offset load and broadcast
+ (define_expand "lsx_vldrepl_<lsxfmt_f>"
+   [(match_operand:LSX 0 "register_operand")
+diff --git a/src/gcc/config/loongarch/simd.md b/src/gcc/config/loongarch/simd.md
+new file mode 100644
+index 000000000..27d1ffecd
+--- /dev/null
++++ b/src/gcc/config/loongarch/simd.md
+@@ -0,0 +1,213 @@
++;; Machine Description for LoongArch SIMD instructions for GNU compiler.
++;; Copyright (C) 2023 Free Software Foundation, Inc.
++
++;; This file is part of GCC.
++
++;; GCC is free software; you can redistribute it and/or modify
++;; it under the terms of the GNU General Public License as published by
++;; the Free Software Foundation; either version 3, or (at your option)
++;; any later version.
++
++;; GCC is distributed in the hope that it will be useful,
++;; but WITHOUT ANY WARRANTY; without even the implied warranty of
++;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++;; GNU General Public License for more details.
++
++;; You should have received a copy of the GNU General Public License
++;; along with GCC; see the file COPYING3.  If not see
++;; <http://www.gnu.org/licenses/>.
++
++;; Integer modes supported by LSX.
++(define_mode_iterator ILSX    [V2DI V4SI V8HI V16QI])
++
++;; Integer modes supported by LASX.
++(define_mode_iterator ILASX   [V4DI V8SI V16HI V32QI])
++
++;; FP modes supported by LSX
++(define_mode_iterator FLSX    [V2DF V4SF])
++
++;; FP modes supported by LASX
++(define_mode_iterator FLASX   [V4DF V8SF])
++
++;; All integer modes available
++(define_mode_iterator IVEC    [(ILSX "ISA_HAS_LSX") (ILASX "ISA_HAS_LASX")])
++
++;; All FP modes available
++(define_mode_iterator FVEC    [(FLSX "ISA_HAS_LSX") (FLASX "ISA_HAS_LASX")])
++
++;; Mnemonic prefix, "x" for LASX modes.
++(define_mode_attr x [(V2DI "") (V4SI "") (V8HI "") (V16QI "")
++		     (V2DF "") (V4SF "")
++		     (V4DI "x") (V8SI "x") (V16HI "x") (V32QI "x")
++		     (V4DF "x") (V8SF "x")])
++
++;; Modifier for vector register, "w" for LSX modes, "u" for LASX modes.
++(define_mode_attr wu [(V2DI "w") (V4SI "w") (V8HI "w") (V16QI "w")
++		      (V2DF "w") (V4SF "w")
++		      (V4DI "u") (V8SI "u") (V16HI "u") (V32QI "u")
++		      (V4DF "u") (V8SF "u")])
++
++;; define_insn name prefix, "lsx" or "lasx"
++(define_mode_attr simd_isa
++  [(V2DI "lsx") (V4SI "lsx") (V8HI "lsx") (V16QI "lsx")
++   (V2DF "lsx") (V4SF "lsx")
++   (V4DI "lasx") (V8SI "lasx") (V16HI "lasx") (V32QI "lasx")
++   (V4DF "lasx") (V8SF "lasx")])
++
++;; Widen integer modes for intermediate values in RTX pattern.
++(define_mode_attr WVEC [(V2DI "V2TI") (V4DI "V4TI")
++			(V4SI "V4DI") (V8SI "V8DI")
++			(V8HI "V8SI") (V16HI "V16SI")
++			(V16QI "V16HI") (V32QI "V32HI")])
++
++;; Integer vector modes with the same length and unit size as a mode.
++(define_mode_attr VIMODE [(V2DI "V2DI") (V4SI "V4SI")
++			  (V8HI "V8HI") (V16QI "V16QI")
++			  (V2DF "V2DI") (V4SF "V4SI")
++			  (V4DI "V4DI") (V8SI "V8SI")
++			  (V16HI "V16HI") (V32QI "V32QI")
++			  (V4DF "V4DI") (V8SF "V8SI")])
++
++;; Lower-case version.
++(define_mode_attr vimode [(V2DF "v2di") (V4SF "v4si")
++			  (V4DF "v4di") (V8SF "v8si")])
++
++;; Suffix for LSX or LASX instructions.
++(define_mode_attr simdfmt [(V2DF "d") (V4DF "d")
++			   (V4SF "s") (V8SF "s")
++			   (V2DI "d") (V4DI "d")
++			   (V4SI "w") (V8SI "w")
++			   (V8HI "h") (V16HI "h")
++			   (V16QI "b") (V32QI "b")])
++
++;; Suffix for integer mode in LSX or LASX instructions with FP input but
++;; integer output.
++(define_mode_attr simdifmt_for_f [(V2DF "l") (V4DF "l")
++				  (V4SF "w") (V8SF "w")])
++
++;; Size of vector elements in bits.
++(define_mode_attr elmbits [(V2DI "64") (V4DI "64")
++			   (V4SI "32") (V8SI "32")
++			   (V8HI "16") (V16HI "16")
++			   (V16QI "8") (V32QI "8")])
++
++;; =======================================================================
++;; For many LASX instructions, the only difference of it from the LSX
++;; counterpart is the length of vector operands.  Describe these LSX/LASX
++;; instruction here so we can avoid duplicating logics.
++;; =======================================================================
++
++;;
++;; FP vector rounding instructions
++;;
++
++(define_c_enum "unspec"
++  [UNSPEC_SIMD_FRINTRP
++   UNSPEC_SIMD_FRINTRZ
++   UNSPEC_SIMD_FRINT
++   UNSPEC_SIMD_FRINTRM
++   UNSPEC_SIMD_FRINTRNE])
++
++(define_int_iterator SIMD_FRINT
++  [UNSPEC_SIMD_FRINTRP
++   UNSPEC_SIMD_FRINTRZ
++   UNSPEC_SIMD_FRINT
++   UNSPEC_SIMD_FRINTRM
++   UNSPEC_SIMD_FRINTRNE])
++
++(define_int_attr simd_frint_rounding
++  [(UNSPEC_SIMD_FRINTRP		"rp")
++   (UNSPEC_SIMD_FRINTRZ		"rz")
++   (UNSPEC_SIMD_FRINT		"")
++   (UNSPEC_SIMD_FRINTRM		"rm")
++   (UNSPEC_SIMD_FRINTRNE	"rne")])
++
++;; All these, but rint, are controlled by -ffp-int-builtin-inexact.
++;; Note: nearbyint is NOT allowed to raise FE_INEXACT even if
++;; -ffp-int-builtin-inexact, but rint is ALLOWED to raise it even if
++;; -fno-fp-int-builtin-inexact.
++(define_int_attr simd_frint_pattern
++  [(UNSPEC_SIMD_FRINTRP		"ceil")
++   (UNSPEC_SIMD_FRINTRZ		"btrunc")
++   (UNSPEC_SIMD_FRINT		"rint")
++   (UNSPEC_SIMD_FRINTRNE	"roundeven")
++   (UNSPEC_SIMD_FRINTRM		"floor")])
++
++;; <x>vfrint.{/rp/rz/rm}
++(define_insn "<simd_isa>_<x>vfrint<simd_frint_rounding>_<simdfmt>"
++  [(set (match_operand:FVEC 0 "register_operand" "=f")
++	(unspec:FVEC [(match_operand:FVEC 1 "register_operand" "f")]
++		     SIMD_FRINT))]
++  ""
++  "<x>vfrint<simd_frint_rounding>.<simdfmt>\t%<wu>0,%<wu>1"
++  [(set_attr "type" "simd_fcvt")
++   (set_attr "mode" "<MODE>")])
++
++;; Expand the standard-named patterns to <x>vfrint instructions if
++;; raising inexact exception is allowed.
++
++(define_expand "<simd_frint_pattern><mode>2"
++  [(set (match_operand:FVEC 0 "register_operand" "=f")
++	(unspec:FVEC [(match_operand:FVEC 1 "register_operand" "f")]
++		     SIMD_FRINT))]
++   "<SIMD_FRINT> == UNSPEC_SIMD_FRINT ||
++    flag_fp_int_builtin_inexact ||
++    !flag_trapping_math")
++
++;; ftrunc is like btrunc, but it's allowed to raise inexact exception
++;; even if -fno-fp-int-builtin-inexact.
++(define_expand "ftrunc<mode>2"
++  [(set (match_operand:FVEC 0 "register_operand" "=f")
++	(unspec:FVEC [(match_operand:FVEC 1 "register_operand" "f")]
++		     UNSPEC_SIMD_FRINTRZ))]
++  "")
++
++;; <x>vftint.{/rp/rz/rm}
++(define_insn
++  "<simd_isa>_<x>vftint<simd_frint_rounding>_<simdifmt_for_f>_<simdfmt>"
++  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
++	(fix:<VIMODE>
++	  (unspec:FVEC [(match_operand:FVEC 1 "register_operand" "f")]
++		       SIMD_FRINT)))]
++  ""
++  "<x>vftint<simd_frint_rounding>.<simdifmt_for_f>.<simdfmt>\t%<wu>0,%<wu>1"
++  [(set_attr "type" "simd_fcvt")
++   (set_attr "mode" "<MODE>")])
++
++;; Expand the standard-named patterns to <x>vftint instructions if
++;; raising inexact exception.
++
++(define_expand "l<simd_frint_pattern><mode><vimode>2"
++  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
++	(fix:<VIMODE>
++	  (unspec:FVEC [(match_operand:FVEC 1 "register_operand" "f")]
++		       SIMD_FRINT)))]
++   "<SIMD_FRINT> == UNSPEC_SIMD_FRINT ||
++    flag_fp_int_builtin_inexact ||
++    !flag_trapping_math")
++
++;; fix_trunc is allowed to raise inexact exception even if
++;; -fno-fp-int-builtin-inexact.  Because the middle end trys to match
++;; (FIX x) and it does not know (FIX (UNSPEC_SIMD_FRINTRZ x)), we need
++;; to use define_insn_and_split instead of define_expand (expanders are
++;; not considered during matching).
++(define_insn_and_split "fix_trunc<mode><vimode>2"
++  [(set (match_operand:<VIMODE> 0 "register_operand" "=f")
++	(fix:<VIMODE> (match_operand:FVEC 1 "register_operand" "f")))]
++  ""
++  "#"
++  ""
++  [(const_int 0)]
++  {
++    emit_insn (gen_<simd_isa>_<x>vftintrz_<simdifmt_for_f>_<simdfmt> (
++      operands[0], operands[1]));
++    DONE;
++  }
++  [(set_attr "type" "simd_fcvt")
++   (set_attr "mode" "<MODE>")])
++
++; The LoongArch SX Instructions.
++(include "lsx.md")
++
++; The LoongArch ASX Instructions.
++(include "lasx.md")
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-frint-no-inexact.c b/src/gcc/testsuite/gcc.target/loongarch/vect-frint-no-inexact.c
+new file mode 100644
+index 000000000..7bbaf1fba
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-frint-no-inexact.c
+@@ -0,0 +1,48 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -fno-fp-int-builtin-inexact -mlasx" } */
++
++#include "vect-frint.c"
++
++/* ceil */
++/* { dg-final { scan-assembler "bl\t%plt\\(ceil\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(ceilf\\)" } } */
++/* { dg-final { scan-assembler-not "\tvfrintrp\.s" } } */
++/* { dg-final { scan-assembler-not "\tvfrintrp\.d" } } */
++/* { dg-final { scan-assembler-not "\txvfrintrp\.s" } } */
++/* { dg-final { scan-assembler-not "\txvfrintrp\.d" } } */
++
++/* floor */
++/* { dg-final { scan-assembler "bl\t%plt\\(floor\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(floorf\\)" } } */
++/* { dg-final { scan-assembler-not "\tvfrintrm\.s" } } */
++/* { dg-final { scan-assembler-not "\tvfrintrm\.d" } } */
++/* { dg-final { scan-assembler-not "\txvfrintrm\.s" } } */
++/* { dg-final { scan-assembler-not "\txvfrintrm\.d" } } */
++
++/* nearbyint + rint: Only rint is allowed */
++/* { dg-final { scan-assembler "bl\t%plt\\(nearbyint\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(nearbyintf\\)" } } */
++/* { dg-final { scan-assembler-times "\tvfrint\.s" 1 } } */
++/* { dg-final { scan-assembler-times "\tvfrint\.d" 1 } } */
++/* { dg-final { scan-assembler-times "\txvfrint\.s" 1 } } */
++/* { dg-final { scan-assembler-times "\txvfrint\.d" 1 } } */
++
++/* round: we don't have a corresponding instruction */
++/* { dg-final { scan-assembler "bl\t%plt\\(round\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(roundf\\)" } } */
++
++/* roundeven */
++/* { dg-final { scan-assembler "bl\t%plt\\(roundeven\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(roundevenf\\)" } } */
++/* { dg-final { scan-assembler-not "\tvfrintrne\.s" } } */
++/* { dg-final { scan-assembler-not "\tvfrintrne\.d" } } */
++/* { dg-final { scan-assembler-not "\txvfrintrne\.s" } } */
++/* { dg-final { scan-assembler-not "\txvfrintrne\.d" } } */
++
++/* trunc */
++/* { dg-final { scan-assembler "bl\t%plt\\(trunc\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(truncf\\)" } } */
++/* { dg-final { scan-assembler-not "\tvfrintrz\.s" } } */
++/* { dg-final { scan-assembler-not "\tvfrintrz\.d" } } */
++/* { dg-final { scan-assembler-not "\txvfrintrz\.s" } } */
++/* { dg-final { scan-assembler-not "\txvfrintrz\.d" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-frint.c b/src/gcc/testsuite/gcc.target/loongarch/vect-frint.c
+new file mode 100644
+index 000000000..6bf211e7e
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-frint.c
+@@ -0,0 +1,85 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -ffp-int-builtin-inexact -mlasx" } */
++
++float out_x[8];
++double out_y[4];
++
++float x[8];
++double y[4];
++
++#define TEST(op, N, func) \
++void \
++test_##op##_##N##_##func () \
++{ \
++  for (int i = 0; i < N; i++) \
++    out_##op[i] = __builtin_##func (op[i]); \
++}
++
++TEST(x, 4, ceilf);
++TEST(x, 4, floorf);
++TEST(x, 4, nearbyintf);
++TEST(x, 4, rintf);
++TEST(x, 4, roundf);
++TEST(x, 4, roundevenf);
++TEST(x, 4, truncf);
++
++TEST(x, 8, ceilf);
++TEST(x, 8, floorf);
++TEST(x, 8, nearbyintf);
++TEST(x, 8, rintf);
++TEST(x, 8, roundf);
++TEST(x, 8, roundevenf);
++TEST(x, 8, truncf);
++
++TEST(y, 2, ceil);
++TEST(y, 2, floor);
++TEST(y, 2, nearbyint);
++TEST(y, 2, rint);
++TEST(y, 2, round);
++TEST(y, 2, roundeven);
++TEST(y, 2, trunc);
++
++TEST(y, 4, ceil);
++TEST(y, 4, floor);
++TEST(y, 4, nearbyint);
++TEST(y, 4, rint);
++TEST(y, 4, round);
++TEST(y, 4, roundeven);
++TEST(y, 4, trunc);
++
++/* ceil */
++/* { dg-final { scan-assembler "\tvfrintrp\.s" } } */
++/* { dg-final { scan-assembler "\tvfrintrp\.d" } } */
++/* { dg-final { scan-assembler "\txvfrintrp\.s" } } */
++/* { dg-final { scan-assembler "\txvfrintrp\.d" } } */
++
++/* floor */
++/* { dg-final { scan-assembler "\tvfrintrm\.s" } } */
++/* { dg-final { scan-assembler "\tvfrintrm\.d" } } */
++/* { dg-final { scan-assembler "\txvfrintrm\.s" } } */
++/* { dg-final { scan-assembler "\txvfrintrm\.d" } } */
++
++/* rint and nearbyint
++   nearbyint has been disallowed to raise FE_INEXACT for decades.  */
++/* { dg-final { scan-assembler-times "\tvfrint\.s" 1 } } */
++/* { dg-final { scan-assembler-times "\tvfrint\.d" 1 } } */
++/* { dg-final { scan-assembler-times "\txvfrint\.s" 1 } } */
++/* { dg-final { scan-assembler-times "\txvfrint\.d" 1 } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(nearbyint\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(nearbyintf\\)" } } */
++
++/* round: we don't have a corresponding instruction */
++/* { dg-final { scan-assembler "bl\t%plt\\(round\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(roundf\\)" } } */
++
++/* roundeven */
++/* { dg-final { scan-assembler "\tvfrintrne\.s" } } */
++/* { dg-final { scan-assembler "\tvfrintrne\.d" } } */
++/* { dg-final { scan-assembler "\txvfrintrne\.s" } } */
++/* { dg-final { scan-assembler "\txvfrintrne\.d" } } */
++
++/* trunc */
++/* { dg-final { scan-assembler "\tvfrintrz\.s" } } */
++/* { dg-final { scan-assembler "\tvfrintrz\.d" } } */
++/* { dg-final { scan-assembler "\txvfrintrz\.s" } } */
++/* { dg-final { scan-assembler "\txvfrintrz\.d" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c b/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
+new file mode 100644
+index 000000000..83d268099
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
+@@ -0,0 +1,44 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -fno-fp-int-builtin-inexact -mlasx" } */
++
++#include "vect-ftint.c"
++
++/* ceil */
++/* { dg-final { scan-assembler "bl\t%plt\\(ceil\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(ceilf\\)" } } */
++/* { dg-final { scan-assembler-not "\tvftintrp\.w\.s" } } */
++/* { dg-final { scan-assembler-not "\tvftintrp\.l\.d" } } */
++/* { dg-final { scan-assembler-not "\txvftintrp\.w\.s" } } */
++/* { dg-final { scan-assembler-not "\txvftintrp\.l\.d" } } */
++
++/* floor */
++/* { dg-final { scan-assembler "bl\t%plt\\(floor\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(floorf\\)" } } */
++/* { dg-final { scan-assembler-not "\tvftintrm\.w\.s" } } */
++/* { dg-final { scan-assembler-not "\tvftintrm\.l\.d" } } */
++/* { dg-final { scan-assembler-not "\txvftintrm\.w\.s" } } */
++/* { dg-final { scan-assembler-not "\txvftintrm\.l\.d" } } */
++
++/* nearbyint + rint */
++/* { dg-final { scan-assembler "bl\t%plt\\(floor\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(floorf\\)" } } */
++/* { dg-final { scan-assembler-times "\tvftint\.w\.s" 1 } } */
++/* { dg-final { scan-assembler-times "\tvftint\.l\.d" 1 } } */
++/* { dg-final { scan-assembler-times "\txvftint\.w\.s" 1 } } */
++/* { dg-final { scan-assembler-times "\txvftint\.l\.d" 1 } } */
++
++/* round: we don't have a corresponding instruction */
++/* { dg-final { scan-assembler "bl\t%plt\\(lround\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(roundf\\)" } } */
++
++/* roundeven */
++/* { dg-final { scan-assembler "bl\t%plt\\(roundeven\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(roundevenf\\)" } } */
++/* { dg-final { scan-assembler-not "\tvftintrne\.w\.s" } } */
++/* { dg-final { scan-assembler-not "\tvftintrne\.l\.d" } } */
++/* { dg-final { scan-assembler-not "\txvftintrne\.w\.s" } } */
++/* { dg-final { scan-assembler-not "\txvftintrne\.l\.d" } } */
++
++/* trunc: XFAIL due to PR 107723 */
++/* { dg-final { scan-assembler "bl\t%plt\\(trunc\\)" { xfail *-*-* } } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(truncf\\)" } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-ftint.c b/src/gcc/testsuite/gcc.target/loongarch/vect-ftint.c
+new file mode 100644
+index 000000000..c4962ed17
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-ftint.c
+@@ -0,0 +1,83 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -ffp-int-builtin-inexact -mlasx" } */
++
++int out_x[8];
++long out_y[4];
++
++float x[8];
++double y[4];
++
++#define TEST(op, N, func) \
++void \
++test_##op##_##N##_##func () \
++{ \
++  for (int i = 0; i < N; i++) \
++    out_##op[i] = __builtin_##func (op[i]); \
++}
++
++TEST(x, 4, ceilf);
++TEST(x, 4, floorf);
++TEST(x, 4, nearbyintf);
++TEST(x, 4, rintf);
++TEST(x, 4, roundf);
++TEST(x, 4, roundevenf);
++TEST(x, 4, truncf);
++
++TEST(x, 8, ceilf);
++TEST(x, 8, floorf);
++TEST(x, 8, nearbyintf);
++TEST(x, 8, rintf);
++TEST(x, 8, roundf);
++TEST(x, 8, roundevenf);
++TEST(x, 8, truncf);
++
++TEST(y, 2, ceil);
++TEST(y, 2, floor);
++TEST(y, 2, nearbyint);
++TEST(y, 2, rint);
++TEST(y, 2, round);
++TEST(y, 2, roundeven);
++TEST(y, 2, trunc);
++
++TEST(y, 4, ceil);
++TEST(y, 4, floor);
++TEST(y, 4, nearbyint);
++TEST(y, 4, rint);
++TEST(y, 4, round);
++TEST(y, 4, roundeven);
++TEST(y, 4, trunc);
++
++/* ceil */
++/* { dg-final { scan-assembler "\tvftintrp\.w\.s" } } */
++/* { dg-final { scan-assembler "\tvftintrp\.l\.d" } } */
++/* { dg-final { scan-assembler "\txvftintrp\.w\.s" } } */
++/* { dg-final { scan-assembler "\txvftintrp\.l\.d" } } */
++
++/* floor */
++/* { dg-final { scan-assembler "\tvftintrm\.w\.s" } } */
++/* { dg-final { scan-assembler "\tvftintrm\.l\.d" } } */
++/* { dg-final { scan-assembler "\txvftintrm\.w\.s" } } */
++/* { dg-final { scan-assembler "\txvftintrm\.l\.d" } } */
++
++/* rint and nearbyint
++   nearbyint has been disallowed to raise FE_INEXACT for decades.  */
++/* { dg-final { scan-assembler-times "\tvftint\.w\.s" 1 } } */
++/* { dg-final { scan-assembler-times "\tvftint\.l\.d" 1 } } */
++/* { dg-final { scan-assembler-times "\txvftint\.w\.s" 1 } } */
++/* { dg-final { scan-assembler-times "\txvftint\.l\.d" 1 } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(nearbyint\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(nearbyintf\\)" } } */
++
++/* round: we don't have a corresponding instruction */
++/* { dg-final { scan-assembler "bl\t%plt\\(lround\\)" } } */
++/* { dg-final { scan-assembler "bl\t%plt\\(roundf\\)" } } */
++
++/* roundeven */
++/* { dg-final { scan-assembler "\tvftintrne\.w\.s" } } */
++/* { dg-final { scan-assembler "\tvftintrne\.l\.d" } } */
++/* { dg-final { scan-assembler "\txvftintrne\.w\.s" } } */
++/* { dg-final { scan-assembler "\txvftintrne\.l\.d" } } */
++
++/* trunc */
++/* { dg-final { scan-assembler-not "bl\t%plt\\(trunc\\)" } } */
++/* { dg-final { scan-assembler-not "bl\t%plt\\(truncf\\)" } } */
+-- 
+2.45.2
+

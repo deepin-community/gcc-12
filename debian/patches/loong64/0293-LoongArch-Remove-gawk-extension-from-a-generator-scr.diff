@@ -1,0 +1,47 @@
+From 98f10103d8c2f585c487104f8541a44e3227461c Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Tue, 23 Jul 2024 10:04:26 +0800
+Subject: [PATCH 293/301] LoongArch: Remove gawk extension from a generator
+ script.
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/gen-evolution.awk: Do not use
+	"length()" to compute the size of an array.
+---
+ src/gcc/config/loongarch/genopts/gen-evolution.awk | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/genopts/gen-evolution.awk b/src/gcc/config/loongarch/genopts/gen-evolution.awk
+index 4d105afa9..1c8004e41 100644
+--- a/src/gcc/config/loongarch/genopts/gen-evolution.awk
++++ b/src/gcc/config/loongarch/genopts/gen-evolution.awk
+@@ -1,4 +1,4 @@
+-#!/usr/bin/gawk
++#!/usr/bin/awk -f
+ #
+ # A simple script that generates loongarch-evolution.h
+ # from genopts/isa-evolution.in
+@@ -94,8 +94,9 @@ function gen_cpucfg_useful_idx()
+         idx_bucket[cpucfg_word[i]] = 1
+ 
+     delete idx_list
++    j = 1
+     for (i in idx_bucket)
+-        idx_list[length(idx_list)-1] = i+0
++        idx_list[j++] = i+0
+     delete idx_bucket
+ 
+     asort (idx_list)
+@@ -108,7 +109,7 @@ function gen_cpucfg_useful_idx()
+     print ""
+ 
+     printf ("static constexpr int N_CPUCFG_WORDS = %d;\n",
+-            idx_list[length(idx_list)] + 1)
++            idx_list[j - 1] + 1)
+ 
+     delete idx_list
+ }
+-- 
+2.45.2
+

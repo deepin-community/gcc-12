@@ -1,0 +1,69 @@
+From 8b70a2ae9b015e9e3df0a6223d6edd3177c021a9 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Wed, 13 Sep 2023 11:01:34 +0800
+Subject: [PATCH 115/301] LoongArch: Change the value of branch_cost from 2 to
+ 6.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-def.c: Modify the default value of
+	branch_cost.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/cmov_ii.c: New test.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/loongarch-def.c         |  4 ++--
+ src/gcc/testsuite/gcc.target/loongarch/cmov_ii.c | 15 +++++++++++++++
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/cmov_ii.c
+
+diff --git a/src/gcc/config/loongarch/loongarch-def.c b/src/gcc/config/loongarch/loongarch-def.c
+index d29d5f001..eeb32dbf6 100644
+--- a/src/gcc/config/loongarch/loongarch-def.c
++++ b/src/gcc/config/loongarch/loongarch-def.c
+@@ -85,7 +85,7 @@ loongarch_cpu_align[N_TUNE_TYPES] = {
+     .int_mult_di	= COSTS_N_INSNS (1),	\
+     .int_div_si		= COSTS_N_INSNS (4),	\
+     .int_div_di		= COSTS_N_INSNS (6),	\
+-    .branch_cost	= 2,			\
++    .branch_cost	= 6,			\
+     .memory_latency	= 4
+ 
+ /* The following properties cannot be looked up directly using "cpucfg".
+@@ -118,7 +118,7 @@ loongarch_rtx_cost_optimize_size = {
+     .int_mult_di      = 4,
+     .int_div_si	      = 4,
+     .int_div_di	      = 4,
+-    .branch_cost      = 2,
++    .branch_cost      = 6,
+     .memory_latency   = 4,
+ };
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/cmov_ii.c b/src/gcc/testsuite/gcc.target/loongarch/cmov_ii.c
+new file mode 100644
+index 000000000..21b468e8a
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/cmov_ii.c
+@@ -0,0 +1,15 @@
++/* { dg-do compile } */
++/* { dg-options "-O2" } */
++/* { dg-final { scan-assembler "test:.*xor.*maskeqz.*masknez.*or.*" } } */
++
++extern void foo_ii (int *, int *, int *, int *);
++
++int
++test (void)
++{
++  int a, b;
++  int c, d, out;
++  foo_ii (&a, &b, &c, &d);
++  out = a == b ? c : d;
++  return out;
++}
+-- 
+2.45.2
+

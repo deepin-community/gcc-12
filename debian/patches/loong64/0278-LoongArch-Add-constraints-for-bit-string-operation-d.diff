@@ -1,0 +1,120 @@
+From 16cf6a8aa9bff9f0a9d0c17f8932f65e643ddcab Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 26 Apr 2024 15:59:11 +0800
+Subject: [PATCH 278/301] LoongArch: Add constraints for bit string operation
+ define_insn_and_split's [PR114861]
+
+Without the constrants, the compiler attempts to use a stack slot as the
+target, causing an ICE building the kernel with -Os:
+
+    drivers/gpu/drm/amd/amdgpu/gfx_v6_0.c:3144:1:
+    error: could not split insn
+    (insn:TI 1764 67 1745
+      (set (mem/c:DI (reg/f:DI 3 $r3) [707 %sfp+-80 S8 A64])
+           (and:DI (reg/v:DI 28 $r28 [orig:422 raster_config ] [422])
+                   (const_int -50331649 [0xfffffffffcffffff])))
+      "drivers/gpu/drm/amd/amdgpu/gfx_v6_0.c":1386:21 111
+      {*bstrins_di_for_mask}
+      (nil))
+
+Add these constrants to fix the issue.
+
+gcc/ChangeLog:
+
+	PR target/114861
+	* config/loongarch/loongarch.md (bstrins_<mode>_for_mask): Add
+	constraints for operands.
+	(bstrins_<mode>_for_ior_mask): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/114861
+	* gcc.target/loongarch/pr114861.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.md         | 16 ++++----
+ .../testsuite/gcc.target/loongarch/pr114861.c | 39 +++++++++++++++++++
+ 2 files changed, 47 insertions(+), 8 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/pr114861.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 95beb88fe..20494ce8a 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -1543,9 +1543,9 @@
+    (set_attr "mode" "<MODE>")])
+ 
+ (define_insn_and_split "*bstrins_<mode>_for_mask"
+-  [(set (match_operand:GPR 0 "register_operand")
+-	(and:GPR (match_operand:GPR 1 "register_operand")
+-		 (match_operand:GPR 2 "ins_zero_bitmask_operand")))]
++  [(set (match_operand:GPR 0 "register_operand" "=r")
++	(and:GPR (match_operand:GPR 1 "register_operand" "r")
++		 (match_operand:GPR 2 "ins_zero_bitmask_operand" "i")))]
+   ""
+   "#"
+   ""
+@@ -1563,11 +1563,11 @@
+   })
+ 
+ (define_insn_and_split "*bstrins_<mode>_for_ior_mask"
+-  [(set (match_operand:GPR 0 "register_operand")
+-	(ior:GPR (and:GPR (match_operand:GPR 1 "register_operand")
+-                          (match_operand:GPR 2 "const_int_operand"))
+-		 (and:GPR (match_operand:GPR 3 "register_operand")
+-			  (match_operand:GPR 4 "const_int_operand"))))]
++  [(set (match_operand:GPR 0 "register_operand" "=r")
++	(ior:GPR (and:GPR (match_operand:GPR 1 "register_operand" "r")
++			  (match_operand:GPR 2 "const_int_operand" "i"))
++		 (and:GPR (match_operand:GPR 3 "register_operand" "r")
++			  (match_operand:GPR 4 "const_int_operand" "i"))))]
+   "loongarch_pre_reload_split ()
+    && loongarch_use_bstrins_for_ior_with_mask (<MODE>mode, operands)"
+   "#"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/pr114861.c b/src/gcc/testsuite/gcc.target/loongarch/pr114861.c
+new file mode 100644
+index 000000000..e6507c406
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr114861.c
+@@ -0,0 +1,39 @@
++/* PR114861: ICE building the kernel with -Os
++   Reduced from linux/fs/ntfs3/attrib.c at revision c942a0cd3603.  */
++/* { dg-do compile } */
++/* { dg-options "-Os -march=loongarch64 -msoft-float -mabi=lp64s" } */
++
++long evcn, attr_collapse_range_vbo, attr_collapse_range_bytes;
++unsigned short flags;
++int attr_collapse_range_ni_0_0;
++int *attr_collapse_range_mi;
++unsigned attr_collapse_range_svcn, attr_collapse_range_vcn1;
++void ni_insert_nonresident (unsigned, unsigned short, int **);
++int mi_pack_runs (int);
++int
++attr_collapse_range (void)
++{
++  _Bool __trans_tmp_1;
++  int run = attr_collapse_range_ni_0_0;
++  unsigned evcn1, vcn, end;
++  short a_flags = flags;
++  __trans_tmp_1 = flags & (32768 | 1);
++  if (__trans_tmp_1)
++    return 2;
++  vcn = attr_collapse_range_vbo;
++  end = attr_collapse_range_bytes;
++  evcn1 = evcn;
++  for (;;)
++    if (attr_collapse_range_svcn >= end)
++      {
++        unsigned eat, next_svcn = mi_pack_runs (42);
++        attr_collapse_range_vcn1 = (vcn ? vcn : attr_collapse_range_svcn);
++        eat = (0 < end) - attr_collapse_range_vcn1;
++        mi_pack_runs (run - eat);
++        if (next_svcn + eat)
++          ni_insert_nonresident (evcn1 - eat - next_svcn, a_flags,
++                                 &attr_collapse_range_mi);
++      }
++    else
++      return 42;
++}
+-- 
+2.45.2
+

@@ -1,0 +1,30 @@
+From 9e17581ba9fbf3d1140e196623626305bdde97bb Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Mon, 5 Feb 2024 16:23:20 +0800
+Subject: [PATCH 248/301] LoongArch: Fix wrong return value type of
+ __iocsrrd_h.
+
+gcc/ChangeLog:
+
+	* config/loongarch/larchintrin.h (__iocsrrd_h): Modify the
+	function return value type to unsigned short.
+---
+ src/gcc/config/loongarch/larchintrin.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/larchintrin.h b/src/gcc/config/loongarch/larchintrin.h
+index 6582dfe49..046e042fd 100644
+--- a/src/gcc/config/loongarch/larchintrin.h
++++ b/src/gcc/config/loongarch/larchintrin.h
+@@ -268,7 +268,7 @@ __iocsrrd_b (unsigned int _1)
+ 
+ /* Assembly instruction format:	rd, rj.  */
+ /* Data types in instruction templates:  UHI, USI.  */
+-extern __inline unsigned char
++extern __inline unsigned short
+ __attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+ __iocsrrd_h (unsigned int _1)
+ {
+-- 
+2.45.2
+

@@ -1,0 +1,112 @@
+From e4a7e35bec0c1f2cdf1d24a9d7e014caeacdef8b Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 30 Jan 2024 15:02:32 +0800
+Subject: [PATCH 236/301] LoongArch: Modify the address calculation logic for
+ obtaining array element values through fp.
+
+Modify address calculation logic from (((a x C) + fp) + offset) to ((fp + offset) + a x C).
+Thereby modifying the register dependencies and optimizing the code.
+The value of C is 2 4 or 8.
+
+The following is the assembly code before and after a loop modification in spec2006 401.bzip:
+
+                 old                      |                 new
+ 735 .L71:                                |  735 .L71:
+ 736         slli.d  $r12,$r15,2          |  736         slli.d  $r12,$r15,2
+ 737         ldx.w   $r13,$r22,$r12       |  737         ldx.w   $r13,$r22,$r12
+ 738         addi.d  $r15,$r15,-1         |  738         addi.d  $r15,$r15,-1
+ 739         slli.w  $r16,$r15,0          |  739         slli.w  $r16,$r15,0
+ 740         addi.w  $r13,$r13,-1         |  740         addi.w  $r13,$r13,-1
+ 741         slti    $r14,$r13,0          |  741         slti    $r14,$r13,0
+ 742         add.w   $r12,$r26,$r13       |  742         add.w   $r12,$r26,$r13
+ 743         maskeqz $r12,$r12,$r14       |  743         maskeqz $r12,$r12,$r14
+ 744         masknez $r14,$r13,$r14       |  744         masknez $r14,$r13,$r14
+ 745         or      $r12,$r12,$r14       |  745         or      $r12,$r12,$r14
+ 746         ldx.bu  $r14,$r30,$r12       |  746         ldx.bu  $r14,$r30,$r12
+ 747         lu12i.w $r13,4096>>12        |  747         alsl.d  $r14,$r14,$r18,2
+ 748         ori     $r13,$r13,432        |  748         ldptr.w $r13,$r14,0
+ 749         add.d   $r13,$r13,$r3        |  749         addi.w  $r17,$r13,-1
+ 750         alsl.d  $r14,$r14,$r13,2     |  750         stptr.w $r17,$r14,0
+ 751         ldptr.w $r13,$r14,-1968      |  751         slli.d  $r13,$r13,2
+ 752         addi.w  $r17,$r13,-1         |  752         stx.w   $r12,$r22,$r13
+ 753         st.w    $r17,$r14,-1968      |  753         ldptr.w $r12,$r19,0
+ 754         slli.d  $r13,$r13,2          |  754         blt     $r12,$r16,.L71
+ 755         stx.w   $r12,$r22,$r13       |  755         .align  4
+ 756         ldptr.w $r12,$r18,-2048      |  756
+ 757         blt     $r12,$r16,.L71       |  757
+ 758         .align  4                    |  758
+
+This patch is ported from riscv's commit r14-3111.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (mem_shadd_or_shadd_rtx_p): New function.
+	(loongarch_legitimize_address): Add logical transformation code.
+---
+ src/gcc/config/loongarch/loongarch.cc | 43 +++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index c26b9ad54..0cbf13f1a 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -3215,6 +3215,22 @@ loongarch_split_symbol (rtx temp, rtx addr, machine_mode mode, rtx *low_out)
+   return true;
+ }
+ 
++/* Helper loongarch_legitimize_address.  Given X, return true if it
++   is a left shift by 1, 2 or 3 positions or a multiply by 2, 4 or 8.
++
++   This respectively represent canonical shift-add rtxs or scaled
++   memory addresses.  */
++static bool
++mem_shadd_or_shadd_rtx_p (rtx x)
++{
++  return ((GET_CODE (x) == ASHIFT
++	   || GET_CODE (x) == MULT)
++	  && CONST_INT_P (XEXP (x, 1))
++	  && ((GET_CODE (x) == ASHIFT && IN_RANGE (INTVAL (XEXP (x, 1)), 1, 3))
++	      || (GET_CODE (x) == MULT
++		  && IN_RANGE (exact_log2 (INTVAL (XEXP (x, 1))), 1, 3))));
++}
++
+ /* This function is used to implement LEGITIMIZE_ADDRESS.  If X can
+    be legitimized in a way that the generic machinery might not expect,
+    return a new address, otherwise return NULL.  MODE is the mode of
+@@ -3238,6 +3254,33 @@ loongarch_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
+   loongarch_split_plus (x, &base, &offset);
+   if (offset != 0)
+     {
++      /* Handle (plus (plus (mult (a) (mem_shadd_constant)) (fp)) (C)) case.  */
++      if (GET_CODE (base) == PLUS && mem_shadd_or_shadd_rtx_p (XEXP (base, 0))
++	  && IMM12_OPERAND (offset))
++	{
++	  rtx index = XEXP (base, 0);
++	  rtx fp = XEXP (base, 1);
++
++	  if (REG_P (fp) && REGNO (fp) == VIRTUAL_STACK_VARS_REGNUM)
++	    {
++	      /* If we were given a MULT, we must fix the constant
++		 as we're going to create the ASHIFT form.  */
++	      int shift_val = INTVAL (XEXP (index, 1));
++	      if (GET_CODE (index) == MULT)
++		shift_val = exact_log2 (shift_val);
++
++	      rtx reg1 = gen_reg_rtx (Pmode);
++	      rtx reg3 = gen_reg_rtx (Pmode);
++	      loongarch_emit_binary (PLUS, reg1, fp, GEN_INT (offset));
++	      loongarch_emit_binary (PLUS, reg3,
++				     gen_rtx_ASHIFT (Pmode, XEXP (index, 0),
++						     GEN_INT (shift_val)),
++				     reg1);
++
++	      return reg3;
++	    }
++	}
++
+       if (!loongarch_valid_base_register_p (base, mode, false))
+ 	base = copy_to_mode_reg (Pmode, base);
+       addr = loongarch_add_offset (NULL, base, offset);
+-- 
+2.45.2
+

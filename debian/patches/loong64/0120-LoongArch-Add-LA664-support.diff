@@ -1,28 +1,48 @@
-From 44532f0cf2bf309a820cacdf520275b970d7db8a Mon Sep 17 00:00:00 2001
+From 8202c1ff83ba97dd78aa3ffd31033c1e0e0faade Mon Sep 17 00:00:00 2001
 From: Lulu Cheng <chenglulu@loongson.cn>
-Date: Mon, 3 Jun 2024 08:56:59 +0000
-Subject: [PATCH 120/133] LoongArch: Add LA664 support.
+Date: Thu, 16 Nov 2023 20:43:53 +0800
+Subject: [PATCH 120/301] LoongArch: Add LA664 support.
 
 Define ISA_BASE_LA64V110, which represents the base instruction set defined in LoongArch1.1.
 Support the configure setting --with-arch =la664, and support -march=la664,-mtune=la664.
 
-Signed-off-by: Peng Fan <fanpeng@loongson.cn>
----
- gcc/config.gcc                                | 10 ++++-----
- .../loongarch/genopts/loongarch-strings       |  1 +
- gcc/config/loongarch/genopts/loongarch.opt.in |  3 +++
- gcc/config/loongarch/loongarch-cpu.cc         |  4 ++++
- gcc/config/loongarch/loongarch-def.c          | 21 +++++++++++++++++++
- gcc/config/loongarch/loongarch-def.h          |  8 ++++---
- gcc/config/loongarch/loongarch-opts.cc        |  8 +++----
- gcc/config/loongarch/loongarch-opts.h         |  4 +++-
- gcc/config/loongarch/loongarch-str.h          |  1 +
- gcc/config/loongarch/loongarch.cc             |  1 +
- gcc/config/loongarch/loongarch.opt            |  3 +++
- 11 files changed, 51 insertions(+), 13 deletions(-)
+gcc/ChangeLog:
 
-diff --git a/gcc/config.gcc b/gcc/config.gcc
-index 6dae9606a8d..1a1d192aa43 100644
+	* config.gcc: Support LA664.
+	* config/loongarch/genopts/loongarch-strings: Likewise.
+	* config/loongarch/genopts/loongarch.opt.in: Likewise.
+	* config/loongarch/loongarch-cpu.cc (fill_native_cpu_config): Likewise.
+	* config/loongarch/loongarch-def.c: Likewise.
+	* config/loongarch/loongarch-def.h (N_ISA_BASE_TYPES): Likewise.
+	(ISA_BASE_LA64V110): Define macro.
+	(N_ARCH_TYPES): Update value.
+	(N_TUNE_TYPES): Update value.
+	(CPU_LA664): New macro.
+	* config/loongarch/loongarch-opts.cc (isa_default_abi): Likewise.
+	(isa_base_compat_p): Likewise.
+	* config/loongarch/loongarch-opts.h (TARGET_64BIT): This parameter is enabled
+	when la_target.isa.base is equal to ISA_BASE_LA64V100 or ISA_BASE_LA64V110.
+	(TARGET_uARCH_LA664): Define macro.
+	* config/loongarch/loongarch-str.h (STR_CPU_LA664): Likewise.
+	* config/loongarch/loongarch.cc (loongarch_cpu_sched_reassociation_width):
+	Add LA664 support.
+	* config/loongarch/loongarch.opt: Regenerate.
+---
+ src/gcc/config.gcc                            | 10 ++++-----
+ .../loongarch/genopts/loongarch-strings       |  1 +
+ .../config/loongarch/genopts/loongarch.opt.in |  3 +++
+ src/gcc/config/loongarch/loongarch-cpu.cc     |  4 ++++
+ src/gcc/config/loongarch/loongarch-def.c      | 21 +++++++++++++++++++
+ src/gcc/config/loongarch/loongarch-def.h      |  8 ++++---
+ src/gcc/config/loongarch/loongarch-opts.cc    |  8 +++----
+ src/gcc/config/loongarch/loongarch-opts.h     |  3 ++-
+ src/gcc/config/loongarch/loongarch-str.h      |  1 +
+ src/gcc/config/loongarch/loongarch.cc         |  1 +
+ src/gcc/config/loongarch/loongarch.opt        |  3 +++
+ 11 files changed, 50 insertions(+), 13 deletions(-)
+
+diff --git a/src/gcc/config.gcc b/src/gcc/config.gcc
+index 6dae9606a..1a1d192aa 100644
 --- a/src/gcc/config.gcc
 +++ b/src/gcc/config.gcc
 @@ -5050,7 +5050,7 @@ case "${target}" in
@@ -70,8 +90,8 @@ index 6dae9606a8d..1a1d192aa43 100644
  						# Append -march spec for each multilib variant.
  						loongarch_multilib_list_make="${loongarch_multilib_list_make}/march=${component}"
  						parse_state="opts"
-diff --git a/gcc/config/loongarch/genopts/loongarch-strings b/gcc/config/loongarch/genopts/loongarch-strings
-index 21245f52a18..70802f9237f 100644
+diff --git a/src/gcc/config/loongarch/genopts/loongarch-strings b/src/gcc/config/loongarch/genopts/loongarch-strings
+index 21245f52a..70802f923 100644
 --- a/src/gcc/config/loongarch/genopts/loongarch-strings
 +++ b/src/gcc/config/loongarch/genopts/loongarch-strings
 @@ -26,6 +26,7 @@ STR_CPU_NATIVE	      native
@@ -82,8 +102,8 @@ index 21245f52a18..70802f9237f 100644
  
  # Base architecture
  STR_ISA_BASE_LA64V100 la64
-diff --git a/gcc/config/loongarch/genopts/loongarch.opt.in b/gcc/config/loongarch/genopts/loongarch.opt.in
-index d0536c158a5..ab9796165d6 100644
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index 0622581dd..b808284d2 100644
 --- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
 +++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
 @@ -107,6 +107,9 @@ Enum(cpu_type) String(@@STR_CPU_LOONGARCH64@@) Value(CPU_LOONGARCH64)
@@ -96,8 +116,8 @@ index d0536c158a5..ab9796165d6 100644
  m@@OPTSTR_ARCH@@=
  Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET)
  -m@@OPTSTR_ARCH@@=PROCESSOR	Generate code for the given PROCESSOR ISA.
-diff --git a/gcc/config/loongarch/loongarch-cpu.cc b/gcc/config/loongarch/loongarch-cpu.cc
-index ea05526d7b0..cbe52d7ed6c 100644
+diff --git a/src/gcc/config/loongarch/loongarch-cpu.cc b/src/gcc/config/loongarch/loongarch-cpu.cc
+index ea05526d7..cbe52d7ed 100644
 --- a/src/gcc/config/loongarch/loongarch-cpu.cc
 +++ b/src/gcc/config/loongarch/loongarch-cpu.cc
 @@ -106,6 +106,10 @@ fill_native_cpu_config (struct loongarch_target *tgt)
@@ -111,8 +131,8 @@ index ea05526d7b0..cbe52d7ed6c 100644
      default:
        /* Unknown PRID.  */
        if (tune_native_p)
-diff --git a/gcc/config/loongarch/loongarch-def.c b/gcc/config/loongarch/loongarch-def.c
-index eeb32dbf6ab..c980fa37edf 100644
+diff --git a/src/gcc/config/loongarch/loongarch-def.c b/src/gcc/config/loongarch/loongarch-def.c
+index eeb32dbf6..c980fa37e 100644
 --- a/src/gcc/config/loongarch/loongarch-def.c
 +++ b/src/gcc/config/loongarch/loongarch-def.c
 @@ -28,6 +28,7 @@ loongarch_cpu_strings[N_TUNE_TYPES] = {
@@ -185,8 +205,8 @@ index eeb32dbf6ab..c980fa37edf 100644
  };
  
  /* Wiring string definitions from loongarch-str.h to global arrays
-diff --git a/gcc/config/loongarch/loongarch-def.h b/gcc/config/loongarch/loongarch-def.h
-index 0aee7dc19c2..eb8e53b2070 100644
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index 0aee7dc19..eb8e53b20 100644
 --- a/src/gcc/config/loongarch/loongarch-def.h
 +++ b/src/gcc/config/loongarch/loongarch-def.h
 @@ -55,7 +55,8 @@ extern "C" {
@@ -211,8 +231,8 @@ index 0aee7dc19c2..eb8e53b2070 100644
  
  /* parallel tables.  */
  extern const char* loongarch_cpu_strings[];
-diff --git a/gcc/config/loongarch/loongarch-opts.cc b/gcc/config/loongarch/loongarch-opts.cc
-index 04c9192b0cc..ee1341bdba8 100644
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index 6e1753e55..5cd64184f 100644
 --- a/src/gcc/config/loongarch/loongarch-opts.cc
 +++ b/src/gcc/config/loongarch/loongarch-opts.cc
 @@ -552,17 +552,17 @@ isa_default_abi (const struct loongarch_isa *isa)
@@ -245,11 +265,11 @@ index 04c9192b0cc..ee1341bdba8 100644
  
        default:
  	gcc_unreachable ();
-diff --git a/gcc/config/loongarch/loongarch-opts.h b/gcc/config/loongarch/loongarch-opts.h
-index e5a956ad74f..88a6c8c9e7b 100644
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index b38b0b709..01566dc8f 100644
 --- a/src/gcc/config/loongarch/loongarch-opts.h
 +++ b/src/gcc/config/loongarch/loongarch-opts.h
-@@ -77,7 +77,8 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+@@ -80,7 +80,8 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
  #define TARGET_DOUBLE_FLOAT	  (la_target.isa.fpu == ISA_EXT_FPU64)
  #define TARGET_DOUBLE_FLOAT_ABI	  (la_target.abi.base == ABI_BASE_LP64D)
  
@@ -259,16 +279,8 @@ index e5a956ad74f..88a6c8c9e7b 100644
  #define TARGET_ABI_LP64		  (la_target.abi.base == ABI_BASE_LP64D	\
  				   || la_target.abi.base == ABI_BASE_LP64F \
  				   || la_target.abi.base == ABI_BASE_LP64S)
-@@ -88,6 +89,7 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
- 
- /* TARGET_ macros for use in *.md template conditionals */
- #define TARGET_uARCH_LA464   (la_target.cpu_tune == CPU_LA464)
-+#define TARGET_uARCH_LA664   (la_target.cpu_tune == CPU_LA664)
- 
- /* Note: optimize_size may vary across functions,
-    while -m[no]-memcpy imposes a global constraint.  */
-diff --git a/gcc/config/loongarch/loongarch-str.h b/gcc/config/loongarch/loongarch-str.h
-index 6b12754a312..f6d7bcd50ca 100644
+diff --git a/src/gcc/config/loongarch/loongarch-str.h b/src/gcc/config/loongarch/loongarch-str.h
+index 6b12754a3..f6d7bcd50 100644
 --- a/src/gcc/config/loongarch/loongarch-str.h
 +++ b/src/gcc/config/loongarch/loongarch-str.h
 @@ -30,6 +30,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -279,20 +291,20 @@ index 6b12754a312..f6d7bcd50ca 100644
  
  #define STR_ISA_BASE_LA64V100 "la64"
  
-diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
-index 3fdea11ec9a..08a310f47eb 100644
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 66bf4afc5..4202f7a3f 100644
 --- a/src/gcc/config/loongarch/loongarch.cc
 +++ b/src/gcc/config/loongarch/loongarch.cc
-@@ -9765,6 +9765,7 @@ loongarch_cpu_sched_reassociation_width (struct loongarch_target *target,
+@@ -9818,6 +9818,7 @@ loongarch_cpu_sched_reassociation_width (struct loongarch_target *target,
      {
      case CPU_LOONGARCH64:
      case CPU_LA464:
 +    case CPU_LA664:
        /* Vector part.  */
        if (LSX_SUPPORTED_MODE_P (mode) || LASX_SUPPORTED_MODE_P (mode))
-    {
-diff --git a/gcc/config/loongarch/loongarch.opt b/gcc/config/loongarch/loongarch.opt
-index e233bb83847..430cf429389 100644
+  {
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index d5f2538cf..df6c7b401 100644
 --- a/src/gcc/config/loongarch/loongarch.opt
 +++ b/src/gcc/config/loongarch/loongarch.opt
 @@ -114,6 +114,9 @@ Enum(cpu_type) String(loongarch64) Value(CPU_LOONGARCH64)
@@ -306,5 +318,5 @@ index e233bb83847..430cf429389 100644
  Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET)
  -march=PROCESSOR	Generate code for the given PROCESSOR ISA.
 -- 
-2.43.4
+2.45.2
 

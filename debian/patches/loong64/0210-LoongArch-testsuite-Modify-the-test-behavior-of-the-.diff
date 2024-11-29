@@ -1,0 +1,47 @@
+From 9bca5e2c76529ccdcfffc4fd4f3e29177a59ca87 Mon Sep 17 00:00:00 2001
+From: chenxiaolong <chenxiaolong@loongson.cn>
+Date: Fri, 5 Jan 2024 11:43:24 +0800
+Subject: [PATCH 210/301] LoongArch: testsuite:Modify the test behavior of the
+ vect-bic-bitmask-{12, 23}.c file.
+
+Before modifying the test behavior of the program, dg-do is set to assemble in
+vect-bic-bitmask-{12,23}.c. However, when the binutils library does not support
+the vector instruction set, it will FAIL to recognize the vector instruction
+and fail item will appear in the assembly stage. So set the program's dg-do to
+compile.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.dg/vect/vect-bic-bitmask-12.c: Change the default
+	setting of assembly to compile.
+	* gcc.dg/vect/vect-bic-bitmask-23.c: Dito.
+---
+ src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-12.c | 2 +-
+ src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-23.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-12.c b/src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-12.c
+index 36ec5a8b1..213e4c2a4 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-12.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-12.c
+@@ -1,5 +1,5 @@
+ /* { dg-skip-if "missing optab for vectorization" { sparc*-*-* } } */
+-/* { dg-do assemble } */
++/* { dg-do compile } */
+ /* { dg-additional-options "-O3 -fdump-tree-dce -w" } */
+ 
+ #include <stdint.h>
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-23.c b/src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-23.c
+index 5b4c3b6e1..5dceb4bbc 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-23.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-bic-bitmask-23.c
+@@ -1,5 +1,5 @@
+ /* { dg-skip-if "missing optab for vectorization" { sparc*-*-* } } */
+-/* { dg-do assemble } */
++/* { dg-do compile } */
+ /* { dg-additional-options "-O1 -fdump-tree-dce -w" } */
+ 
+ #include <stdint.h>
+-- 
+2.45.2
+

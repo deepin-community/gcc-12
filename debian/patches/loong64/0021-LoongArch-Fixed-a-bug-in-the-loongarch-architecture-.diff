@@ -1,0 +1,43 @@
+From 1f93ec109d5e1624332b32321db87ab278377f8b Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Wed, 12 Oct 2022 11:02:11 +0800
+Subject: [PATCH 021/301] LoongArch: Fixed a bug in the loongarch architecture
+ of libitm package.
+
+Add a soft floating point condition to the register recovery part of the code.
+
+libitm/ChangeLog:
+
+	* config/loongarch/sjlj.S: Add a soft floating point condition to the
+	register recovery part of the code.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/libitm/config/loongarch/sjlj.S | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/libitm/config/loongarch/sjlj.S b/src/libitm/config/loongarch/sjlj.S
+index a5f9fadde..f896e400e 100644
+--- a/src/libitm/config/loongarch/sjlj.S
++++ b/src/libitm/config/loongarch/sjlj.S
+@@ -104,6 +104,8 @@ GTM_longjmp:
+         GPR_L  $s7, $r5, 10*SZ_GPR
+         GPR_L  $s8, $r5, 11*SZ_GPR
+ 
++#if !defined(__loongarch_soft_float)
++        /* Callee-saved scratch FPRs (f24-f31) */
+         FPR_L  $f24, $r5, 12*SZ_GPR + 0*SZ_FPR
+         FPR_L  $f25, $r5, 12*SZ_GPR + 1*SZ_FPR
+         FPR_L  $f26, $r5, 12*SZ_GPR + 2*SZ_FPR
+@@ -112,6 +114,7 @@ GTM_longjmp:
+         FPR_L  $f29, $r5, 12*SZ_GPR + 5*SZ_FPR
+         FPR_L  $f30, $r5, 12*SZ_GPR + 6*SZ_FPR
+         FPR_L  $f31, $r5, 12*SZ_GPR + 7*SZ_FPR
++#endif
+ 
+         GPR_L  $r7, $r5, 2*SZ_GPR
+         GPR_L  $fp, $r5, 0*SZ_GPR
+-- 
+2.45.2
+

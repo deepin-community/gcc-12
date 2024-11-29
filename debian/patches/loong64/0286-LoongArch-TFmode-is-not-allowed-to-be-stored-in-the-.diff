@@ -1,0 +1,73 @@
+From 236682752c703b1406502403487cb1b70b91a98d Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Thu, 4 Jul 2024 10:37:26 +0800
+Subject: [PATCH 286/301] LoongArch: TFmode is not allowed to be stored in the
+ float register.
+
+	PR target/115752
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc
+	(loongarch_hard_regno_mode_ok_uncached): Replace
+	UNITS_PER_FPVALUE with UNITS_PER_HWFPVALUE.
+	* config/loongarch/loongarch.h (UNITS_PER_FPVALUE): Delete.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/pr115752.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc             | 2 +-
+ src/gcc/config/loongarch/loongarch.h              | 7 -------
+ src/gcc/testsuite/gcc.target/loongarch/pr115752.c | 8 ++++++++
+ 3 files changed, 9 insertions(+), 8 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/pr115752.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 686a31ca0..9d9651bbb 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -6758,7 +6758,7 @@ loongarch_hard_regno_mode_ok_uncached (unsigned int regno, machine_mode mode)
+       if (mclass == MODE_FLOAT
+ 	  || mclass == MODE_COMPLEX_FLOAT
+ 	  || mclass == MODE_VECTOR_FLOAT)
+-	return size <= UNITS_PER_FPVALUE;
++	return size <= UNITS_PER_HWFPVALUE;
+ 
+       /* Allow integer modes that fit into a single register.  We need
+ 	 to put integers into FPRs when using instructions like CVT
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index 6743d2684..a23dabde1 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -146,13 +146,6 @@ along with GCC; see the file COPYING3.  If not see
+ #define UNITS_PER_HWFPVALUE \
+   (TARGET_SOFT_FLOAT ? 0 : UNITS_PER_FP_REG)
+ 
+-/* The largest size of value that can be held in floating-point
+-   registers.  */
+-#define UNITS_PER_FPVALUE \
+-  (TARGET_SOFT_FLOAT ? 0 \
+-   : TARGET_SINGLE_FLOAT ? UNITS_PER_FP_REG \
+-			 : LONG_DOUBLE_TYPE_SIZE / BITS_PER_UNIT)
+-
+ /* The number of bytes in a double.  */
+ #define UNITS_PER_DOUBLE (TYPE_PRECISION (double_type_node) / BITS_PER_UNIT)
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/pr115752.c b/src/gcc/testsuite/gcc.target/loongarch/pr115752.c
+new file mode 100644
+index 000000000..df4bae524
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr115752.c
+@@ -0,0 +1,8 @@
++/* { dg-do compile } */
++
++long double
++test (long double xx)
++{
++   __asm ("" :: "f"(xx)); /* { dg-error "inconsistent operand constraints in an 'asm'" } */
++   return xx + 1;
++}
+-- 
+2.45.2
+

@@ -1,0 +1,30 @@
+From b4bd94d4e7ede5d633b5e4ed52edda1b6d5c817a Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 21 Mar 2024 04:01:17 +0800
+Subject: [PATCH 267/301] LoongArch: Fix a typo [PR 114407]
+
+gcc/ChangeLog:
+
+	PR target/114407
+	* config/loongarch/loongarch-opts.cc (loongarch_config_target):
+	Fix typo in diagnostic message, enabing -> enabling.
+---
+ src/gcc/config/loongarch/loongarch-opts.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index 2ea3972d1..bdecfaf49 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -362,7 +362,7 @@ config_target_isa:
+ 	  gcc_assert (constrained.simd);
+ 
+ 	  inform (UNKNOWN_LOCATION,
+-		  "enabing %qs promotes %<%s%s%> to %<%s%s%>",
++		  "enabling %qs promotes %<%s%s%> to %<%s%s%>",
+ 		  loongarch_isa_ext_strings[t.isa.simd],
+ 		  OPTSTR_ISA_EXT_FPU, loongarch_isa_ext_strings[t.isa.fpu],
+ 		  OPTSTR_ISA_EXT_FPU, loongarch_isa_ext_strings[ISA_EXT_FPU64]);
+-- 
+2.45.2
+

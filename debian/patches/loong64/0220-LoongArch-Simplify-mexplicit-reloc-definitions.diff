@@ -1,0 +1,124 @@
+From 8b6a8e3236de977e9fd735fb0a9c1eafb6a2dc2d Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Mon, 8 Jan 2024 09:14:10 +0800
+Subject: [PATCH 220/301] LoongArch: Simplify -mexplicit-reloc definitions
+
+Since we do not need printing or manual parsing of this option,
+(whether in the driver or for target attributes to be supported later)
+it can be handled in the .opt file framework.
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/loongarch-strings: Remove explicit-reloc
+	argument string definitions.
+	* config/loongarch/loongarch-str.h: Same.
+	* config/loongarch/genopts/loongarch.opt.in: Mark -m[no-]explicit-relocs
+	as aliases to -mexplicit-relocs={always,none}
+	* config/loongarch/loongarch.opt: Regenerate.
+	* config/loongarch/loongarch.cc: Same.
+---
+ src/gcc/config/loongarch/genopts/loongarch-strings |  6 ------
+ src/gcc/config/loongarch/genopts/loongarch.opt.in  |  8 ++++----
+ src/gcc/config/loongarch/loongarch-str.h           |  5 -----
+ src/gcc/config/loongarch/loongarch.cc              | 12 ------------
+ src/gcc/config/loongarch/loongarch.opt             |  2 +-
+ 5 files changed, 5 insertions(+), 28 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/genopts/loongarch-strings b/src/gcc/config/loongarch/genopts/loongarch-strings
+index ce70b8b9c..99fd4e7cd 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch-strings
++++ b/src/gcc/config/loongarch/genopts/loongarch-strings
+@@ -64,9 +64,3 @@ STR_CMODEL_TS	      tiny-static
+ STR_CMODEL_MEDIUM     medium
+ STR_CMODEL_LARGE      large
+ STR_CMODEL_EXTREME    extreme
+-
+-# -mexplicit-relocs
+-OPTSTR_EXPLICIT_RELOCS		explicit-relocs
+-STR_EXPLICIT_RELOCS_AUTO	auto
+-STR_EXPLICIT_RELOCS_NONE	none
+-STR_EXPLICIT_RELOCS_ALWAYS	always
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index 851d8d1f3..f2055b55e 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -181,20 +181,20 @@ Name(explicit_relocs) Type(int)
+ The code model option names for -mexplicit-relocs:
+ 
+ EnumValue
+-Enum(explicit_relocs) String(@@STR_EXPLICIT_RELOCS_AUTO@@) Value(EXPLICIT_RELOCS_AUTO)
++Enum(explicit_relocs) String(auto) Value(EXPLICIT_RELOCS_AUTO)
+ 
+ EnumValue
+-Enum(explicit_relocs) String(@@STR_EXPLICIT_RELOCS_NONE@@) Value(EXPLICIT_RELOCS_NONE)
++Enum(explicit_relocs) String(none) Value(EXPLICIT_RELOCS_NONE)
+ 
+ EnumValue
+-Enum(explicit_relocs) String(@@STR_EXPLICIT_RELOCS_ALWAYS@@) Value(EXPLICIT_RELOCS_ALWAYS)
++Enum(explicit_relocs) String(always) Value(EXPLICIT_RELOCS_ALWAYS)
+ 
+ mexplicit-relocs=
+ Target RejectNegative Joined Enum(explicit_relocs) Var(la_opt_explicit_relocs) Init(M_OPT_UNSET)
+ Use %reloc() assembly operators.
+ 
+ mexplicit-relocs
+-Target Var(la_opt_explicit_relocs_backward) Init(M_OPT_UNSET)
++Target Alias(mexplicit-relocs=, always, none)
+ Use %reloc() assembly operators (for backward compatibility).
+ 
+ mrecip
+diff --git a/src/gcc/config/loongarch/loongarch-str.h b/src/gcc/config/loongarch/loongarch-str.h
+index 2251df38b..cacae38c0 100644
+--- a/src/gcc/config/loongarch/loongarch-str.h
++++ b/src/gcc/config/loongarch/loongarch-str.h
+@@ -63,11 +63,6 @@ along with GCC; see the file COPYING3.  If not see
+ #define STR_CMODEL_LARGE "large"
+ #define STR_CMODEL_EXTREME "extreme"
+ 
+-#define OPTSTR_EXPLICIT_RELOCS "explicit-relocs"
+-#define STR_EXPLICIT_RELOCS_AUTO "auto"
+-#define STR_EXPLICIT_RELOCS_NONE "none"
+-#define STR_EXPLICIT_RELOCS_ALWAYS "always"
+-
+ #define OPTSTR_FRECIPE "frecipe"
+ #define OPTSTR_DIV32   "div32"
+ #define OPTSTR_LAM_BH  "lam-bh"
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 06eefb836..a0d306df4 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -7516,18 +7516,6 @@ loongarch_option_override_internal (struct gcc_options *opts,
+   loongarch_update_gcc_opt_status (&la_target, opts, opts_set);
+   loongarch_cpu_option_override (&la_target, opts, opts_set);
+ 
+-  if (la_opt_explicit_relocs != M_OPT_UNSET
+-      && la_opt_explicit_relocs_backward != M_OPT_UNSET)
+-    error ("do not use %qs (with %qs) and %qs (without %qs) together",
+-	   "-mexplicit-relocs=", "=",
+-	   la_opt_explicit_relocs_backward ? "-mexplicit-relocs"
+-					   : "-mno-explicit-relocs", "=");
+-
+-  if (la_opt_explicit_relocs_backward != M_OPT_UNSET)
+-    la_opt_explicit_relocs = (la_opt_explicit_relocs_backward
+-			      ? EXPLICIT_RELOCS_ALWAYS
+-			      : EXPLICIT_RELOCS_NONE);
+-
+   if (la_opt_explicit_relocs == M_OPT_UNSET)
+     la_opt_explicit_relocs = (HAVE_AS_EXPLICIT_RELOCS
+ 			      ? (loongarch_mrelax
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index df7314973..d6e337ac2 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -202,7 +202,7 @@ Target RejectNegative Joined Enum(explicit_relocs) Var(la_opt_explicit_relocs) I
+ Use %reloc() assembly operators.
+ 
+ mexplicit-relocs
+-Target Var(la_opt_explicit_relocs_backward) Init(M_OPT_UNSET)
++Target Alias(mexplicit-relocs=, always, none)
+ Use %reloc() assembly operators (for backward compatibility).
+ 
+ mrecip
+-- 
+2.45.2
+

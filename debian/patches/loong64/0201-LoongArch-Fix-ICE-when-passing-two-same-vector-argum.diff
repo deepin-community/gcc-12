@@ -1,0 +1,232 @@
+From 47877876fd697c5e4981670b74ebec0df2fce764 Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Fri, 22 Dec 2023 16:18:44 +0800
+Subject: [PATCH 201/301] LoongArch: Fix ICE when passing two same vector
+ argument consecutively
+
+Following code will cause ICE on LoongArch target:
+
+  #include <lsxintrin.h>
+
+  extern void bar (__m128i, __m128i);
+
+  __m128i a;
+
+  void
+  foo ()
+  {
+    bar (a, a);
+  }
+
+It is caused by missing constraint definition in mov<mode>_lsx. This
+patch fixes the template and remove the unnecessary processing from
+loongarch_split_move () function.
+
+This patch also cleanup the redundant definition from
+loongarch_split_move () and loongarch_split_move_p ().
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md: Use loongarch_split_move and
+	loongarch_split_move_p directly.
+	* config/loongarch/loongarch-protos.h
+	(loongarch_split_move): Remove unnecessary argument.
+	(loongarch_split_move_insn_p): Delete.
+	(loongarch_split_move_insn): Delete.
+	* config/loongarch/loongarch.cc
+	(loongarch_split_move_insn_p): Delete.
+	(loongarch_load_store_insns): Use loongarch_split_move_p
+	directly.
+	(loongarch_split_move): remove the unnecessary processing.
+	(loongarch_split_move_insn): Delete.
+	* config/loongarch/lsx.md: Use loongarch_split_move and
+	loongarch_split_move_p directly.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lsx/lsx-mov-1.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              |  4 +-
+ src/gcc/config/loongarch/loongarch-protos.h   |  4 +-
+ src/gcc/config/loongarch/loongarch.cc         | 49 +------------------
+ src/gcc/config/loongarch/lsx.md               | 10 ++--
+ .../loongarch/vector/lsx/lsx-mov-1.c          | 14 ++++++
+ 5 files changed, 24 insertions(+), 57 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-mov-1.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 46150f2fb..dbbf5a136 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -839,10 +839,10 @@
+   [(set (match_operand:LASX 0 "nonimmediate_operand")
+ 	(match_operand:LASX 1 "move_operand"))]
+   "reload_completed && ISA_HAS_LASX
+-   && loongarch_split_move_insn_p (operands[0], operands[1])"
++   && loongarch_split_move_p (operands[0], operands[1])"
+   [(const_int 0)]
+ {
+-  loongarch_split_move_insn (operands[0], operands[1], curr_insn);
++  loongarch_split_move (operands[0], operands[1]);
+   DONE;
+ })
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index e5fcf3111..2067e50c3 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -82,11 +82,9 @@ extern rtx loongarch_legitimize_call_address (rtx);
+ 
+ extern rtx loongarch_subword (rtx, bool);
+ extern bool loongarch_split_move_p (rtx, rtx);
+-extern void loongarch_split_move (rtx, rtx, rtx);
++extern void loongarch_split_move (rtx, rtx);
+ extern bool loongarch_addu16i_imm12_operand_p (HOST_WIDE_INT, machine_mode);
+ extern void loongarch_split_plus_constant (rtx *, machine_mode);
+-extern bool loongarch_split_move_insn_p (rtx, rtx);
+-extern void loongarch_split_move_insn (rtx, rtx, rtx);
+ extern void loongarch_split_128bit_move (rtx, rtx);
+ extern bool loongarch_split_128bit_move_p (rtx, rtx);
+ extern void loongarch_split_256bit_move (rtx, rtx);
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index e09b15900..04285aefb 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -2558,7 +2558,6 @@ loongarch_split_const_insns (rtx x)
+   return low + high;
+ }
+ 
+-bool loongarch_split_move_insn_p (rtx dest, rtx src);
+ /* Return one word of 128-bit value OP, taking into account the fixed
+    endianness of certain registers.  BYTE selects from the byte address.  */
+ 
+@@ -2598,7 +2597,7 @@ loongarch_load_store_insns (rtx mem, rtx_insn *insn)
+     {
+       set = single_set (insn);
+       if (set
+-	  && !loongarch_split_move_insn_p (SET_DEST (set), SET_SRC (set)))
++	  && !loongarch_split_move_p (SET_DEST (set), SET_SRC (set)))
+ 	might_split_p = false;
+     }
+ 
+@@ -4216,7 +4215,7 @@ loongarch_split_move_p (rtx dest, rtx src)
+    SPLIT_TYPE describes the split condition.  */
+ 
+ void
+-loongarch_split_move (rtx dest, rtx src, rtx insn_)
++loongarch_split_move (rtx dest, rtx src)
+ {
+   rtx low_dest;
+ 
+@@ -4254,33 +4253,6 @@ loongarch_split_move (rtx dest, rtx src, rtx insn_)
+ 			       loongarch_subword (src, true));
+ 	}
+     }
+-
+-  /* This is a hack.  See if the next insn uses DEST and if so, see if we
+-     can forward SRC for DEST.  This is most useful if the next insn is a
+-     simple store.  */
+-  rtx_insn *insn = (rtx_insn *) insn_;
+-  struct loongarch_address_info addr = {};
+-  if (insn)
+-    {
+-      rtx_insn *next = next_nonnote_nondebug_insn_bb (insn);
+-      if (next)
+-	{
+-	  rtx set = single_set (next);
+-	  if (set && SET_SRC (set) == dest)
+-	    {
+-	      if (MEM_P (src))
+-		{
+-		  rtx tmp = XEXP (src, 0);
+-		  loongarch_classify_address (&addr, tmp, GET_MODE (tmp),
+-					      true);
+-		  if (addr.reg && !reg_overlap_mentioned_p (dest, addr.reg))
+-		    validate_change (next, &SET_SRC (set), src, false);
+-		}
+-	      else
+-		validate_change (next, &SET_SRC (set), src, false);
+-	    }
+-	}
+-    }
+ }
+ 
+ /* Check if adding an integer constant value for a specific mode can be
+@@ -4327,23 +4299,6 @@ loongarch_split_plus_constant (rtx *op, machine_mode mode)
+   op[2] = gen_int_mode (v, mode);
+ }
+ 
+-/* Return true if a move from SRC to DEST in INSN should be split.  */
+-
+-bool
+-loongarch_split_move_insn_p (rtx dest, rtx src)
+-{
+-  return loongarch_split_move_p (dest, src);
+-}
+-
+-/* Split a move from SRC to DEST in INSN, given that
+-   loongarch_split_move_insn_p holds.  */
+-
+-void
+-loongarch_split_move_insn (rtx dest, rtx src, rtx insn)
+-{
+-  loongarch_split_move (dest, src, insn);
+-}
+-
+ /* Implement TARGET_CONSTANT_ALIGNMENT.  */
+ 
+ static HOST_WIDE_INT
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 7f5fff40a..3e3248ef4 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -794,21 +794,21 @@
+ })
+ 
+ (define_insn "mov<mode>_lsx"
+-  [(set (match_operand:LSX 0 "nonimmediate_operand" "=f,f,R,*r,*f")
+-	(match_operand:LSX 1 "move_operand" "fYGYI,R,f,*f,*r"))]
++  [(set (match_operand:LSX 0 "nonimmediate_operand" "=f,f,R,*r,*f,*r")
++	(match_operand:LSX 1 "move_operand" "fYGYI,R,f,*f,*r,*r"))]
+   "ISA_HAS_LSX"
+ { return loongarch_output_move (operands[0], operands[1]); }
+-  [(set_attr "type" "simd_move,simd_load,simd_store,simd_copy,simd_insert")
++  [(set_attr "type" "simd_move,simd_load,simd_store,simd_copy,simd_insert,simd_copy")
+    (set_attr "mode" "<MODE>")])
+ 
+ (define_split
+   [(set (match_operand:LSX 0 "nonimmediate_operand")
+ 	(match_operand:LSX 1 "move_operand"))]
+   "reload_completed && ISA_HAS_LSX
+-   && loongarch_split_move_insn_p (operands[0], operands[1])"
++   && loongarch_split_move_p (operands[0], operands[1])"
+   [(const_int 0)]
+ {
+-  loongarch_split_move_insn (operands[0], operands[1], curr_insn);
++  loongarch_split_move (operands[0], operands[1]);
+   DONE;
+ })
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-mov-1.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-mov-1.c
+new file mode 100644
+index 000000000..7f9d792eb
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-mov-1.c
+@@ -0,0 +1,14 @@
++/* { dg-do compile } */
++/* { dg-options "-mlsx -O2" } */
++
++#include <lsxintrin.h>
++
++extern void bar (__m128i, __m128i);
++
++__m128i a;
++
++void
++foo ()
++{
++  bar (a, a);
++}
+-- 
+2.45.2
+

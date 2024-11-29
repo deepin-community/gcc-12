@@ -1,0 +1,467 @@
+From 63b23f13833077ac98e9b74cd3b84517b17c9491 Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Thu, 11 Jan 2024 09:07:10 +0800
+Subject: [PATCH 223/301] LoongArch: Implement option save/restore
+
+LTO option streaming and target attributes both require per-function
+target configuration, which is achieved via option save/restore.
+
+We implement TARGET_OPTION_{SAVE,RESTORE} to switch the la_target
+context in addition to other automatically maintained option states
+(via the "Save" option property in the .opt files).
+
+Tested on loongarch64-linux-gnu without regression.
+
+	PR target/113233
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/loongarch.opt.in: Mark options with
+	the "Save" property.
+	* config/loongarch/loongarch.opt: Same.
+	* config/loongarch/loongarch-opts.cc: Refresh -mcmodel= state
+	according to la_target.
+	* config/loongarch/loongarch.cc: Implement TARGET_OPTION_{SAVE,
+	RESTORE} for the la_target structure; Rename option conditions
+	to have the same "la_" prefix.
+	* config/loongarch/loongarch.h: Same.
+---
+ .../config/loongarch/genopts/loongarch.opt.in | 38 ++++-----
+ src/gcc/config/loongarch/loongarch-opts.cc    |  7 ++
+ src/gcc/config/loongarch/loongarch.cc         | 80 +++++++++++++++----
+ src/gcc/config/loongarch/loongarch.h          |  2 +-
+ src/gcc/config/loongarch/loongarch.opt        | 38 ++++-----
+ 5 files changed, 111 insertions(+), 54 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index f2055b55e..4d6b1902d 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -50,7 +50,7 @@ EnumValue
+ Enum(isa_ext_fpu) String(@@STR_ISA_EXT_FPU64@@) Value(ISA_EXT_FPU64)
+ 
+ m@@OPTSTR_ISA_EXT_FPU@@=
+-Target RejectNegative Joined ToLower Enum(isa_ext_fpu) Var(la_opt_fpu) Init(M_OPT_UNSET)
++Target RejectNegative Joined ToLower Enum(isa_ext_fpu) Var(la_opt_fpu) Init(M_OPT_UNSET) Save
+ -m@@OPTSTR_ISA_EXT_FPU@@=FPU	Generate code for the given FPU.
+ 
+ m@@OPTSTR_ISA_EXT_FPU@@=@@STR_ISA_EXT_FPU0@@
+@@ -82,7 +82,7 @@ EnumValue
+ Enum(isa_ext_simd) String(@@STR_ISA_EXT_LASX@@) Value(ISA_EXT_SIMD_LASX)
+ 
+ m@@OPTSTR_ISA_EXT_SIMD@@=
+-Target RejectNegative Joined ToLower Enum(isa_ext_simd) Var(la_opt_simd) Init(M_OPT_UNSET)
++Target RejectNegative Joined ToLower Enum(isa_ext_simd) Var(la_opt_simd) Init(M_OPT_UNSET) Save
+ -m@@OPTSTR_ISA_EXT_SIMD@@=SIMD	Generate code for the given SIMD extension.
+ 
+ m@@STR_ISA_EXT_LSX@@
+@@ -114,11 +114,11 @@ EnumValue
+ Enum(cpu_type) String(@@STR_CPU_LA664@@) Value(CPU_LA664)
+ 
+ m@@OPTSTR_ARCH@@=
+-Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET)
++Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET) Save
+ -m@@OPTSTR_ARCH@@=PROCESSOR	Generate code for the given PROCESSOR ISA.
+ 
+ m@@OPTSTR_TUNE@@=
+-Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_tune) Init(M_OPT_UNSET)
++Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_tune) Init(M_OPT_UNSET) Save
+ -m@@OPTSTR_TUNE@@=PROCESSOR	Generate optimized code for PROCESSOR.
+ 
+ 
+@@ -149,31 +149,31 @@ Variable
+ int la_opt_abi_ext = M_OPT_UNSET
+ 
+ mbranch-cost=
+-Target RejectNegative Joined UInteger Var(loongarch_branch_cost)
++Target RejectNegative Joined UInteger Var(la_branch_cost) Save
+ -mbranch-cost=COST	Set the cost of branches to roughly COST instructions.
+ 
+ mcheck-zero-division
+-Target Mask(CHECK_ZERO_DIV)
++Target Mask(CHECK_ZERO_DIV) Save
+ Trap on integer divide by zero.
+ 
+ mcond-move-int
+-Target Var(TARGET_COND_MOVE_INT) Init(1)
++Target Mask(COND_MOVE_INT) Save
+ Conditional moves for integral are enabled.
+ 
+ mcond-move-float
+-Target Var(TARGET_COND_MOVE_FLOAT) Init(1)
++Target Mask(COND_MOVE_FLOAT) Save
+ Conditional moves for float are enabled.
+ 
+ mmemcpy
+-Target Mask(MEMCPY)
++Target Mask(MEMCPY) Save
+ Prevent optimizing block moves, which is also the default behavior of -Os.
+ 
+ mstrict-align
+-Target Var(TARGET_STRICT_ALIGN) Init(0)
++Target Mask(STRICT_ALIGN) Save
+ Do not generate unaligned memory accesses.
+ 
+ mmax-inline-memcpy-size=
+-Target Joined RejectNegative UInteger Var(loongarch_max_inline_memcpy_size) Init(1024)
++Target Joined RejectNegative UInteger Var(la_max_inline_memcpy_size) Init(1024) Save
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
+ Enum
+@@ -198,11 +198,11 @@ Target Alias(mexplicit-relocs=, always, none)
+ Use %reloc() assembly operators (for backward compatibility).
+ 
+ mrecip
+-Target RejectNegative Var(loongarch_recip)
++Target RejectNegative Var(la_recip) Save
+ Generate approximate reciprocal divide and square root for better throughput.
+ 
+ mrecip=
+-Target RejectNegative Joined Var(loongarch_recip_name)
++Target RejectNegative Joined Var(la_recip_name) Save
+ Control generation of reciprocal estimates.
+ 
+ ; The code model option names for -mcmodel.
+@@ -229,29 +229,29 @@ EnumValue
+ Enum(cmodel) String(@@STR_CMODEL_EXTREME@@) Value(CMODEL_EXTREME)
+ 
+ mcmodel=
+-Target RejectNegative Joined Enum(cmodel) Var(la_opt_cmodel) Init(M_OPT_UNSET)
++Target RejectNegative Joined Enum(cmodel) Var(la_opt_cmodel) Init(M_OPT_UNSET) Save
+ Specify the code model.
+ 
+ mdirect-extern-access
+-Target Var(TARGET_DIRECT_EXTERN_ACCESS) Init(0)
++Target Mask(DIRECT_EXTERN_ACCESS) Save
+ Avoid using the GOT to access external symbols.
+ 
+ mrelax
+-Target Var(loongarch_mrelax) Init(HAVE_AS_MRELAX_OPTION && HAVE_AS_COND_BRANCH_RELAXATION)
++Target Mask(LINKER_RELAXATION)
+ Take advantage of linker relaxations to reduce the number of instructions
+ required to materialize symbol addresses.
+ 
+ mpass-mrelax-to-as
+-Target Var(loongarch_pass_mrelax_to_as) Init(HAVE_AS_MRELAX_OPTION)
++Driver Var(la_pass_mrelax_to_as) Init(HAVE_AS_MRELAX_OPTION)
+ Pass -mrelax or -mno-relax option to the assembler.
+ 
+ -param=loongarch-vect-unroll-limit=
+-Target Joined UInteger Var(loongarch_vect_unroll_limit) Init(6) IntegerRange(1, 64) Param
++Target Joined UInteger Var(la_vect_unroll_limit) Init(6) IntegerRange(1, 64) Param
+ Used to limit unroll factor which indicates how much the autovectorizer may
+ unroll a loop.  The default value is 6.
+ 
+ -param=loongarch-vect-issue-info=
+-Target Undocumented Joined UInteger Var(loongarch_vect_issue_info) Init(4) IntegerRange(1, 64) Param
++Target Undocumented Joined UInteger Var(la_vect_issue_info) Init(4) IntegerRange(1, 64) Param
+ Indicate how many non memory access vector instructions can be issued per
+ cycle, it's used in unroll factor determination for autovectorizer.  The
+ default value is 4.
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index cf4c7bc93..a2b069d83 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -785,8 +785,15 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+   opts->x_la_opt_cpu_arch = target->cpu_arch;
+   opts->x_la_opt_cpu_tune = target->cpu_tune;
+ 
++  /* status of -mcmodel */
++  opts->x_la_opt_cmodel = target->cmodel;
++
+   /* status of -mfpu */
+   opts->x_la_opt_fpu = target->isa.fpu;
++
++  /* status of -msimd */
+   opts->x_la_opt_simd = target->isa.simd;
++
++  /* ISA evolution features */
+   opts->x_la_isa_evolution = target->isa.evolution;
+ }
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index a0d306df4..f54308211 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -4079,10 +4079,10 @@ loongarch_vector_costs::determine_suggested_unroll_factor (loop_vec_info loop_vi
+ 
+   /* Use this simple hardware resource model that how many non vld/vst
+      vector instructions can be issued per cycle.  */
+-  unsigned int issue_info = loongarch_vect_issue_info;
++  unsigned int issue_info = la_vect_issue_info;
+   unsigned int reduc_factor = m_reduc_factor > 1 ? m_reduc_factor : 1;
+   unsigned int uf = CEIL (reduc_factor * issue_info, nstmts_nonldst);
+-  uf = MIN ((unsigned int) loongarch_vect_unroll_limit, uf);
++  uf = MIN ((unsigned int) la_vect_unroll_limit, uf);
+ 
+   return 1 << ceil_log2 (uf);
+ }
+@@ -5540,7 +5540,7 @@ loongarch_expand_block_move (rtx dest, rtx src, rtx r_length, rtx r_align)
+     return false;
+ 
+   HOST_WIDE_INT length = INTVAL (r_length);
+-  if (length > loongarch_max_inline_memcpy_size)
++  if (length > la_max_inline_memcpy_size)
+     return false;
+ 
+   HOST_WIDE_INT align = INTVAL (r_align);
+@@ -7516,13 +7516,6 @@ loongarch_option_override_internal (struct gcc_options *opts,
+   loongarch_update_gcc_opt_status (&la_target, opts, opts_set);
+   loongarch_cpu_option_override (&la_target, opts, opts_set);
+ 
+-  if (la_opt_explicit_relocs == M_OPT_UNSET)
+-    la_opt_explicit_relocs = (HAVE_AS_EXPLICIT_RELOCS
+-			      ? (loongarch_mrelax
+-				 ? EXPLICIT_RELOCS_AUTO
+-				 : EXPLICIT_RELOCS_ALWAYS)
+-			      : EXPLICIT_RELOCS_NONE);
+-
+   if (TARGET_ABI_LP64)
+     flag_pcc_struct_return = 0;
+ 
+@@ -7534,8 +7527,8 @@ loongarch_option_override_internal (struct gcc_options *opts,
+ 
+   /* If the user hasn't specified a branch cost, use the processor's
+      default.  */
+-  if (loongarch_branch_cost == 0)
+-    loongarch_branch_cost = loongarch_cost->branch_cost;
++  if (la_branch_cost == 0)
++    la_branch_cost = loongarch_cost->branch_cost;
+ 
+   /* Enable sw prefetching at -O3 and higher.  */
+   if (opts->x_flag_prefetch_loop_arrays < 0
+@@ -7622,9 +7615,9 @@ loongarch_option_override_internal (struct gcc_options *opts,
+ 	{ "vec-rsqrt", RECIP_MASK_VEC_RSQRT },
+   };
+ 
+-  if (loongarch_recip_name)
++  if (la_recip_name)
+     {
+-      char *p = ASTRDUP (loongarch_recip_name);
++      char *p = ASTRDUP (la_recip_name);
+       char *q;
+       unsigned int mask, i;
+       bool invert;
+@@ -7665,10 +7658,38 @@ loongarch_option_override_internal (struct gcc_options *opts,
+ 	    recip_mask |= mask;
+ 	}
+     }
+-  if (loongarch_recip)
++  if (la_recip)
+     recip_mask |= RECIP_MASK_ALL;
+   if (!ISA_HAS_FRECIPE)
+     recip_mask = RECIP_MASK_NONE;
++
++#define INIT_TARGET_FLAG(NAME, INIT) \
++  { \
++    if (!(target_flags_explicit & MASK_##NAME)) \
++      { \
++	if (INIT) \
++	  target_flags |= MASK_##NAME; \
++	else \
++	  target_flags &= ~MASK_##NAME; \
++      } \
++  }
++
++  /* Enable conditional moves for int and float by default.  */
++  INIT_TARGET_FLAG (COND_MOVE_INT, 1)
++  INIT_TARGET_FLAG (COND_MOVE_FLOAT, 1)
++
++  /* Set mrelax default.  */
++  INIT_TARGET_FLAG (LINKER_RELAXATION,
++		    HAVE_AS_MRELAX_OPTION && HAVE_AS_COND_BRANCH_RELAXATION)
++
++#undef INIT_TARGET_FLAG
++
++  if (la_opt_explicit_relocs == M_OPT_UNSET)
++    la_opt_explicit_relocs = (HAVE_AS_EXPLICIT_RELOCS
++			      ? (TARGET_LINKER_RELAXATION
++				 ? EXPLICIT_RELOCS_AUTO
++				 : EXPLICIT_RELOCS_ALWAYS)
++			      : EXPLICIT_RELOCS_NONE);
+ }
+ 
+ 
+@@ -7680,6 +7701,31 @@ loongarch_option_override (void)
+   loongarch_option_override_internal (&global_options, &global_options_set);
+ }
+ 
++/* Implement TARGET_OPTION_SAVE.  */
++static void
++loongarch_option_save (struct cl_target_option *,
++		       struct gcc_options *opts,
++		       struct gcc_options *opts_set)
++{
++  loongarch_update_gcc_opt_status (&la_target, opts, opts_set);
++}
++
++/* Implement TARGET_OPTION_RESTORE.  */
++static void
++loongarch_option_restore (struct gcc_options *,
++			  struct gcc_options *,
++			  struct cl_target_option *ptr)
++{
++  la_target.cpu_arch = ptr->x_la_opt_cpu_arch;
++  la_target.cpu_tune = ptr->x_la_opt_cpu_tune;
++
++  la_target.isa.fpu = ptr->x_la_opt_fpu;
++  la_target.isa.simd = ptr->x_la_opt_simd;
++  la_target.isa.evolution = ptr->x_la_isa_evolution;
++
++  la_target.cmodel = ptr->x_la_opt_cmodel;
++}
++
+ /* Implement TARGET_CONDITIONAL_REGISTER_USAGE.  */
+ 
+ static void
+@@ -10878,6 +10924,10 @@ loongarch_asm_code_end (void)
+ 
+ #undef TARGET_OPTION_OVERRIDE
+ #define TARGET_OPTION_OVERRIDE loongarch_option_override
++#undef TARGET_OPTION_SAVE
++#define TARGET_OPTION_SAVE loongarch_option_save
++#undef TARGET_OPTION_RESTORE
++#define TARGET_OPTION_RESTORE loongarch_option_restore
+ 
+ #undef TARGET_LEGITIMIZE_ADDRESS
+ #define TARGET_LEGITIMIZE_ADDRESS loongarch_legitimize_address
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index fbc0f53e4..f54b078b1 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -868,7 +868,7 @@ typedef struct {
+ /* A C expression for the cost of a branch instruction.  A value of
+    1 is the default; other values are interpreted relative to that.  */
+ 
+-#define BRANCH_COST(speed_p, predictable_p) loongarch_branch_cost
++#define BRANCH_COST(speed_p, predictable_p) la_branch_cost
+ 
+ /* Return the asm template for a conditional branch instruction.
+    OPCODE is the opcode's mnemonic and OPERANDS is the asm template for
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index d6e337ac2..75d230067 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -58,7 +58,7 @@ EnumValue
+ Enum(isa_ext_fpu) String(64) Value(ISA_EXT_FPU64)
+ 
+ mfpu=
+-Target RejectNegative Joined ToLower Enum(isa_ext_fpu) Var(la_opt_fpu) Init(M_OPT_UNSET)
++Target RejectNegative Joined ToLower Enum(isa_ext_fpu) Var(la_opt_fpu) Init(M_OPT_UNSET) Save
+ -mfpu=FPU	Generate code for the given FPU.
+ 
+ mfpu=0
+@@ -90,7 +90,7 @@ EnumValue
+ Enum(isa_ext_simd) String(lasx) Value(ISA_EXT_SIMD_LASX)
+ 
+ msimd=
+-Target RejectNegative Joined ToLower Enum(isa_ext_simd) Var(la_opt_simd) Init(M_OPT_UNSET)
++Target RejectNegative Joined ToLower Enum(isa_ext_simd) Var(la_opt_simd) Init(M_OPT_UNSET) Save
+ -msimd=SIMD	Generate code for the given SIMD extension.
+ 
+ mlsx
+@@ -122,11 +122,11 @@ EnumValue
+ Enum(cpu_type) String(la664) Value(CPU_LA664)
+ 
+ march=
+-Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET)
++Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET) Save
+ -march=PROCESSOR	Generate code for the given PROCESSOR ISA.
+ 
+ mtune=
+-Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_tune) Init(M_OPT_UNSET)
++Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_tune) Init(M_OPT_UNSET) Save
+ -mtune=PROCESSOR	Generate optimized code for PROCESSOR.
+ 
+ 
+@@ -157,31 +157,31 @@ Variable
+ int la_opt_abi_ext = M_OPT_UNSET
+ 
+ mbranch-cost=
+-Target RejectNegative Joined UInteger Var(loongarch_branch_cost)
++Target RejectNegative Joined UInteger Var(la_branch_cost) Save
+ -mbranch-cost=COST	Set the cost of branches to roughly COST instructions.
+ 
+ mcheck-zero-division
+-Target Mask(CHECK_ZERO_DIV)
++Target Mask(CHECK_ZERO_DIV) Save
+ Trap on integer divide by zero.
+ 
+ mcond-move-int
+-Target Var(TARGET_COND_MOVE_INT) Init(1)
++Target Mask(COND_MOVE_INT) Save
+ Conditional moves for integral are enabled.
+ 
+ mcond-move-float
+-Target Var(TARGET_COND_MOVE_FLOAT) Init(1)
++Target Mask(COND_MOVE_FLOAT) Save
+ Conditional moves for float are enabled.
+ 
+ mmemcpy
+-Target Mask(MEMCPY)
++Target Mask(MEMCPY) Save
+ Prevent optimizing block moves, which is also the default behavior of -Os.
+ 
+ mstrict-align
+-Target Var(TARGET_STRICT_ALIGN) Init(0)
++Target Mask(STRICT_ALIGN) Save
+ Do not generate unaligned memory accesses.
+ 
+ mmax-inline-memcpy-size=
+-Target Joined RejectNegative UInteger Var(loongarch_max_inline_memcpy_size) Init(1024)
++Target Joined RejectNegative UInteger Var(la_max_inline_memcpy_size) Init(1024) Save
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
+ Enum
+@@ -206,11 +206,11 @@ Target Alias(mexplicit-relocs=, always, none)
+ Use %reloc() assembly operators (for backward compatibility).
+ 
+ mrecip
+-Target RejectNegative Var(loongarch_recip)
++Target RejectNegative Var(la_recip) Save
+ Generate approximate reciprocal divide and square root for better throughput.
+ 
+ mrecip=
+-Target RejectNegative Joined Var(loongarch_recip_name)
++Target RejectNegative Joined Var(la_recip_name) Save
+ Control generation of reciprocal estimates.
+ 
+ ; The code model option names for -mcmodel.
+@@ -237,29 +237,29 @@ EnumValue
+ Enum(cmodel) String(extreme) Value(CMODEL_EXTREME)
+ 
+ mcmodel=
+-Target RejectNegative Joined Enum(cmodel) Var(la_opt_cmodel) Init(M_OPT_UNSET)
++Target RejectNegative Joined Enum(cmodel) Var(la_opt_cmodel) Init(M_OPT_UNSET) Save
+ Specify the code model.
+ 
+ mdirect-extern-access
+-Target Var(TARGET_DIRECT_EXTERN_ACCESS) Init(0)
++Target Mask(DIRECT_EXTERN_ACCESS) Save
+ Avoid using the GOT to access external symbols.
+ 
+ mrelax
+-Target Var(loongarch_mrelax) Init(HAVE_AS_MRELAX_OPTION && HAVE_AS_COND_BRANCH_RELAXATION)
++Target Mask(LINKER_RELAXATION)
+ Take advantage of linker relaxations to reduce the number of instructions
+ required to materialize symbol addresses.
+ 
+ mpass-mrelax-to-as
+-Target Var(loongarch_pass_mrelax_to_as) Init(HAVE_AS_MRELAX_OPTION)
++Driver Var(la_pass_mrelax_to_as) Init(HAVE_AS_MRELAX_OPTION)
+ Pass -mrelax or -mno-relax option to the assembler.
+ 
+ -param=loongarch-vect-unroll-limit=
+-Target Joined UInteger Var(loongarch_vect_unroll_limit) Init(6) IntegerRange(1, 64) Param
++Target Joined UInteger Var(la_vect_unroll_limit) Init(6) IntegerRange(1, 64) Param
+ Used to limit unroll factor which indicates how much the autovectorizer may
+ unroll a loop.  The default value is 6.
+ 
+ -param=loongarch-vect-issue-info=
+-Target Undocumented Joined UInteger Var(loongarch_vect_issue_info) Init(4) IntegerRange(1, 64) Param
++Target Undocumented Joined UInteger Var(la_vect_issue_info) Init(4) IntegerRange(1, 64) Param
+ Indicate how many non memory access vector instructions can be issued per
+ cycle, it's used in unroll factor determination for autovectorizer.  The
+ default value is 4.
+-- 
+2.45.2
+

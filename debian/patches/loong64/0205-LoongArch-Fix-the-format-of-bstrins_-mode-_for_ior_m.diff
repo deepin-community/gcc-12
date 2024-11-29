@@ -1,0 +1,33 @@
+From 42620627753afa9f46455333987b097bf86381b1 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 29 Dec 2023 20:04:34 +0800
+Subject: [PATCH 205/301] LoongArch: Fix the format of
+ bstrins_<mode>_for_ior_mask condition (NFC)
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (bstrins_<mode>_for_ior_mask):
+	For the condition, remove unneeded trailing "\" and move "&&" to
+	follow GNU coding style.  NFC.
+---
+ src/gcc/config/loongarch/loongarch.md | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 3c61a0cf4..996df66e8 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -1486,8 +1486,8 @@
+                           (match_operand:GPR 2 "const_int_operand"))
+ 		 (and:GPR (match_operand:GPR 3 "register_operand")
+ 			  (match_operand:GPR 4 "const_int_operand"))))]
+-  "loongarch_pre_reload_split () && \
+-   loongarch_use_bstrins_for_ior_with_mask (<MODE>mode, operands)"
++  "loongarch_pre_reload_split ()
++   && loongarch_use_bstrins_for_ior_with_mask (<MODE>mode, operands)"
+   "#"
+   "&& true"
+   [(set (match_dup 0) (match_dup 1))
+-- 
+2.45.2
+

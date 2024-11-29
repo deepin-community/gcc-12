@@ -1,0 +1,220 @@
+From 3a18f7db5919938f8d706e2c7d3e899f32bf263b Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 6 Nov 2022 23:16:49 +0800
+Subject: [PATCH 027/301] LoongArch: Add ftint{,rm,rp}.{w,l}.{s,d} instructions
+
+This allows to optimize the following builtins if -fno-math-errno:
+
+- __builtin_lrint{,f}
+- __builtin_lfloor{,f}
+- __builtin_lceil{,f}
+
+Inspired by
+https://gcc.gnu.org/pipermail/gcc-patches/2022-November/605287.html.
+
+ANYFI is added so the compiler won't try ftint.l.s if -mfpu=32.  If we
+simply used GPR here an ICE would be triggered with __builtin_lrintf
+and -mfpu=32.
+
+ftint{rm,rp} instructions may raise inexact exception, so they can't be
+used if -fno-trapping-math -fno-fp-int-builtin-inexact.
+
+Note that the .w.{s,d} variants are not tested because we don't support
+ILP32 for now.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (UNSPEC_FTINT): New unspec.
+	(UNSPEC_FTINTRM): Likewise.
+	(UNSPEC_FTINTRP): Likewise.
+	(LRINT): New define_int_iterator.
+	(lrint_pattern): New define_int_attr.
+	(lrint_submenmonic): Likewise.
+	(lrint_allow_inexact): Likewise.
+	(ANYFI): New define_mode_iterator.
+	(lrint<ANYF><ANYFI>): New instruction template.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/ftint.c: New test.
+	* gcc.target/loongarch/ftint-no-inexact.c: New test.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/loongarch.md         | 34 ++++++++++++++
+ .../gcc.target/loongarch/ftint-no-inexact.c   | 44 +++++++++++++++++++
+ .../testsuite/gcc.target/loongarch/ftint.c    | 44 +++++++++++++++++++
+ 3 files changed, 122 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/ftint-no-inexact.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/ftint.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 41bc9b76b..97fce8f47 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -38,6 +38,9 @@
+   UNSPEC_FMAX
+   UNSPEC_FMIN
+   UNSPEC_FCOPYSIGN
++  UNSPEC_FTINT
++  UNSPEC_FTINTRM
++  UNSPEC_FTINTRP
+ 
+   ;; Override return address for exception handling.
+   UNSPEC_EH_RETURN
+@@ -375,6 +378,11 @@
+ (define_mode_iterator ANYF [(SF "TARGET_HARD_FLOAT")
+ 			    (DF "TARGET_DOUBLE_FLOAT")])
+ 
++;; Iterator for fixed-point modes which can be hold by a hardware
++;; floating-point register.
++(define_mode_iterator ANYFI [(SI "TARGET_HARD_FLOAT")
++			     (DI "TARGET_DOUBLE_FLOAT")])
++
+ ;; A mode for which moves involving FPRs may need to be split.
+ (define_mode_iterator SPLITF
+   [(DF "!TARGET_64BIT && TARGET_DOUBLE_FLOAT")
+@@ -516,6 +524,19 @@
+ (define_code_attr sel [(eq "masknez") (ne "maskeqz")])
+ (define_code_attr selinv [(eq "maskeqz") (ne "masknez")])
+ 
++;; Iterator and attributes for floating-point to fixed-point conversion
++;; instructions.
++(define_int_iterator LRINT [UNSPEC_FTINT UNSPEC_FTINTRM UNSPEC_FTINTRP])
++(define_int_attr lrint_pattern [(UNSPEC_FTINT "lrint")
++				(UNSPEC_FTINTRM "lfloor")
++				(UNSPEC_FTINTRP "lceil")])
++(define_int_attr lrint_submenmonic [(UNSPEC_FTINT "")
++				    (UNSPEC_FTINTRM "rm")
++				    (UNSPEC_FTINTRP "rp")])
++(define_int_attr lrint_allow_inexact [(UNSPEC_FTINT "1")
++				      (UNSPEC_FTINTRM "0")
++				      (UNSPEC_FTINTRP "0")])
++
+ ;;
+ ;;  ....................
+ ;;
+@@ -2023,6 +2044,19 @@
+   [(set_attr "type" "fcvt")
+    (set_attr "mode" "<MODE>")])
+ 
++;; Convert floating-point numbers to integers
++(define_insn "<lrint_pattern><ANYF:mode><ANYFI:mode>2"
++  [(set (match_operand:ANYFI 0 "register_operand" "=f")
++	(unspec:ANYFI [(match_operand:ANYF 1 "register_operand" "f")]
++		      LRINT))]
++  "TARGET_HARD_FLOAT &&
++   (<lrint_allow_inexact>
++    || flag_fp_int_builtin_inexact
++    || !flag_trapping_math)"
++  "ftint<lrint_submenmonic>.<ANYFI:ifmt>.<ANYF:fmt> %0,%1"
++  [(set_attr "type" "fcvt")
++   (set_attr "mode" "<ANYF:MODE>")])
++
+ ;; Load the low word of operand 0 with operand 1.
+ (define_insn "load_low<mode>"
+   [(set (match_operand:SPLITF 0 "register_operand" "=f,f")
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/ftint-no-inexact.c b/src/gcc/testsuite/gcc.target/loongarch/ftint-no-inexact.c
+new file mode 100644
+index 000000000..88b83a9c0
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/ftint-no-inexact.c
+@@ -0,0 +1,44 @@
++/* { dg-do compile } */
++/* { dg-options "-mabi=lp64d -mdouble-float -fno-math-errno -fno-fp-int-builtin-inexact" } */
++/* { dg-final { scan-assembler "ftint\\.l\\.s" } } */
++/* { dg-final { scan-assembler "ftint\\.l\\.d" } } */
++/* { dg-final { scan-assembler-not "ftintrm\\.l\\.s" } } */
++/* { dg-final { scan-assembler-not "ftintrm\\.l\\.d" } } */
++/* { dg-final { scan-assembler-not "ftintrp\\.l\\.s" } } */
++/* { dg-final { scan-assembler-not "ftintrp\\.l\\.d" } } */
++
++long
++my_lrint (double a)
++{
++  return __builtin_lrint (a);
++}
++
++long
++my_lrintf (float a)
++{
++  return __builtin_lrintf (a);
++}
++
++long
++my_lfloor (double a)
++{
++  return __builtin_lfloor (a);
++}
++
++long
++my_lfloorf (float a)
++{
++  return __builtin_lfloorf (a);
++}
++
++long
++my_lceil (double a)
++{
++  return __builtin_lceil (a);
++}
++
++long
++my_lceilf (float a)
++{
++  return __builtin_lceilf (a);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/ftint.c b/src/gcc/testsuite/gcc.target/loongarch/ftint.c
+new file mode 100644
+index 000000000..7a326a454
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/ftint.c
+@@ -0,0 +1,44 @@
++/* { dg-do compile } */
++/* { dg-options "-mabi=lp64d -mdouble-float -fno-math-errno -ffp-int-builtin-inexact" } */
++/* { dg-final { scan-assembler "ftint\\.l\\.s" } } */
++/* { dg-final { scan-assembler "ftint\\.l\\.d" } } */
++/* { dg-final { scan-assembler "ftintrm\\.l\\.s" } } */
++/* { dg-final { scan-assembler "ftintrm\\.l\\.d" } } */
++/* { dg-final { scan-assembler "ftintrp\\.l\\.s" } } */
++/* { dg-final { scan-assembler "ftintrp\\.l\\.d" } } */
++
++long
++my_lrint (double a)
++{
++  return __builtin_lrint (a);
++}
++
++long
++my_lrintf (float a)
++{
++  return __builtin_lrintf (a);
++}
++
++long
++my_lfloor (double a)
++{
++  return __builtin_lfloor (a);
++}
++
++long
++my_lfloorf (float a)
++{
++  return __builtin_lfloorf (a);
++}
++
++long
++my_lceil (double a)
++{
++  return __builtin_lceil (a);
++}
++
++long
++my_lceilf (float a)
++{
++  return __builtin_lceilf (a);
++}
+-- 
+2.45.2
+

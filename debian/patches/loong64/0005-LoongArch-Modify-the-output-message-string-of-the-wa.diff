@@ -1,0 +1,37 @@
+From aafbe83f3835bf1f5d122b8550b4af2194967fe6 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 26 Jul 2022 21:03:52 +0800
+Subject: [PATCH 005/301] LoongArch: Modify the output message string of the
+ warning.
+
+Fix bug for "error: spurious trailing punctuation sequence '.' in format [-Werror=format-diag]".
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-opts.cc: Modify the output message string
+	of the warning.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/loongarch-opts.cc | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index a76d0afbd..aa6c0db37 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -378,8 +378,8 @@ fallback:
+   t.cmodel = constrained.cmodel ? opt_cmodel : CMODEL_NORMAL;
+   if (t.cmodel != CMODEL_NORMAL)
+     {
+-      warning (0, "%qs is not supported, now cmodel is set to 'normal'.",
+-	       loongarch_cmodel_strings[t.cmodel]);
++      warning (0, "%qs is not supported, now cmodel is set to %qs",
++	       loongarch_cmodel_strings[t.cmodel], "normal");
+       t.cmodel = CMODEL_NORMAL;
+     }
+ 
+-- 
+2.45.2
+

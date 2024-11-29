@@ -1,0 +1,190 @@
+From 21be0e6e2cf5840636a065702cd0596dcce48e8a Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 19 Dec 2023 04:48:03 +0800
+Subject: [PATCH 193/301] LoongArch: Use force_reg instead of gen_reg_rtx +
+ emit_move_insn in vec_init expander [PR113033]
+
+Jakub says:
+
+    Then that seems like a bug in the loongarch vec_init pattern(s).
+    Those really don't have a predicate in any of the backends on the
+    input operand, so they need to force_reg it if it is something it
+    can't handle. I've looked e.g. at i386 vec_init and that is exactly
+    what it does, see the various tests + force_reg calls in
+    ix86_expand_vector_init*.
+
+So replace gen_reg_rtx + emit_move_insn with force_reg to fix PR 113033.
+
+gcc/ChangeLog:
+
+	PR target/113033
+	* config/loongarch/loongarch.cc
+	(loongarch_expand_vector_init_same): Replace gen_reg_rtx +
+	emit_move_insn with force_reg.
+	(loongarch_expand_vector_init): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/113033
+	* gcc.target/loongarch/pr113033.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc         | 38 ++++++-------------
+ .../testsuite/gcc.target/loongarch/pr113033.c | 23 +++++++++++
+ 2 files changed, 35 insertions(+), 26 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/pr113033.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 2e4470349..00d270179 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -10743,7 +10743,7 @@ loongarch_expand_vector_init_same (rtx target, rtx vals, unsigned nvar)
+ 	  gcc_unreachable ();
+ 	}
+     }
+-  temp = gen_reg_rtx (imode);
++
+   if (imode == GET_MODE (same))
+     temp2 = same;
+   else if (GET_MODE_SIZE (imode) >= UNITS_PER_WORD)
+@@ -10768,7 +10768,8 @@ loongarch_expand_vector_init_same (rtx target, rtx vals, unsigned nvar)
+       else
+ 	temp2 = lowpart_subreg (imode, same, GET_MODE (same));
+     }
+-  emit_move_insn (temp, temp2);
++
++  temp = force_reg (imode, temp2);
+ 
+   switch (vmode)
+     {
+@@ -10990,35 +10991,29 @@ loongarch_expand_vector_init (rtx target, rtx vals)
+ 			 to reduce the number of instructions.  */
+ 		      if (i == 1)
+ 			{
+-			  op0 = gen_reg_rtx (imode);
+-			  emit_move_insn (op0, val_hi[0]);
+-			  op1 = gen_reg_rtx (imode);
+-			  emit_move_insn (op1, val_hi[1]);
++			  op0 = force_reg (imode, val_hi[0]);
++			  op1 = force_reg (imode, val_hi[1]);
+ 			  emit_insn (
+ 			    loongarch_vec_repl2_256 (target_hi, op0, op1));
+ 			}
+ 		      else if (i > 1)
+ 			{
+-			  op0 = gen_reg_rtx (imode);
+-			  emit_move_insn (op0, val_hi[i]);
++			  op0 = force_reg (imode, val_hi[i]);
+ 			  emit_insn (
+ 			    loongarch_vec_set256 (target_hi, op0, GEN_INT (i)));
+ 			}
+ 		    }
+ 		  else
+ 		    {
++		      op0 = force_reg (imode, val_hi[i]);
+ 		      /* Assign the lowest element of val_hi to all elements
+ 			 of target_hi.  */
+ 		      if (i == 0)
+ 			{
+-			  op0 = gen_reg_rtx (imode);
+-			  emit_move_insn (op0, val_hi[0]);
+ 			  emit_insn (loongarch_vec_repl1_256 (target_hi, op0));
+ 			}
+ 		      else if (!rtx_equal_p (val_hi[i], val_hi[0]))
+ 			{
+-			  op0 = gen_reg_rtx (imode);
+-			  emit_move_insn (op0, val_hi[i]);
+ 			  emit_insn (
+ 			    loongarch_vec_set256 (target_hi, op0, GEN_INT (i)));
+ 			}
+@@ -11026,18 +11021,15 @@ loongarch_expand_vector_init (rtx target, rtx vals)
+ 		}
+ 	      if (!lo_same && !half_same)
+ 		{
++		  op0 = force_reg (imode, val_lo[i]);
+ 		  /* Assign the lowest element of val_lo to all elements
+ 		     of target_lo.  */
+ 		  if (i == 0)
+ 		    {
+-		      op0 = gen_reg_rtx (imode);
+-		      emit_move_insn (op0, val_lo[0]);
+ 		      emit_insn (loongarch_vec_repl1_128 (target_lo, op0));
+ 		    }
+ 		  else if (!rtx_equal_p (val_lo[i], val_lo[0]))
+ 		    {
+-		      op0 = gen_reg_rtx (imode);
+-		      emit_move_insn (op0, val_lo[i]);
+ 		      emit_insn (
+ 			loongarch_vec_set128 (target_lo, op0, GEN_INT (i)));
+ 		    }
+@@ -11069,16 +11061,13 @@ loongarch_expand_vector_init (rtx target, rtx vals)
+ 		     reduce the number of instructions.  */
+ 		  if (i == 1)
+ 		    {
+-		      op0 = gen_reg_rtx (imode);
+-		      emit_move_insn (op0, val[0]);
+-		      op1 = gen_reg_rtx (imode);
+-		      emit_move_insn (op1, val[1]);
++		      op0 = force_reg (imode, val[0]);
++		      op1 = force_reg (imode, val[1]);
+ 		      emit_insn (loongarch_vec_repl2_128 (target, op0, op1));
+ 		    }
+ 		  else if (i > 1)
+ 		    {
+-		      op0 = gen_reg_rtx (imode);
+-		      emit_move_insn (op0, val[i]);
++		      op0 = force_reg (imode, val[i]);
+ 		      emit_insn (
+ 			loongarch_vec_set128 (target, op0, GEN_INT (i)));
+ 		    }
+@@ -11091,18 +11080,15 @@ loongarch_expand_vector_init (rtx target, rtx vals)
+ 			loongarch_vec_mirror (target, target, const0_rtx));
+ 		      return;
+ 		    }
++		  op0 = force_reg (imode, val[i]);
+ 		  /* Assign the lowest element of val to all elements of
+ 		     target.  */
+ 		  if (i == 0)
+ 		    {
+-		      op0 = gen_reg_rtx (imode);
+-		      emit_move_insn (op0, val[0]);
+ 		      emit_insn (loongarch_vec_repl1_128 (target, op0));
+ 		    }
+ 		  else if (!rtx_equal_p (val[i], val[0]))
+ 		    {
+-		      op0 = gen_reg_rtx (imode);
+-		      emit_move_insn (op0, val[i]);
+ 		      emit_insn (
+ 			loongarch_vec_set128 (target, op0, GEN_INT (i)));
+ 		    }
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/pr113033.c b/src/gcc/testsuite/gcc.target/loongarch/pr113033.c
+new file mode 100644
+index 000000000..4ccd037d8
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr113033.c
+@@ -0,0 +1,23 @@
++/* PR target/113033: ICE with vector left rotate */
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx" } */
++
++typedef unsigned __attribute__ ((vector_size (16))) v4si;
++typedef unsigned __attribute__ ((vector_size (32))) v8si;
++typedef unsigned long long __attribute__ ((vector_size (16))) v2di;
++typedef unsigned long long __attribute__ ((vector_size (32))) v4di;
++
++#define TEST(tp) \
++extern tp data_##tp; \
++tp \
++test_##tp (int x) \
++{ \
++  const int bit = sizeof (data_##tp[0]) * __CHAR_BIT__; \
++  data_##tp = data_##tp << (x & (bit - 1)) \
++	      | data_##tp >> (bit - x & (bit - 1)); \
++}
++
++TEST (v4si)
++TEST (v8si)
++TEST (v2di)
++TEST (v4di)
+-- 
+2.45.2
+

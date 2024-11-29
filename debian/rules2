@@ -565,6 +565,10 @@ ifneq (,$(findstring m68k-linux,$(DEB_TARGET_GNU_TYPE)))
   CONFARGS += --disable-multilib
 endif
 
+ifneq (,$(findstring loongarch64-linux,$(DEB_TARGET_GNU_TYPE)))
+  CONFARGS += --disable-multilib
+endif
+
 ifneq (,$(findstring riscv64-linux,$(DEB_TARGET_GNU_TYPE)))
   CONFARGS += --disable-multilib
   CONFARGS += --with-arch=rv64gc --with-abi=lp64d

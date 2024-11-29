@@ -1,0 +1,78 @@
+From 887f5a4c3fd59fad47d369b6d34e6854217ed683 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Thu, 14 Dec 2023 20:49:04 +0800
+Subject: [PATCH 195/301] LoongArch: Fix incorrect code generation for sad
+ pattern
+
+When I attempt to enable vect_usad_char effective target for LoongArch, slp-reduc-sad.c
+and vect-reduc-sad*.c tests fail. These tests fail because the sad pattern generates bad
+code. This patch to fixed them, for sad patterns, use zero expansion instead of sign
+expansion for reduction.
+
+Currently, we are fixing failed vectorized tests, and in the future, we will
+enable more tests of "vect" for LoongArch.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md: Use zero expansion instruction.
+	* config/loongarch/lsx.md: Ditto.
+---
+ src/gcc/config/loongarch/lasx.md | 8 ++++----
+ src/gcc/config/loongarch/lsx.md  | 8 ++++----
+ 2 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 921ce0eeb..9ca3f9278 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -5021,8 +5021,8 @@
+   rtx t2 = gen_reg_rtx (V16HImode);
+   rtx t3 = gen_reg_rtx (V8SImode);
+   emit_insn (gen_lasx_xvabsd_u_bu (t1, operands[1], operands[2]));
+-  emit_insn (gen_lasx_xvhaddw_h_b (t2, t1, t1));
+-  emit_insn (gen_lasx_xvhaddw_w_h (t3, t2, t2));
++  emit_insn (gen_lasx_xvhaddw_hu_bu (t2, t1, t1));
++  emit_insn (gen_lasx_xvhaddw_wu_hu (t3, t2, t2));
+   emit_insn (gen_addv8si3 (operands[0], t3, operands[3]));
+   DONE;
+ })
+@@ -5038,8 +5038,8 @@
+   rtx t2 = gen_reg_rtx (V16HImode);
+   rtx t3 = gen_reg_rtx (V8SImode);
+   emit_insn (gen_lasx_xvabsd_s_b (t1, operands[1], operands[2]));
+-  emit_insn (gen_lasx_xvhaddw_h_b (t2, t1, t1));
+-  emit_insn (gen_lasx_xvhaddw_w_h (t3, t2, t2));
++  emit_insn (gen_lasx_xvhaddw_hu_bu (t2, t1, t1));
++  emit_insn (gen_lasx_xvhaddw_wu_hu (t3, t2, t2));
+   emit_insn (gen_addv8si3 (operands[0], t3, operands[3]));
+   DONE;
+ })
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 57e0ee3d4..7f5fff40a 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -3385,8 +3385,8 @@
+   rtx t2 = gen_reg_rtx (V8HImode);
+   rtx t3 = gen_reg_rtx (V4SImode);
+   emit_insn (gen_lsx_vabsd_u_bu (t1, operands[1], operands[2]));
+-  emit_insn (gen_lsx_vhaddw_h_b (t2, t1, t1));
+-  emit_insn (gen_lsx_vhaddw_w_h (t3, t2, t2));
++  emit_insn (gen_lsx_vhaddw_hu_bu (t2, t1, t1));
++  emit_insn (gen_lsx_vhaddw_wu_hu (t3, t2, t2));
+   emit_insn (gen_addv4si3 (operands[0], t3, operands[3]));
+   DONE;
+ })
+@@ -3402,8 +3402,8 @@
+   rtx t2 = gen_reg_rtx (V8HImode);
+   rtx t3 = gen_reg_rtx (V4SImode);
+   emit_insn (gen_lsx_vabsd_s_b (t1, operands[1], operands[2]));
+-  emit_insn (gen_lsx_vhaddw_h_b (t2, t1, t1));
+-  emit_insn (gen_lsx_vhaddw_w_h (t3, t2, t2));
++  emit_insn (gen_lsx_vhaddw_hu_bu (t2, t1, t1));
++  emit_insn (gen_lsx_vhaddw_wu_hu (t3, t2, t2));
+   emit_insn (gen_addv4si3 (operands[0], t3, operands[3]));
+   DONE;
+ })
+-- 
+2.45.2
+

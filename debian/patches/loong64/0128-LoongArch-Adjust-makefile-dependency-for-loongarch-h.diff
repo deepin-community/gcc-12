@@ -1,0 +1,71 @@
+From fd4aed1d4df962185860c0c95a246e523840e4c8 Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Wed, 11 Oct 2023 17:59:53 +0800
+Subject: [PATCH 128/301] LoongArch: Adjust makefile dependency for loongarch
+ headers.
+
+gcc/ChangeLog:
+
+	* config.gcc: Add loongarch-driver.h to tm_files.
+	* config/loongarch/loongarch.h: Do not include loongarch-driver.h.
+	* config/loongarch/t-loongarch: Append loongarch-multilib.h to $(GTM_H)
+	instead of $(TM_H) for building generator programs.
+---
+ src/gcc/config.gcc                   | 4 ++--
+ src/gcc/config/loongarch/loongarch.h | 3 ---
+ src/gcc/config/loongarch/t-loongarch | 3 ++-
+ 3 files changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/src/gcc/config.gcc b/src/gcc/config.gcc
+index e6a5a056b..76739c9d8 100644
+--- a/src/gcc/config.gcc
++++ b/src/gcc/config.gcc
+@@ -2508,7 +2508,7 @@ riscv*-*-freebsd*)
+ 
+ loongarch*-*-linux*)
+ 	tm_file="dbxelf.h elfos.h gnu-user.h linux.h linux-android.h glibc-stdint.h ${tm_file}"
+-	tm_file="${tm_file} loongarch/gnu-user.h loongarch/linux.h"
++	tm_file="${tm_file} loongarch/gnu-user.h loongarch/linux.h loongarch/loongarch-driver.h"
+ 	extra_options="${extra_options} linux-android.opt"
+ 	tmake_file="${tmake_file} loongarch/t-multilib loongarch/t-linux"
+ 	gnu_ld=yes
+@@ -2521,7 +2521,7 @@ loongarch*-*-linux*)
+ 
+ loongarch*-*-elf*)
+ 	tm_file="elfos.h newlib-stdint.h ${tm_file}"
+-	tm_file="${tm_file} loongarch/elf.h loongarch/linux.h"
++	tm_file="${tm_file} loongarch/elf.h loongarch/linux.h loongarch/loongarch-driver.h"
+ 	tmake_file="${tmake_file} loongarch/t-multilib loongarch/t-linux"
+ 	gnu_ld=yes
+ 	gas=yes
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index c16d4b79a..6af8934e6 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -49,9 +49,6 @@ along with GCC; see the file COPYING3.  If not see
+ 
+ #define TARGET_LIBGCC_SDATA_SECTION ".sdata"
+ 
+-/* Driver native functions for SPEC processing in the GCC driver.  */
+-#include "loongarch-driver.h"
+-
+ /* This definition replaces the formerly used 'm' constraint with a
+    different constraint letter in order to avoid changing semantics of
+    the 'm' constraint when accepting new address formats in
+diff --git a/src/gcc/config/loongarch/t-loongarch b/src/gcc/config/loongarch/t-loongarch
+index 28cfb49df..12734c37b 100644
+--- a/src/gcc/config/loongarch/t-loongarch
++++ b/src/gcc/config/loongarch/t-loongarch
+@@ -16,7 +16,8 @@
+ # along with GCC; see the file COPYING3.  If not see
+ # <http://www.gnu.org/licenses/>.
+ 
+-TM_H += loongarch-multilib.h $(srcdir)/config/loongarch/loongarch-driver.h
++
++GTM_H += loongarch-multilib.h
+ OPTIONS_H_EXTRA += $(srcdir)/config/loongarch/loongarch-def.h \
+ 		   $(srcdir)/config/loongarch/loongarch-tune.h
+ 
+-- 
+2.45.2
+

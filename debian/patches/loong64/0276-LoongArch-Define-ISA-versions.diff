@@ -1,0 +1,930 @@
+From 577961b0cdd345c524d0b9efc624e95d1eea9c6f Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Tue, 23 Apr 2024 10:42:47 +0800
+Subject: [PATCH 276/301] LoongArch: Define ISA versions
+
+These ISA versions are defined as -march= parameters and
+are recommended for building binaries for distribution.
+
+Detailed description of these definitions can be found at
+https://github.com/loongson/la-toolchain-conventions, which
+the LoongArch GCC port aims to conform to.
+
+gcc/ChangeLog:
+
+	* config.gcc: Make la64v1.0 the default ISA preset of the lp64d ABI.
+	* config/loongarch/genopts/loongarch-strings: Define la64v1.0, la64v1.1.
+	* config/loongarch/genopts/loongarch.opt.in: Likewise.
+	* config/loongarch/loongarch-c.cc (LARCH_CPP_SET_PROCESSOR): Likewise.
+	(loongarch_cpu_cpp_builtins): Likewise.
+	* config/loongarch/loongarch-cpu.cc (get_native_prid): Likewise.
+	(fill_native_cpu_config): Likewise.
+	* config/loongarch/loongarch-def.cc (array_tune): Likewise.
+	* config/loongarch/loongarch-def.h: Likewise.
+	* config/loongarch/loongarch-driver.cc (driver_set_m_parm): Likewise.
+	(driver_get_normalized_m_opts): Likewise.
+	* config/loongarch/loongarch-opts.cc (default_tune_for_arch): Likewise.
+	(TUNE_FOR_ARCH): Likewise.
+	(arch_str): Likewise.
+	(loongarch_target_option_override): Likewise.
+	* config/loongarch/loongarch-opts.h (TARGET_uARCH_LA464): Likewise.
+	(TARGET_uARCH_LA664): Likewise.
+	* config/loongarch/loongarch-str.h (STR_CPU_ABI_DEFAULT): Likewise.
+	(STR_ARCH_ABI_DEFAULT): Likewise.
+	(STR_TUNE_GENERIC): Likewise.
+	(STR_ARCH_LA64V1_0): Likewise.
+	(STR_ARCH_LA64V1_1): Likewise.
+	* config/loongarch/loongarch.cc (loongarch_cpu_sched_reassociation_width): Likewise.
+	(loongarch_asm_code_end): Likewise.
+	* config/loongarch/loongarch.opt: Likewise.
+	* doc/invoke.texi: Likewise.
+---
+ src/gcc/config.gcc                            | 34 ++++----
+ .../loongarch/genopts/loongarch-strings       |  5 +-
+ .../config/loongarch/genopts/loongarch.opt.in | 43 ++++++++--
+ src/gcc/config/loongarch/loongarch-c.cc       | 37 +++------
+ src/gcc/config/loongarch/loongarch-cpu.cc     | 35 ++++----
+ src/gcc/config/loongarch/loongarch-def.cc     | 83 +++++++++++++------
+ src/gcc/config/loongarch/loongarch-def.h      | 37 ++++++---
+ src/gcc/config/loongarch/loongarch-driver.cc  |  8 +-
+ src/gcc/config/loongarch/loongarch-opts.cc    | 66 +++++++++++----
+ src/gcc/config/loongarch/loongarch-opts.h     |  4 +-
+ src/gcc/config/loongarch/loongarch-str.h      |  5 +-
+ src/gcc/config/loongarch/loongarch.cc         | 11 +--
+ src/gcc/config/loongarch/loongarch.opt        | 43 ++++++++--
+ 13 files changed, 263 insertions(+), 148 deletions(-)
+
+diff --git a/src/gcc/config.gcc b/src/gcc/config.gcc
+index 46401fff2..1bbab4ce4 100644
+--- a/src/gcc/config.gcc
++++ b/src/gcc/config.gcc
+@@ -5054,7 +5054,7 @@ case "${target}" in
+ 
+ 		# Perform initial sanity checks on --with-* options.
+ 		case ${with_arch} in
+-		"" | abi-default | loongarch64 | la[46]64) ;; # OK, append here.
++		"" | la64v1.[01] | abi-default | loongarch64 | la[46]64) ;; # OK, append here.
+ 		native)
+ 			if test x${host} != x${target}; then
+ 				echo "--with-arch=native is illegal for cross-compiler." 1>&2
+@@ -5101,10 +5101,18 @@ case "${target}" in
+ 
+ 		# Infer ISA-related default options from the ABI: pass 1
+ 		case ${abi_base}/${abi_ext} in
+-		lp64*/base)
++		lp64d/base)
+ 			# architectures that support lp64* ABI
+-			arch_pattern="native|abi-default|loongarch64|la[46]64"
+-			# default architecture for lp64* ABI
++			arch_pattern="native|abi-default|la64v1.[01]|loongarch64|la[46]64"
++
++			# default architecture for lp64d ABI
++			arch_default="la64v1.0"
++			;;
++		lp64[fs]/base)
++			# architectures that support lp64* ABI
++			arch_pattern="native|abi-default|la64v1.[01]|loongarch64|la[46]64"
++
++			# default architecture for lp64[fs] ABI
+ 			arch_default="abi-default"
+ 			;;
+ 		*)
+@@ -5176,15 +5184,7 @@ case "${target}" in
+ 
+ 
+ 		# Check default with_tune configuration using with_arch.
+-		case ${with_arch} in
+-		loongarch64)
+-			tune_pattern="native|abi-default|loongarch64|la[46]64"
+-			;;
+-		*)
+-			# By default, $with_tune == $with_arch
+-			tune_pattern="*"
+-			;;
+-		esac
++		tune_pattern="native|generic|loongarch64|la[46]64"
+ 
+ 		case ${with_tune} in
+ 		"") ;; # OK
+@@ -5234,7 +5234,7 @@ case "${target}" in
+ 					# Fixed: use the default gcc configuration for all multilib
+ 					# builds by default.
+ 					with_multilib_default="" ;;
+-				arch,native|arch,loongarch64|arch,la[46]64) # OK, append here.
++				arch,native|arch,la64v1.[01]|arch,loongarch64|arch,la[46]64) # OK, append here.
+ 					with_multilib_default="/march=${component}" ;;
+ 				arch,*)
+ 					with_multilib_default="/march=abi-default"
+@@ -5334,7 +5334,7 @@ case "${target}" in
+ 				if test x${parse_state} = x"arch"; then
+ 					# -march option
+ 					case ${component} in
+-					native | abi-default | loongarch64 | la[46]64) # OK, append here.
++					native | abi-default | la64v1.[01] | loongarch64 | la[46]64) # OK, append here.
+ 						# Append -march spec for each multilib variant.
+ 						loongarch_multilib_list_make="${loongarch_multilib_list_make}/march=${component}"
+ 						parse_state="opts"
+@@ -5877,7 +5877,7 @@ case ${target} in
+ 		# See macro definitions from loongarch-opts.h and loongarch-cpu.h.
+ 
+ 		# Architecture
+-		tm_defines="${tm_defines} DEFAULT_CPU_ARCH=CPU_$(echo ${with_arch} | tr a-z- A-Z_)"
++		tm_defines="${tm_defines} DEFAULT_CPU_ARCH=ARCH_$(echo ${with_arch} | tr a-z.- A-Z__)"
+ 
+ 		# Base ABI type
+ 		tm_defines="${tm_defines} DEFAULT_ABI_BASE=ABI_BASE_$(echo ${abi_base} | tr a-z- A-Z_)"
+@@ -5889,7 +5889,7 @@ case ${target} in
+ 
+ 		# Microarchitecture
+ 		if test x${with_tune} != x; then
+-		  tm_defines="${tm_defines} DEFAULT_CPU_TUNE=CPU_$(echo ${with_tune} | tr a-z- A-Z_)"
++		  tm_defines="${tm_defines} DEFAULT_CPU_TUNE=TUNE_$(echo ${with_tune} | tr a-z.- A-Z__)"
+ 		fi
+ 
+ 		# FPU adjustment
+diff --git a/src/gcc/config/loongarch/genopts/loongarch-strings b/src/gcc/config/loongarch/genopts/loongarch-strings
+index 99fd4e7cd..fd2f9b4f3 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch-strings
++++ b/src/gcc/config/loongarch/genopts/loongarch-strings
+@@ -23,10 +23,13 @@ OPTSTR_ARCH	      arch
+ OPTSTR_TUNE	      tune
+ 
+ STR_CPU_NATIVE	      native
+-STR_CPU_ABI_DEFAULT   abi-default
++STR_ARCH_ABI_DEFAULT  abi-default
++STR_TUNE_GENERIC      generic
+ STR_CPU_LOONGARCH64   loongarch64
+ STR_CPU_LA464	      la464
+ STR_CPU_LA664	      la664
++STR_ARCH_LA64V1_0     la64v1.0
++STR_ARCH_LA64V1_1     la64v1.1
+ 
+ # Base architecture
+ STR_ISA_BASE_LA64 la64
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index f3d53f03c..0ecd10922 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -95,30 +95,55 @@ Enable LoongArch Advanced SIMD Extension (LASX, 256-bit).
+ 
+ ;; Base target models (implies ISA & tune parameters)
+ Enum
+-Name(cpu_type) Type(int)
+-LoongArch CPU types:
++Name(arch_type) Type(int)
++LoongArch ARCH presets:
+ 
+ EnumValue
+-Enum(cpu_type) String(@@STR_CPU_NATIVE@@) Value(CPU_NATIVE)
++Enum(arch_type) String(@@STR_CPU_NATIVE@@) Value(ARCH_NATIVE)
+ 
+ EnumValue
+-Enum(cpu_type) String(@@STR_CPU_ABI_DEFAULT@@) Value(CPU_ABI_DEFAULT)
++Enum(arch_type) String(@@STR_ARCH_ABI_DEFAULT@@) Value(ARCH_ABI_DEFAULT)
+ 
+ EnumValue
+-Enum(cpu_type) String(@@STR_CPU_LOONGARCH64@@) Value(CPU_LOONGARCH64)
++Enum(arch_type) String(@@STR_CPU_LOONGARCH64@@) Value(ARCH_LOONGARCH64)
+ 
+ EnumValue
+-Enum(cpu_type) String(@@STR_CPU_LA464@@) Value(CPU_LA464)
++Enum(arch_type) String(@@STR_CPU_LA464@@) Value(ARCH_LA464)
+ 
+ EnumValue
+-Enum(cpu_type) String(@@STR_CPU_LA664@@) Value(CPU_LA664)
++Enum(arch_type) String(@@STR_CPU_LA664@@) Value(ARCH_LA664)
++
++EnumValue
++Enum(arch_type) String(@@STR_ARCH_LA64V1_0@@) Value(ARCH_LA64V1_0)
++
++EnumValue
++Enum(arch_type) String(@@STR_ARCH_LA64V1_1@@) Value(ARCH_LA64V1_1)
+ 
+ m@@OPTSTR_ARCH@@=
+-Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET) Save
++Target RejectNegative Joined Enum(arch_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET) Save
+ -m@@OPTSTR_ARCH@@=PROCESSOR	Generate code for the given PROCESSOR ISA.
+ 
++Enum
++Name(tune_type) Type(int)
++LoongArch TUNE presets:
++
++EnumValue
++Enum(tune_type) String(@@STR_CPU_NATIVE@@) Value(TUNE_NATIVE)
++
++EnumValue
++Enum(tune_type) String(@@STR_TUNE_GENERIC@@) Value(TUNE_GENERIC)
++
++EnumValue
++Enum(tune_type) String(@@STR_CPU_LOONGARCH64@@) Value(TUNE_LOONGARCH64)
++
++EnumValue
++Enum(tune_type) String(@@STR_CPU_LA464@@) Value(TUNE_LA464)
++
++EnumValue
++Enum(tune_type) String(@@STR_CPU_LA664@@) Value(TUNE_LA664)
++
+ m@@OPTSTR_TUNE@@=
+-Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_tune) Init(M_OPT_UNSET) Save
++Target RejectNegative Joined Enum(tune_type) Var(la_opt_cpu_tune) Init(M_OPT_UNSET) Save
+ -m@@OPTSTR_TUNE@@=PROCESSOR	Generate optimized code for PROCESSOR.
+ 
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-c.cc b/src/gcc/config/loongarch/loongarch-c.cc
+index df2a482ad..153db75b0 100644
+--- a/src/gcc/config/loongarch/loongarch-c.cc
++++ b/src/gcc/config/loongarch/loongarch-c.cc
+@@ -31,29 +31,6 @@ along with GCC; see the file COPYING3.  If not see
+ #define builtin_define(TXT) cpp_define (pfile, TXT)
+ #define builtin_assert(TXT) cpp_assert (pfile, TXT)
+ 
+-/* Define preprocessor macros for the -march and -mtune options.
+-   PREFIX is either _LOONGARCH_ARCH or _LOONGARCH_TUNE, INFO is
+-   the selected processor.  If INFO's canonical name is "foo",
+-   define PREFIX to be "foo", and define an additional macro
+-   PREFIX_FOO.  */
+-#define LARCH_CPP_SET_PROCESSOR(PREFIX, CPU_TYPE)			\
+-  do									\
+-    {									\
+-      char *macro, *p;							\
+-      int cpu_type = (CPU_TYPE);					\
+-									\
+-      macro = concat ((PREFIX), "_",					\
+-		      loongarch_cpu_strings[cpu_type], NULL);		\
+-      for (p = macro; *p != 0; p++)					\
+-	*p = TOUPPER (*p);						\
+-									\
+-      builtin_define (macro);						\
+-      builtin_define_with_value ((PREFIX),				\
+-				 loongarch_cpu_strings[cpu_type], 1);	\
+-      free (macro);							\
+-    }									\
+-  while (0)
+-
+ void
+ loongarch_cpu_cpp_builtins (cpp_reader *pfile)
+ {
+@@ -61,11 +38,17 @@ loongarch_cpu_cpp_builtins (cpp_reader *pfile)
+   builtin_assert ("cpu=loongarch");
+   builtin_define ("__loongarch__");
+ 
+-  LARCH_CPP_SET_PROCESSOR ("_LOONGARCH_ARCH", la_target.cpu_arch);
+-  LARCH_CPP_SET_PROCESSOR ("_LOONGARCH_TUNE", la_target.cpu_tune);
++  builtin_define_with_value ("__loongarch_arch",
++			     loongarch_arch_strings[la_target.cpu_arch], 1);
++
++  builtin_define_with_value ("__loongarch_tune",
++			     loongarch_tune_strings[la_target.cpu_tune], 1);
++
++  builtin_define_with_value ("_LOONGARCH_ARCH",
++			     loongarch_arch_strings[la_target.cpu_arch], 1);
+ 
+-  LARCH_CPP_SET_PROCESSOR ("__loongarch_arch", la_target.cpu_arch);
+-  LARCH_CPP_SET_PROCESSOR ("__loongarch_tune", la_target.cpu_tune);
++  builtin_define_with_value ("_LOONGARCH_TUNE",
++			     loongarch_tune_strings[la_target.cpu_tune], 1);
+ 
+   /* Base architecture / ABI.  */
+   if (TARGET_64BIT)
+diff --git a/src/gcc/config/loongarch/loongarch-cpu.cc b/src/gcc/config/loongarch/loongarch-cpu.cc
+index 551d4f72c..eb1eb8011 100644
+--- a/src/gcc/config/loongarch/loongarch-cpu.cc
++++ b/src/gcc/config/loongarch/loongarch-cpu.cc
+@@ -62,7 +62,7 @@ cache_cpucfg (void)
+ uint32_t
+ get_native_prid (void)
+ {
+-  /* Fill loongarch_cpu_default_config[CPU_NATIVE] with cpucfg data,
++  /* Fill loongarch_cpu_default_config[ARCH_NATIVE] with cpucfg data,
+      see "Loongson Architecture Reference Manual"
+      (Volume 1, Section 2.2.10.5) */
+   return cpucfg_cache[0];
+@@ -76,13 +76,14 @@ get_native_prid_str (void)
+   return (const char*) prid_str;
+ }
+ 
+-/* Fill property tables for CPU_NATIVE.  */
++/* Fill property tables for ARCH_NATIVE / TUNE_NATIVE.  */
+ void
+ fill_native_cpu_config (struct loongarch_target *tgt)
+ {
+-  int arch_native_p = tgt->cpu_arch == CPU_NATIVE;
+-  int tune_native_p = tgt->cpu_tune == CPU_NATIVE;
+-  int native_cpu_type = CPU_NATIVE;
++  int arch_native_p = tgt->cpu_arch == ARCH_NATIVE;
++  int tune_native_p = tgt->cpu_tune == TUNE_NATIVE;
++  int native_cpu_arch = ARCH_NATIVE;
++  int native_cpu_tune = TUNE_NATIVE;
+ 
+   /* Nothing needs to be done unless "-march/tune=native"
+      is given or implied.  */
+@@ -99,11 +100,13 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+   switch (cpucfg_cache[0] & 0x00ffff00)
+   {
+     case 0x0014c000:   /* LA464 */
+-      native_cpu_type = CPU_LA464;
++      native_cpu_arch = ARCH_LA464;
++      native_cpu_tune = TUNE_LA464;
+       break;
+ 
+     case 0x0014d000:   /* LA664 */
+-      native_cpu_type = CPU_LA664;
++      native_cpu_arch = ARCH_LA664;
++      native_cpu_tune = TUNE_LA664;
+       break;
+ 
+     default:
+@@ -119,7 +122,7 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+   if (arch_native_p)
+     {
+       int tmp;
+-      tgt->cpu_arch = native_cpu_type;
++      tgt->cpu_arch = native_cpu_arch;
+ 
+       auto &preset = loongarch_cpu_default_isa[tgt->cpu_arch];
+ 
+@@ -127,8 +130,8 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+ 	 With: base architecture (ARCH)
+ 	 At:   cpucfg_words[1][1:0] */
+ 
+-      if (native_cpu_type != CPU_NATIVE)
+-	tmp = loongarch_cpu_default_isa[native_cpu_type].base;
++      if (native_cpu_arch != ARCH_NATIVE)
++	tmp = loongarch_cpu_default_isa[native_cpu_arch].base;
+       else
+ 	switch (cpucfg_cache[1] & 0x3)
+ 	  {
+@@ -173,7 +176,7 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+ 	}
+ 
+       /* Check consistency with PRID presets.  */
+-      if (native_cpu_type != CPU_NATIVE && tmp != preset.fpu)
++      if (native_cpu_arch != ARCH_NATIVE && tmp != preset.fpu)
+ 	warning (0, "floating-point unit %qs differs from PRID preset %qs",
+ 		 loongarch_isa_ext_strings[tmp],
+ 		 loongarch_isa_ext_strings[preset.fpu]);
+@@ -182,7 +185,7 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+       preset.fpu = tmp;
+ 
+ 
+-      /* Fill: loongarch_cpu_default_isa[CPU_NATIVE].simd
++      /* Fill: loongarch_cpu_default_isa[ARCH_NATIVE].simd
+ 	 With: SIMD extension type (LSX, LASX)
+ 	 At:   cpucfg_words[2][7:6] */
+ 
+@@ -212,7 +215,7 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+       /* Check consistency with PRID presets.  */
+ 
+       /*
+-      if (native_cpu_type != CPU_NATIVE && tmp != preset.simd)
++      if (native_cpu_arch != ARCH_NATIVE && tmp != preset.simd)
+ 	warning (0, "SIMD extension %qs differs from PRID preset %qs",
+ 		 loongarch_isa_ext_strings[tmp],
+ 		 loongarch_isa_ext_strings[preset.simd]);
+@@ -229,10 +232,10 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+ 	if (cpucfg_cache[entry.cpucfg_word] & entry.cpucfg_bit)
+ 	  hw_isa_evolution |= entry.isa_evolution_bit;
+ 
+-      if (native_cpu_type != CPU_NATIVE)
++      if (native_cpu_arch != ARCH_NATIVE)
+ 	{
+ 	  /* Check if the local CPU really supports the features of the base
+-	     ISA of probed native_cpu_type.  If any feature is not detected,
++	     ISA of probed native_cpu_arch.  If any feature is not detected,
+ 	     either GCC or the hardware is buggy.  */
+ 	  if ((preset.evolution & hw_isa_evolution) != hw_isa_evolution)
+ 	    warning (0,
+@@ -247,7 +250,7 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+ 
+   if (tune_native_p)
+     {
+-      tgt->cpu_tune = native_cpu_type;
++      tgt->cpu_tune = native_cpu_tune;
+ 
+       /* Fill: loongarch_cpu_cache[tgt->cpu_tune]
+ 	 With: cache size info
+diff --git a/src/gcc/config/loongarch/loongarch-def.cc b/src/gcc/config/loongarch/loongarch-def.cc
+index a48050c5f..c3f9fc6de 100644
+--- a/src/gcc/config/loongarch/loongarch-def.cc
++++ b/src/gcc/config/loongarch/loongarch-def.cc
+@@ -31,39 +31,64 @@ template <class T, int N>
+ using array = loongarch_def_array<T, N>;
+ 
+ template <class T>
+-using array_tune = array<T, N_TUNE_TYPES>;
++using array_arch = array<T, N_ARCH_TYPES>;
+ 
+ template <class T>
+-using array_arch = array<T, N_ARCH_TYPES>;
++using array_tune = array<T, N_TUNE_TYPES>;
+ 
+-/* CPU property tables.  */
+-array_tune<const char *> loongarch_cpu_strings = array_tune<const char *> ()
+-  .set (CPU_NATIVE, STR_CPU_NATIVE)
+-  .set (CPU_ABI_DEFAULT, STR_CPU_ABI_DEFAULT)
+-  .set (CPU_LOONGARCH64, STR_CPU_LOONGARCH64)
+-  .set (CPU_LA464, STR_CPU_LA464)
+-  .set (CPU_LA664, STR_CPU_LA664);
++array_arch<const char *> loongarch_arch_strings = array_arch<const char *> ()
++  .set (ARCH_NATIVE, STR_CPU_NATIVE)
++  .set (ARCH_ABI_DEFAULT, STR_ARCH_ABI_DEFAULT)
++  .set (ARCH_LOONGARCH64, STR_CPU_LOONGARCH64)
++  .set (ARCH_LA464, STR_CPU_LA464)
++  .set (ARCH_LA664, STR_CPU_LA664)
++  .set (ARCH_LA64V1_0, STR_ARCH_LA64V1_0)
++  .set (ARCH_LA64V1_1, STR_ARCH_LA64V1_1);
++
++array_tune<const char *> loongarch_tune_strings = array_tune<const char *> ()
++  .set (TUNE_NATIVE, STR_CPU_NATIVE)
++  .set (TUNE_GENERIC, STR_TUNE_GENERIC)
++  .set (TUNE_LOONGARCH64, STR_CPU_LOONGARCH64)
++  .set (TUNE_LA464, STR_CPU_LA464)
++  .set (TUNE_LA664, STR_CPU_LA664);
+ 
+ array_arch<loongarch_isa> loongarch_cpu_default_isa =
+   array_arch<loongarch_isa> ()
+-    .set (CPU_LOONGARCH64,
++    .set (ARCH_LOONGARCH64,
+ 	  loongarch_isa ()
+ 	    .base_ (ISA_BASE_LA64)
+ 	    .fpu_ (ISA_EXT_FPU64))
+-    .set (CPU_LA464,
++
++    .set (ARCH_LA464,
+ 	  loongarch_isa ()
+ 	    .base_ (ISA_BASE_LA64)
+ 	    .fpu_ (ISA_EXT_FPU64)
+ 	    .simd_ (ISA_EXT_SIMD_LASX))
+-    .set (CPU_LA664,
++
++    .set (ARCH_LA664,
+ 	  loongarch_isa ()
+ 	    .base_ (ISA_BASE_LA64)
+ 	    .fpu_ (ISA_EXT_FPU64)
+ 	    .simd_ (ISA_EXT_SIMD_LASX)
++	    .evolution_ (OPTION_MASK_ISA_DIV32 | OPTION_MASK_ISA_LD_SEQ_SA
++			 | OPTION_MASK_ISA_LAM_BH | OPTION_MASK_ISA_LAMCAS
++			 | OPTION_MASK_ISA_FRECIPE))
++    .set (ARCH_LA64V1_0,
++	  loongarch_isa ()
++	    .base_ (ISA_BASE_LA64)
++	    .fpu_ (ISA_EXT_FPU64)
++	    .simd_ (ISA_EXT_SIMD_LSX))
++
++    .set (ARCH_LA64V1_1,
++	  loongarch_isa ()
++	    .base_ (ISA_BASE_LA64)
++	    .fpu_ (ISA_EXT_FPU64)
++	    .simd_ (ISA_EXT_SIMD_LSX)
+ 	    .evolution_ (OPTION_MASK_ISA_DIV32 | OPTION_MASK_ISA_LD_SEQ_SA
+ 			 | OPTION_MASK_ISA_LAM_BH | OPTION_MASK_ISA_LAMCAS
+ 			 | OPTION_MASK_ISA_FRECIPE));
+ 
++
+ static inline loongarch_cache la464_cache ()
+ {
+   return loongarch_cache ()
+@@ -75,9 +100,10 @@ static inline loongarch_cache la464_cache ()
+ 
+ array_tune<loongarch_cache> loongarch_cpu_cache =
+   array_tune<loongarch_cache> ()
+-    .set (CPU_LOONGARCH64, la464_cache ())
+-    .set (CPU_LA464, la464_cache ())
+-    .set (CPU_LA664, la464_cache ());
++    .set (TUNE_GENERIC, la464_cache ())
++    .set (TUNE_LOONGARCH64, la464_cache ())
++    .set (TUNE_LA464, la464_cache ())
++    .set (TUNE_LA664, la464_cache ());
+ 
+ static inline loongarch_align la464_align ()
+ {
+@@ -91,9 +117,10 @@ static inline loongarch_align la664_align ()
+ 
+ array_tune<loongarch_align> loongarch_cpu_align =
+   array_tune<loongarch_align> ()
+-    .set (CPU_LOONGARCH64, la664_align ())
+-    .set (CPU_LA464, la464_align ())
+-    .set (CPU_LA664, la664_align ());
++    .set (TUNE_GENERIC, la664_align ())
++    .set (TUNE_LOONGARCH64, la664_align ())
++    .set (TUNE_LA464, la464_align ())
++    .set (TUNE_LA664, la664_align ());
+ 
+ /* Default RTX cost initializer.  */
+ loongarch_rtx_cost_data::loongarch_rtx_cost_data ()
+@@ -117,7 +144,7 @@ loongarch_rtx_cost_data::loongarch_rtx_cost_data ()
+  any known "-mtune" type).  */
+ array_tune<loongarch_rtx_cost_data> loongarch_cpu_rtx_cost_data =
+   array_tune<loongarch_rtx_cost_data> ()
+-    .set (CPU_LA664,
++    .set (TUNE_LA664,
+ 	  loongarch_rtx_cost_data ()
+ 	    .movcf2gr_ (COSTS_N_INSNS (1))
+ 	    .movgr2cf_ (COSTS_N_INSNS (1)));
+@@ -140,16 +167,18 @@ const loongarch_rtx_cost_data loongarch_rtx_cost_optimize_size =
+     .movcf2gr_ (COST_COMPLEX_INSN);
+ 
+ array_tune<int> loongarch_cpu_issue_rate = array_tune<int> ()
+-  .set (CPU_NATIVE, 4)
+-  .set (CPU_LOONGARCH64, 4)
+-  .set (CPU_LA464, 4)
+-  .set (CPU_LA664, 6);
++  .set (TUNE_NATIVE, 4)
++  .set (TUNE_GENERIC, 4)
++  .set (TUNE_LOONGARCH64, 4)
++  .set (TUNE_LA464, 4)
++  .set (TUNE_LA664, 6);
+ 
+ array_tune<int> loongarch_cpu_multipass_dfa_lookahead = array_tune<int> ()
+-  .set (CPU_NATIVE, 4)
+-  .set (CPU_LOONGARCH64, 4)
+-  .set (CPU_LA464, 4)
+-  .set (CPU_LA664, 6);
++  .set (TUNE_NATIVE, 4)
++  .set (TUNE_GENERIC, 4)
++  .set (TUNE_LOONGARCH64, 4)
++  .set (TUNE_LA464, 4)
++  .set (TUNE_LA664, 6);
+ 
+ /* Wiring string definitions from loongarch-str.h to global arrays
+    with standard index values from loongarch-opts.h, so we can
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index 2fe44da5a..10b5f9ddc 100644
+--- a/src/gcc/config/loongarch/loongarch-def.h
++++ b/src/gcc/config/loongarch/loongarch-def.h
+@@ -177,21 +177,32 @@ struct loongarch_target
+ {
+   struct loongarch_isa isa;
+   struct loongarch_abi abi;
+-  int cpu_arch;	    /* CPU_ */
+-  int cpu_tune;	    /* same */
++  int cpu_arch;	    /* ARCH_ */
++  int cpu_tune;	    /* TUNE_ */
+   int cmodel;	    /* CMODEL_ */
+   int tls_dialect;  /* TLS_ */
+ };
+ 
+-/* CPU model */
++/* ISA target presets (-march=*) */
+ enum {
+-  CPU_NATIVE	    = 0,
+-  CPU_ABI_DEFAULT   = 1,
+-  CPU_LOONGARCH64   = 2,
+-  CPU_LA464	    = 3,
+-  CPU_LA664	    = 4,
+-  N_ARCH_TYPES	    = 5,
+-  N_TUNE_TYPES	    = 5
++  ARCH_NATIVE       = 0,
++  ARCH_ABI_DEFAULT  = 1,
++  ARCH_LOONGARCH64  = 2,
++  ARCH_LA464	    = 3,
++  ARCH_LA664	    = 4,
++  ARCH_LA64V1_0     = 5,
++  ARCH_LA64V1_1     = 6,
++  N_ARCH_TYPES      = 7,
++};
++
++/* Tune target presets (-mtune=*) */
++enum {
++  TUNE_NATIVE       = 0,
++  TUNE_GENERIC      = 1,
++  TUNE_LOONGARCH64  = 2,
++  TUNE_LA464	    = 3,
++  TUNE_LA664	    = 4,
++  N_TUNE_TYPES      = 5,
+ };
+ 
+ /* TLS types.  */
+@@ -200,9 +211,11 @@ enum {
+   TLS_DESCRIPTORS = 1
+ };
+ 
+-/* CPU model properties */
++/* Target preset properties */
+ extern loongarch_def_array<const char *, N_ARCH_TYPES>
+-  loongarch_cpu_strings;
++  loongarch_arch_strings;
++extern loongarch_def_array<const char *, N_TUNE_TYPES>
++  loongarch_tune_strings;
+ extern loongarch_def_array<loongarch_isa, N_ARCH_TYPES>
+   loongarch_cpu_default_isa;
+ extern loongarch_def_array<int, N_TUNE_TYPES>
+diff --git a/src/gcc/config/loongarch/loongarch-driver.cc b/src/gcc/config/loongarch/loongarch-driver.cc
+index 8551cf94d..9e0b79994 100644
+--- a/src/gcc/config/loongarch/loongarch-driver.cc
++++ b/src/gcc/config/loongarch/loongarch-driver.cc
+@@ -85,10 +85,10 @@ driver_set_m_parm (int argc, const char **argv)
+ 			   loongarch_isa_ext_strings, 0, N_ISA_EXT_TYPES)
+ 
+   LARCH_DRIVER_PARSE_PARM (la_target.cpu_arch, ARCH, \
+-			   loongarch_cpu_strings, 0, N_ARCH_TYPES)
++			   loongarch_arch_strings, 0, N_ARCH_TYPES)
+ 
+   LARCH_DRIVER_PARSE_PARM (la_target.cpu_tune, TUNE, \
+-			   loongarch_cpu_strings, 0, N_TUNE_TYPES)
++			   loongarch_tune_strings, 0, N_TUNE_TYPES)
+ 
+   LARCH_DRIVER_PARSE_PARM (la_target.cmodel, CMODEL, \
+ 			   loongarch_cmodel_strings, 0, N_CMODEL_TYPES)
+@@ -190,7 +190,7 @@ driver_get_normalized_m_opts (int argc, const char **argv ATTRIBUTE_UNUSED)
+   APPEND_VAL (loongarch_abi_base_strings[la_target.abi.base]);
+ 
+   APPEND_OPT (ARCH);
+-  APPEND_VAL (loongarch_cpu_strings[la_target.cpu_arch]);
++  APPEND_VAL (loongarch_arch_strings[la_target.cpu_arch]);
+ 
+   APPEND_OPT (ISA_EXT_FPU);
+   APPEND_VAL (loongarch_isa_ext_strings[la_target.isa.fpu]);
+@@ -202,7 +202,7 @@ driver_get_normalized_m_opts (int argc, const char **argv ATTRIBUTE_UNUSED)
+   APPEND_VAL (loongarch_cmodel_strings[la_target.cmodel]);
+ 
+   APPEND_OPT (TUNE);
+-  APPEND_VAL (loongarch_cpu_strings[la_target.cpu_tune]);
++  APPEND_VAL (loongarch_tune_strings[la_target.cpu_tune]);
+ 
+   obstack_1grow (&opts_obstack, '\0');
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index c455c5e32..735daeb7c 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -101,6 +101,7 @@ static int abi_compat_p (const struct loongarch_isa *isa,
+ 			 struct loongarch_abi abi);
+ static int abi_default_cpu_arch (struct loongarch_abi abi,
+ 				 struct loongarch_isa *isa);
++static int default_tune_for_arch (int arch, int fallback);
+ 
+ /* Mandatory configure-time defaults.  */
+ #ifndef DEFAULT_ABI_BASE
+@@ -259,35 +260,35 @@ loongarch_config_target (struct loongarch_target *target,
+   /* If cpu_tune is not set using neither -mtune nor --with-tune,
+      the current cpu_arch is used as its default.  */
+   t.cpu_tune = constrained.tune ? target->cpu_tune
+-    : (constrained.arch ? target->cpu_arch :
+-       (with_default_tune ? DEFAULT_CPU_TUNE : DEFAULT_CPU_ARCH));
++    : (constrained.arch
++       ? default_tune_for_arch (target->cpu_arch, with_default_tune
++				? DEFAULT_CPU_TUNE : TUNE_GENERIC)
++       : (with_default_tune ? DEFAULT_CPU_TUNE
++	  : default_tune_for_arch (DEFAULT_CPU_ARCH, TUNE_GENERIC)));
+ 
+ 
+   /* Handle -march/tune=native */
+ #ifdef __loongarch__
+   /* For native compilers, gather local CPU information
+-     and fill the "CPU_NATIVE" index of arrays defined in
+-     loongarch-cpu.c.  */
++     and fill the "ARCH_NATIVE/TUNE_NATIVE" index of arrays
++     defined in loongarch-cpu.c.  */
+ 
+   fill_native_cpu_config (&t);
+ 
+ #else
+-  if (t.cpu_arch == CPU_NATIVE)
++  if (t.cpu_arch == ARCH_NATIVE)
+     fatal_error (UNKNOWN_LOCATION,
+ 		 "%qs does not work on a cross compiler",
+ 		 "-m" OPTSTR_ARCH "=" STR_CPU_NATIVE);
+ 
+-  else if (t.cpu_tune == CPU_NATIVE)
++  else if (t.cpu_tune == TUNE_NATIVE)
+     fatal_error (UNKNOWN_LOCATION,
+ 		 "%qs does not work on a cross compiler",
+ 		 "-m" OPTSTR_TUNE "=" STR_CPU_NATIVE);
+ #endif
+ 
+-  /* Handle -march/tune=abi-default */
+-  if (t.cpu_tune == CPU_ABI_DEFAULT)
+-    t.cpu_tune = abi_default_cpu_arch (t.abi, NULL);
+-
+-  if (t.cpu_arch == CPU_ABI_DEFAULT)
++  /* Handle -march=abi-default */
++  if (t.cpu_arch == ARCH_ABI_DEFAULT)
+     {
+       t.cpu_arch = abi_default_cpu_arch (t.abi, &(t.isa));
+       loongarch_cpu_default_isa[t.cpu_arch] = t.isa;
+@@ -438,16 +439,16 @@ config_target_isa:
+ 	 so we adjust that first if it is not constrained.  */
+       int fallback_arch = abi_default_cpu_arch (t.abi, NULL);
+ 
+-      if (t.cpu_arch == CPU_NATIVE)
++      if (t.cpu_arch == ARCH_NATIVE)
+ 	warning (0, "your native CPU architecture (%qs) "
+ 		 "does not support %qs ABI, falling back to %<-m%s=%s%>",
+ 		 arch_str (&t), abi_str (t.abi), OPTSTR_ARCH,
+-		 loongarch_cpu_strings[fallback_arch]);
++		 loongarch_arch_strings[fallback_arch]);
+       else
+ 	warning (0, "default CPU architecture (%qs) "
+ 		 "does not support %qs ABI, falling back to %<-m%s=%s%>",
+ 		 arch_str (&t), abi_str (t.abi), OPTSTR_ARCH,
+-		 loongarch_cpu_strings[fallback_arch]);
++		 loongarch_arch_strings[fallback_arch]);
+ 
+       t.cpu_arch = fallback_arch;
+       constrained.arch = 1;
+@@ -664,11 +665,40 @@ abi_default_cpu_arch (struct loongarch_abi abi,
+ 	case ABI_BASE_LP64F:
+ 	case ABI_BASE_LP64S:
+ 	  *isa = isa_required (abi);
+-	  return CPU_LOONGARCH64;
++	  return ARCH_LOONGARCH64;
+       }
+   gcc_unreachable ();
+ }
+ 
++static inline int
++default_tune_for_arch (int arch, int fallback)
++{
++  int ret;
++  switch (arch)
++    {
++
++#define TUNE_FOR_ARCH(NAME) \
++    case ARCH_##NAME: \
++      ret = TUNE_##NAME; \
++      break;
++
++    TUNE_FOR_ARCH(NATIVE)
++    TUNE_FOR_ARCH(LOONGARCH64)
++    TUNE_FOR_ARCH(LA464)
++    TUNE_FOR_ARCH(LA664)
++
++#undef TUNE_FOR_ARCH
++
++    case ARCH_ABI_DEFAULT:
++    case ARCH_LA64V1_0:
++    case ARCH_LA64V1_1:
++      ret = fallback;
++    }
++
++  gcc_assert (0 <= ret && ret < N_TUNE_TYPES);
++  return ret;
++}
++
+ static const char*
+ abi_str (struct loongarch_abi abi)
+ {
+@@ -731,7 +761,7 @@ isa_str (const struct loongarch_isa *isa, char separator)
+ static const char*
+ arch_str (const struct loongarch_target *target)
+ {
+-  if (target->cpu_arch == CPU_NATIVE)
++  if (target->cpu_arch == ARCH_NATIVE)
+     {
+       /* Describe a native CPU with unknown PRID.  */
+       const char* isa_string = isa_str (&target->isa, ',');
+@@ -741,7 +771,7 @@ arch_str (const struct loongarch_target *target)
+       APPEND_STRING (isa_string)
+     }
+   else
+-    APPEND_STRING (loongarch_cpu_strings[target->cpu_arch]);
++    APPEND_STRING (loongarch_arch_strings[target->cpu_arch]);
+ 
+   APPEND1 ('\0')
+   return XOBFINISH (&msg_obstack, const char *);
+@@ -956,7 +986,7 @@ loongarch_target_option_override (struct loongarch_target *target,
+   /* Other arch-specific overrides.  */
+   switch (target->cpu_arch)
+     {
+-      case CPU_LA664:
++      case ARCH_LA664:
+ 	/* Enable -mrecipe=all for LA664 by default.  */
+ 	if (!opts_set->x_recip_mask)
+ 	  {
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index a3b467f4c..325c1e29c 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -127,8 +127,8 @@ struct loongarch_flags {
+   (la_target.isa.evolution & OPTION_MASK_ISA_LD_SEQ_SA)
+ 
+ /* TARGET_ macros for use in *.md template conditionals */
+-#define TARGET_uARCH_LA464	  (la_target.cpu_tune == CPU_LA464)
+-#define TARGET_uARCH_LA664	  (la_target.cpu_tune == CPU_LA664)
++#define TARGET_uARCH_LA464	  (la_target.cpu_tune == TUNE_LA464)
++#define TARGET_uARCH_LA664	  (la_target.cpu_tune == TUNE_LA664)
+ 
+ /* Note: optimize_size may vary across functions,
+    while -m[no]-memcpy imposes a global constraint.  */
+diff --git a/src/gcc/config/loongarch/loongarch-str.h b/src/gcc/config/loongarch/loongarch-str.h
+index cacae38c0..3cbe12f7b 100644
+--- a/src/gcc/config/loongarch/loongarch-str.h
++++ b/src/gcc/config/loongarch/loongarch-str.h
+@@ -27,10 +27,13 @@ along with GCC; see the file COPYING3.  If not see
+ #define OPTSTR_TUNE "tune"
+ 
+ #define STR_CPU_NATIVE "native"
+-#define STR_CPU_ABI_DEFAULT "abi-default"
++#define STR_ARCH_ABI_DEFAULT "abi-default"
++#define STR_TUNE_GENERIC "generic"
+ #define STR_CPU_LOONGARCH64 "loongarch64"
+ #define STR_CPU_LA464 "la464"
+ #define STR_CPU_LA664 "la664"
++#define STR_ARCH_LA64V1_0 "la64v1.0"
++#define STR_ARCH_LA64V1_1 "la64v1.1"
+ 
+ #define STR_ISA_BASE_LA64 "la64"
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 929945af6..c32c45eb4 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -9603,9 +9603,10 @@ loongarch_cpu_sched_reassociation_width (struct loongarch_target *target,
+ 
+   switch (target->cpu_tune)
+     {
+-    case CPU_LOONGARCH64:
+-    case CPU_LA464:
+-    case CPU_LA664:
++    case TUNE_GENERIC:
++    case TUNE_LOONGARCH64:
++    case TUNE_LA464:
++    case TUNE_LA664:
+       /* Vector part.  */
+       if (LSX_SUPPORTED_MODE_P (mode) || LASX_SUPPORTED_MODE_P (mode))
+ 	{
+@@ -10974,9 +10975,9 @@ loongarch_asm_code_end (void)
+   if (flag_verbose_asm)
+     {
+       fprintf (asm_out_file, "\n%s CPU: %s\n", ASM_COMMENT_START,
+-	       loongarch_cpu_strings [la_target.cpu_arch]);
++	       loongarch_arch_strings[la_target.cpu_arch]);
+       fprintf (asm_out_file, "%s Tune: %s\n", ASM_COMMENT_START,
+-	       loongarch_cpu_strings [la_target.cpu_tune]);
++	       loongarch_tune_strings[la_target.cpu_tune]);
+       fprintf (asm_out_file, "%s Base ISA: %s\n", ASM_COMMENT_START,
+ 	       loongarch_isa_base_strings [la_target.isa.base]);
+       DUMP_FEATURE (ISA_HAS_FRECIPE);
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 6f730d886..69b3b965c 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -103,30 +103,55 @@ Enable LoongArch Advanced SIMD Extension (LASX, 256-bit).
+ 
+ ;; Base target models (implies ISA & tune parameters)
+ Enum
+-Name(cpu_type) Type(int)
+-LoongArch CPU types:
++Name(arch_type) Type(int)
++LoongArch ARCH presets:
+ 
+ EnumValue
+-Enum(cpu_type) String(native) Value(CPU_NATIVE)
++Enum(arch_type) String(native) Value(ARCH_NATIVE)
+ 
+ EnumValue
+-Enum(cpu_type) String(abi-default) Value(CPU_ABI_DEFAULT)
++Enum(arch_type) String(abi-default) Value(ARCH_ABI_DEFAULT)
+ 
+ EnumValue
+-Enum(cpu_type) String(loongarch64) Value(CPU_LOONGARCH64)
++Enum(arch_type) String(loongarch64) Value(ARCH_LOONGARCH64)
+ 
+ EnumValue
+-Enum(cpu_type) String(la464) Value(CPU_LA464)
++Enum(arch_type) String(la464) Value(ARCH_LA464)
+ 
+ EnumValue
+-Enum(cpu_type) String(la664) Value(CPU_LA664)
++Enum(arch_type) String(la664) Value(ARCH_LA664)
++
++EnumValue
++Enum(arch_type) String(la64v1.0) Value(ARCH_LA64V1_0)
++
++EnumValue
++Enum(arch_type) String(la64v1.1) Value(ARCH_LA64V1_1)
+ 
+ march=
+-Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET) Save
++Target RejectNegative Joined Enum(arch_type) Var(la_opt_cpu_arch) Init(M_OPT_UNSET) Save
+ -march=PROCESSOR	Generate code for the given PROCESSOR ISA.
+ 
++Enum
++Name(tune_type) Type(int)
++LoongArch TUNE presets:
++
++EnumValue
++Enum(tune_type) String(native) Value(TUNE_NATIVE)
++
++EnumValue
++Enum(tune_type) String(generic) Value(TUNE_GENERIC)
++
++EnumValue
++Enum(tune_type) String(loongarch64) Value(TUNE_LOONGARCH64)
++
++EnumValue
++Enum(tune_type) String(la464) Value(TUNE_LA464)
++
++EnumValue
++Enum(tune_type) String(la664) Value(TUNE_LA664)
++
+ mtune=
+-Target RejectNegative Joined Enum(cpu_type) Var(la_opt_cpu_tune) Init(M_OPT_UNSET) Save
++Target RejectNegative Joined Enum(tune_type) Var(la_opt_cpu_tune) Init(M_OPT_UNSET) Save
+ -mtune=PROCESSOR	Generate optimized code for PROCESSOR.
+ 
+ 
+-- 
+2.45.2
+

@@ -1,0 +1,50 @@
+From 80cb58bbde73df90e0ecd0d5c59ee70707ad5fb3 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 19 Nov 2023 01:41:12 +0800
+Subject: [PATCH 159/301] LoongArch: Fix "-mexplict-relocs=none
+ -mcmodel=medium" producing %call36 when the assembler does not support it
+
+Even if !HAVE_AS_SUPPORT_CALL36, const_call_insn_operand should still
+return false when -mexplict-relocs=none -mcmodel=medium to make
+loongarch_legitimize_call_address emit la.local or la.global.
+
+gcc/ChangeLog:
+
+	* config/loongarch/predicates.md (const_call_insn_operand):
+	Remove buggy "HAVE_AS_SUPPORT_CALL36" conditions.  Change "1" to
+	"true" to make the coding style consistent.
+---
+ src/gcc/config/loongarch/predicates.md | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 2aae87db4..30a0dee9f 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -444,21 +444,19 @@
+     case SYMBOL_PCREL:
+       if (TARGET_CMODEL_EXTREME
+ 	  || (TARGET_CMODEL_MEDIUM
+-	      && HAVE_AS_SUPPORT_CALL36
+ 	      && (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)))
+ 	return false;
+       else
+-	return 1;
++	return true;
+ 
+     case SYMBOL_GOT_DISP:
+       if (TARGET_CMODEL_EXTREME
+ 	  || !flag_plt
+ 	  || (flag_plt && TARGET_CMODEL_MEDIUM
+-	      && HAVE_AS_SUPPORT_CALL36
+ 	      && (la_opt_explicit_relocs == EXPLICIT_RELOCS_NONE)))
+ 	return false;
+       else
+-	return 1;
++	return true;
+ 
+     default:
+       return false;
+-- 
+2.45.2
+

@@ -1,0 +1,403 @@
+From 65972851aa6402dc9ab52ddf4e1eb291336d7e74 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Wed, 18 Oct 2023 17:39:40 +0800
+Subject: [PATCH 134/301] LoongArch:Implement vec_widen standard names.
+
+Add support for vec_widen lo/hi patterns.  These do not directly
+match on Loongarch lasx instructions but can be emulated with
+even/odd + vector merge.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md
+	(vec_widen_<su>mult_even_v8si): New patterns.
+	(vec_widen_<su>add_hi_<mode>): Ditto.
+	(vec_widen_<su>add_lo_<mode>): Ditto.
+	(vec_widen_<su>sub_hi_<mode>): Ditto.
+	(vec_widen_<su>sub_lo_<mode>): Ditto.
+	(vec_widen_<su>mult_hi_<mode>): Ditto.
+	(vec_widen_<su>mult_lo_<mode>): Ditto.
+	* config/loongarch/loongarch.md (u_bool): New iterator.
+	* config/loongarch/loongarch-protos.h
+	(loongarch_expand_vec_widen_hilo): New prototype.
+	* config/loongarch/loongarch.cc
+	(loongarch_expand_vec_interleave): New function.
+	(loongarch_expand_vec_widen_hilo): New function.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vect-widen-add.c: New test.
+	* gcc.target/loongarch/vect-widen-mul.c: New test.
+	* gcc.target/loongarch/vect-widen-sub.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              |  82 ++++++++---
+ src/gcc/config/loongarch/loongarch-protos.h   |   1 +
+ src/gcc/config/loongarch/loongarch.cc         | 137 ++++++++++++++++++
+ src/gcc/config/loongarch/loongarch.md         |   2 +
+ .../gcc.target/loongarch/vect-widen-add.c     |  24 +++
+ .../gcc.target/loongarch/vect-widen-mul.c     |  24 +++
+ .../gcc.target/loongarch/vect-widen-sub.c     |  24 +++
+ 7 files changed, 277 insertions(+), 17 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-widen-add.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-widen-mul.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-widen-sub.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index c7496d68a..442fda246 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -5048,23 +5048,71 @@
+   [(set_attr "type" "simd_store")
+    (set_attr "mode" "DI")])
+ 
+-(define_insn "vec_widen_<su>mult_even_v8si"
+-  [(set (match_operand:V4DI 0 "register_operand" "=f")
+-    (mult:V4DI
+-      (any_extend:V4DI
+-        (vec_select:V4SI
+-          (match_operand:V8SI 1 "register_operand" "%f")
+-          (parallel [(const_int 0) (const_int 2)
+-                         (const_int 4) (const_int 6)])))
+-      (any_extend:V4DI
+-        (vec_select:V4SI
+-          (match_operand:V8SI 2 "register_operand" "f")
+-          (parallel [(const_int 0) (const_int 2)
+-             (const_int 4) (const_int 6)])))))]
+-  "ISA_HAS_LASX"
+-  "xvmulwev.d.w<u>\t%u0,%u1,%u2"
+-  [(set_attr "type" "simd_int_arith")
+-   (set_attr "mode" "V4DI")])
++(define_expand "vec_widen_<su>add_hi_<mode>"
++  [(match_operand:<VDMODE256> 0 "register_operand")
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 1 "register_operand"))
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 2 "register_operand"))]
++  "ISA_HAS_LASX"
++{
++  loongarch_expand_vec_widen_hilo (operands[0], operands[1], operands[2],
++                        <u_bool>, true, "add");
++  DONE;
++})
++
++(define_expand "vec_widen_<su>add_lo_<mode>"
++  [(match_operand:<VDMODE256> 0 "register_operand")
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 1 "register_operand"))
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 2 "register_operand"))]
++  "ISA_HAS_LASX"
++{
++  loongarch_expand_vec_widen_hilo (operands[0], operands[1], operands[2],
++                        <u_bool>, false, "add");
++  DONE;
++})
++
++(define_expand "vec_widen_<su>sub_hi_<mode>"
++  [(match_operand:<VDMODE256> 0 "register_operand")
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 1 "register_operand"))
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 2 "register_operand"))]
++  "ISA_HAS_LASX"
++{
++  loongarch_expand_vec_widen_hilo (operands[0], operands[1], operands[2],
++                        <u_bool>, true, "sub");
++  DONE;
++})
++
++(define_expand "vec_widen_<su>sub_lo_<mode>"
++  [(match_operand:<VDMODE256> 0 "register_operand")
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 1 "register_operand"))
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 2 "register_operand"))]
++  "ISA_HAS_LASX"
++{
++  loongarch_expand_vec_widen_hilo (operands[0], operands[1], operands[2],
++                        <u_bool>, false, "sub");
++  DONE;
++})
++
++(define_expand "vec_widen_<su>mult_hi_<mode>"
++  [(match_operand:<VDMODE256> 0 "register_operand")
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 1 "register_operand"))
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 2 "register_operand"))]
++  "ISA_HAS_LASX"
++{
++  loongarch_expand_vec_widen_hilo (operands[0], operands[1], operands[2],
++                        <u_bool>, true, "mult");
++  DONE;
++})
++
++(define_expand "vec_widen_<su>mult_lo_<mode>"
++  [(match_operand:<VDMODE256> 0 "register_operand")
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 1 "register_operand"))
++   (any_extend:<VDMODE256> (match_operand:ILASX_HB 2 "register_operand"))]
++  "ISA_HAS_LASX"
++{
++  loongarch_expand_vec_widen_hilo (operands[0], operands[1], operands[2],
++                        <u_bool>, false, "mult");
++  DONE;
++})
+ 
+ ;; Vector reduction operation
+ (define_expand "reduc_plus_scal_v4di"
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index ea61cf567..163162598 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -205,6 +205,7 @@ extern void loongarch_register_frame_header_opt (void);
+ extern void loongarch_expand_vec_cond_expr (machine_mode, machine_mode, rtx *);
+ extern void loongarch_expand_vec_cond_mask_expr (machine_mode, machine_mode,
+ 						 rtx *);
++extern void loongarch_expand_vec_widen_hilo (rtx, rtx, rtx, bool, bool, const char *);
+ 
+ /* Routines implemented in loongarch-c.c.  */
+ void loongarch_cpu_cpp_builtins (cpp_reader *);
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 8a04d934d..d8ed6e053 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -8027,6 +8027,143 @@ loongarch_expand_vec_perm_even_odd (struct expand_vec_perm_d *d)
+   return loongarch_expand_vec_perm_even_odd_1 (d, odd);
+ }
+ 
++static void
++loongarch_expand_vec_interleave (rtx target, rtx op0, rtx op1, bool high_p)
++{
++  struct expand_vec_perm_d d;
++  unsigned i, nelt, base;
++  bool ok;
++
++  d.target = target;
++  d.op0 = op0;
++  d.op1 = op1;
++  d.vmode = GET_MODE (target);
++  d.nelt = nelt = GET_MODE_NUNITS (d.vmode);
++  d.one_vector_p = false;
++  d.testing_p = false;
++
++  base = high_p ? nelt / 2 : 0;
++  for (i = 0; i < nelt / 2; ++i)
++    {
++      d.perm[i * 2] = i + base;
++      d.perm[i * 2 + 1] = i + base + nelt;
++    }
++
++  ok = loongarch_expand_vec_perm_interleave (&d);
++  gcc_assert (ok);
++}
++
++/* The loongarch lasx instructions xvmulwev and xvmulwod return the even or odd
++   parts of the double sized result elements in the corresponding elements of
++   the target register. That's NOT what the vec_widen_umult_lo/hi patterns are
++   expected to do. We emulate the widening lo/hi multiplies with the even/odd
++   versions followed by a vector merge.  */
++
++void
++loongarch_expand_vec_widen_hilo (rtx dest, rtx op1, rtx op2,
++				 bool uns_p, bool high_p, const char *optab)
++{
++  machine_mode wmode = GET_MODE (dest);
++  machine_mode mode = GET_MODE (op1);
++  rtx t1, t2, t3;
++
++  t1 = gen_reg_rtx (wmode);
++  t2 = gen_reg_rtx (wmode);
++  t3 = gen_reg_rtx (wmode);
++  switch (mode)
++    {
++    case V16HImode:
++      if (!strcmp (optab, "add"))
++	{
++	  if (!uns_p)
++	    {
++	      emit_insn (gen_lasx_xvaddwev_w_h (t1, op1, op2));
++	      emit_insn (gen_lasx_xvaddwod_w_h (t2, op1, op2));
++	    }
++	  else
++	    {
++	      emit_insn (gen_lasx_xvaddwev_w_hu (t1, op1, op2));
++	      emit_insn (gen_lasx_xvaddwod_w_hu (t2, op1, op2));
++	    }
++	}
++      else if (!strcmp (optab, "mult"))
++	{
++	  if (!uns_p)
++	    {
++	      emit_insn (gen_lasx_xvmulwev_w_h (t1, op1, op2));
++	      emit_insn (gen_lasx_xvmulwod_w_h (t2, op1, op2));
++	    }
++	  else
++	    {
++	      emit_insn (gen_lasx_xvmulwev_w_hu (t1, op1, op2));
++	      emit_insn (gen_lasx_xvmulwod_w_hu (t2, op1, op2));
++	    }
++	}
++      else if (!strcmp (optab, "sub"))
++	{
++	  if (!uns_p)
++	    {
++	      emit_insn (gen_lasx_xvsubwev_w_h (t1, op1, op2));
++	      emit_insn (gen_lasx_xvsubwod_w_h (t2, op1, op2));
++	    }
++	  else
++	    {
++	      emit_insn (gen_lasx_xvsubwev_w_hu (t1, op1, op2));
++	      emit_insn (gen_lasx_xvsubwod_w_hu (t2, op1, op2));
++	    }
++	}
++      break;
++
++    case V32QImode:
++      if (!strcmp (optab, "add"))
++	{
++	  if (!uns_p)
++	    {
++	      emit_insn (gen_lasx_xvaddwev_h_b (t1, op1, op2));
++	      emit_insn (gen_lasx_xvaddwod_h_b (t2, op1, op2));
++	    }
++	  else
++	    {
++	      emit_insn (gen_lasx_xvaddwev_h_bu (t1, op1, op2));
++	      emit_insn (gen_lasx_xvaddwod_h_bu (t2, op1, op2));
++	    }
++	}
++      else if (!strcmp (optab, "mult"))
++	{
++	  if (!uns_p)
++	    {
++	      emit_insn (gen_lasx_xvmulwev_h_b (t1, op1, op2));
++	      emit_insn (gen_lasx_xvmulwod_h_b (t2, op1, op2));
++	    }
++	  else
++	    {
++	      emit_insn (gen_lasx_xvmulwev_h_bu (t1, op1, op2));
++	      emit_insn (gen_lasx_xvmulwod_h_bu (t2, op1, op2));
++	    }
++	}
++      else if (!strcmp (optab, "sub"))
++	{
++	  if (!uns_p)
++	    {
++	      emit_insn (gen_lasx_xvsubwev_h_b (t1, op1, op2));
++	      emit_insn (gen_lasx_xvsubwod_h_b (t2, op1, op2));
++	    }
++	  else
++	    {
++	      emit_insn (gen_lasx_xvsubwev_h_bu (t1, op1, op2));
++	      emit_insn (gen_lasx_xvsubwod_h_bu (t2, op1, op2));
++	    }
++	}
++      break;
++
++    default:
++      gcc_unreachable ();
++    }
++
++  loongarch_expand_vec_interleave (t3, t1, t2, high_p);
++  emit_move_insn (dest, gen_lowpart (wmode, t3));
++}
++
+ /* Expand a variable vector permutation for LASX.  */
+ 
+ void
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 4d2bec551..a2c934a70 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -510,6 +510,8 @@
+ ;; <su> is like <u>, but the signed form expands to "s" rather than "".
+ (define_code_attr su [(sign_extend "s") (zero_extend "u")])
+ 
++(define_code_attr u_bool [(sign_extend "false") (zero_extend "true")])
++
+ ;; <optab> expands to the name of the optab for a particular code.
+ (define_code_attr optab [(ashift "ashl")
+ 			 (ashiftrt "ashr")
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-widen-add.c b/src/gcc/testsuite/gcc.target/loongarch/vect-widen-add.c
+new file mode 100644
+index 000000000..0bf832d0e
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-widen-add.c
+@@ -0,0 +1,24 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlasx" } */
++/* { dg-final { scan-assembler "xvaddwev.w.h"  } } */
++/* { dg-final { scan-assembler "xvaddwod.w.h"  } } */
++/* { dg-final { scan-assembler "xvaddwev.w.hu"  } } */
++/* { dg-final { scan-assembler "xvaddwod.w.hu"  } } */
++
++#include <stdint.h>
++
++#define SIZE 1024
++
++void
++wide_uadd (uint32_t *foo, uint16_t *a, uint16_t *b)
++{
++  for ( int i = 0; i < SIZE; i++)
++    foo[i]   = a[i] + b[i];
++}
++
++void
++wide_sadd (int32_t *foo, int16_t *a, int16_t *b)
++{
++  for ( int i = 0; i < SIZE; i++)
++    foo[i]   = a[i] + b[i];
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-widen-mul.c b/src/gcc/testsuite/gcc.target/loongarch/vect-widen-mul.c
+new file mode 100644
+index 000000000..84b020eea
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-widen-mul.c
+@@ -0,0 +1,24 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlasx" } */
++/* { dg-final { scan-assembler "xvmulwev.w.h"  } } */
++/* { dg-final { scan-assembler "xvmulwod.w.h"  } } */
++/* { dg-final { scan-assembler "xvmulwev.w.hu"  } } */
++/* { dg-final { scan-assembler "xvmulwod.w.hu"  } } */
++
++#include <stdint.h>
++
++#define SIZE 1024
++
++void
++wide_umul (uint32_t *foo, uint16_t *a, uint16_t *b)
++{
++  for ( int i = 0; i < SIZE; i++)
++    foo[i] = a[i] * b[i];
++}
++
++void
++wide_smul (int32_t *foo, int16_t *a, int16_t *b)
++{
++  for ( int i = 0; i < SIZE; i++)
++    foo[i]   = a[i] * b[i];
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-widen-sub.c b/src/gcc/testsuite/gcc.target/loongarch/vect-widen-sub.c
+new file mode 100644
+index 000000000..69fc3a517
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-widen-sub.c
+@@ -0,0 +1,24 @@
++/* { dg-do compile } */
++/* { dg-options "-O3 -mlasx" } */
++/* { dg-final { scan-assembler "xvsubwev.w.h"  } } */
++/* { dg-final { scan-assembler "xvsubwod.w.h"  } } */
++/* { dg-final { scan-assembler "xvsubwev.w.hu"  } } */
++/* { dg-final { scan-assembler "xvsubwod.w.hu"  } } */
++
++#include <stdint.h>
++
++#define SIZE 1024
++
++void
++wide_usub (uint32_t *foo, uint16_t *a, uint16_t *b)
++{
++  for ( int i = 0; i < SIZE; i++)
++    foo[i]   = a[i] - b[i];
++}
++
++void
++wide_ssub (int32_t *foo, int16_t *a, int16_t *b)
++{
++  for ( int i = 0; i < SIZE; i++)
++    foo[i]   = a[i] - b[i];
++}
+-- 
+2.45.2
+

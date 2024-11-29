@@ -1,0 +1,105 @@
+From cda4f1b4d0ecd5095e140b74e2a1cdfaeb66020b Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Wed, 11 Oct 2023 16:41:25 +0800
+Subject: [PATCH 131/301] LoongArch: Fix vec_initv32qiv16qi template to avoid
+ ICE.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Following test code triggers unrecognized insn ICE on LoongArch target
+with "-O3 -mlasx":
+
+void
+foo (unsigned char *dst, unsigned char *src)
+{
+  for (int y = 0; y < 16; y++)
+    {
+      for (int x = 0; x < 16; x++)
+        dst[x] = src[x] + 1;
+      dst += 32;
+      src += 32;
+    }
+}
+
+ICE info:
+./test.c: In function ‘foo’:
+./test.c:8:1: error: unrecognizable insn:
+    8 | }
+      | ^
+(insn 15 14 16 4 (set (reg:V32QI 185 [ vect__24.7 ])
+        (vec_concat:V32QI (reg:V16QI 186)
+            (const_vector:V16QI [
+                    (const_int 0 [0]) repeated x16
+                ]))) "./test.c":4:19 -1
+     (nil))
+during RTL pass: vregs
+./test.c:8:1: internal compiler error: in extract_insn, at recog.cc:2791
+0x12028023b _fatal_insn(char const*, rtx_def const*, char const*, int, char const*)
+        /home/panchenghui/upstream/gcc/gcc/rtl-error.cc:108
+0x12028026f _fatal_insn_not_found(rtx_def const*, char const*, int, char const*)
+        /home/panchenghui/upstream/gcc/gcc/rtl-error.cc:116
+0x120a03c5b extract_insn(rtx_insn*)
+        /home/panchenghui/upstream/gcc/gcc/recog.cc:2791
+0x12067ff73 instantiate_virtual_regs_in_insn
+        /home/panchenghui/upstream/gcc/gcc/function.cc:1610
+0x12067ff73 instantiate_virtual_regs
+        /home/panchenghui/upstream/gcc/gcc/function.cc:1983
+0x12067ff73 execute
+        /home/panchenghui/upstream/gcc/gcc/function.cc:2030
+
+This RTL is generated inside loongarch_expand_vector_group_init function (related
+to vec_initv32qiv16qi template). Original impl doesn't ensure all vec_concat arguments
+are register type. This patch adds force_reg() to the vec_concat argument generation.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_expand_vector_group_init):
+	fix impl related to vec_initv32qiv16qi template to avoid ICE.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-vec-init-1.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc              |  3 ++-
+ .../loongarch/vector/lasx/lasx-vec-init-1.c        | 14 ++++++++++++++
+ 2 files changed, 16 insertions(+), 1 deletion(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vec-init-1.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 8b04a3cc1..8a04d934d 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -10187,7 +10187,8 @@ loongarch_gen_const_int_vector_shuffle (machine_mode mode, int val)
+ void
+ loongarch_expand_vector_group_init (rtx target, rtx vals)
+ {
+-  rtx ops[2] = { XVECEXP (vals, 0, 0), XVECEXP (vals, 0, 1) };
++  rtx ops[2] = { force_reg (E_V16QImode, XVECEXP (vals, 0, 0)),
++      force_reg (E_V16QImode, XVECEXP (vals, 0, 1)) };
+   emit_insn (gen_rtx_SET (target, gen_rtx_VEC_CONCAT (E_V32QImode, ops[0],
+ 						      ops[1])));
+ }
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vec-init-1.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vec-init-1.c
+new file mode 100644
+index 000000000..28be32982
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vec-init-1.c
+@@ -0,0 +1,14 @@
++/* { dg-do compile } */
++/* { dg-options "-O3" } */
++
++void
++foo (unsigned char *dst, unsigned char *src)
++{
++  for (int y = 0; y < 16; y++)
++    {
++      for (int x = 0; x < 16; x++)
++        dst[x] = src[x] + 1;
++      dst += 32;
++      src += 32;
++    }
++}
+-- 
+2.45.2
+

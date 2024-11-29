@@ -1,0 +1,90 @@
+From 3555caec7dd176fdd258013dd9eed292d5fc1bb9 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 5 Mar 2024 14:43:04 +0800
+Subject: [PATCH 258/301] LoongArch: Fixed an issue with the implementation of
+ the template atomic_compare_and_swapsi.
+
+If the hardware does not support LAMCAS, atomic_compare_and_swapsi needs to be
+implemented through "ll.w+sc.w". In the implementation of the instruction sequence,
+it is necessary to determine whether the two registers are equal.
+Since LoongArch's comparison instructions do not distinguish between 32-bit
+and 64-bit, the two operand registers that need to be compared are symbolically
+extended, and one of the operand registers is obtained from memory through the
+"ll.w" instruction, which can ensure that the symbolic expansion is carried out.
+However, the value of the other operand register is not guaranteed to be the
+value of the sign extension.
+
+gcc/ChangeLog:
+
+	* config/loongarch/sync.md (atomic_cas_value_strong<mode>):
+	In loongarch64, a sign extension operation is added when
+	operands[2] is a register operand and the mode is SImode.
+
+gcc/testsuite/ChangeLog:
+
+	* g++.target/loongarch/atomic-cas-int.C: New test.
+---
+ src/gcc/config/loongarch/sync.md | 46 ++++++++++++++++++++++++--------
+ 1 file changed, 35 insertions(+), 11 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/sync.md b/src/gcc/config/loongarch/sync.md
+index 5da5c2780..2e008c487 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -245,18 +245,42 @@
+    (clobber (match_scratch:GPR 5 "=&r"))]
+   ""
+ {
+-  return "1:\\n\\t"
+-	 "ll.<amo>\\t%0,%1\\n\\t"
+-	 "bne\\t%0,%z2,2f\\n\\t"
+-	 "or%i3\\t%5,$zero,%3\\n\\t"
+-	 "sc.<amo>\\t%5,%1\\n\\t"
+-	 "beqz\\t%5,1b\\n\\t"
+-	 "b\\t3f\\n\\t"
+-	 "2:\\n\\t"
+-	 "%G4\\n\\t"
+-	 "3:\\n\\t";
++  output_asm_insn ("1:", operands);
++  output_asm_insn ("ll.<amo>\t%0,%1", operands);
++
++  /* Like the test case atomic-cas-int.C, in loongarch64, O1 and higher, the
++     return value of the val_without_const_folding will not be truncated and
++     will be passed directly to the function compare_exchange_strong.
++     However, the instruction 'bne' does not distinguish between 32-bit and
++     64-bit operations.  so if the upper 32 bits of the register are not
++     extended by the 32nd bit symbol, then the comparison may not be valid
++     here.  This will affect the result of the operation.  */
++
++  if (TARGET_64BIT && REG_P (operands[2])
++      && GET_MODE (operands[2]) == SImode)
++    {
++      output_asm_insn ("addi.w\t%5,%2,0", operands);
++      output_asm_insn ("bne\t%0,%5,2f", operands);
++    }
++  else
++    output_asm_insn ("bne\t%0,%z2,2f", operands);
++
++  output_asm_insn ("or%i3\t%5,$zero,%3", operands);
++  output_asm_insn ("sc.<amo>\t%5,%1", operands);
++  output_asm_insn ("beqz\t%5,1b", operands);
++  output_asm_insn ("b\t3f", operands);
++  output_asm_insn ("2:", operands);
++  output_asm_insn ("%G4", operands);
++  output_asm_insn ("3:", operands);
++
++  return "";
+ }
+-  [(set (attr "length") (const_int 28))])
++  [(set (attr "length")
++     (if_then_else
++	(and (match_test "GET_MODE (operands[2]) == SImode")
++	     (match_test "REG_P (operands[2])"))
++	(const_int 32)
++	(const_int 28)))])
+ 
+ (define_insn "atomic_cas_value_strong<mode>_amcas"
+   [(set (match_operand:QHWD 0 "register_operand" "=&r")
+-- 
+2.45.2
+

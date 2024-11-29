@@ -1,0 +1,157 @@
+From bfaf9fb424b8f736555f4c967c2afaee1b00e48c Mon Sep 17 00:00:00 2001
+From: chenxiaolong <chenxiaolong@loongson.cn>
+Date: Fri, 5 Jan 2024 11:43:28 +0800
+Subject: [PATCH 212/301] LoongArch: testsuite:Added additional vectorization
+ "-mlasx" compilation option.
+
+In the LoongArch architecture, the reason for not adding the 128-bit
+vector-width-*hi* instruction template in the GCC back end is that it causes
+program performance loss, so we can only add the "-mlasx" compilation option
+to use 256-bit vectorization functions in test files.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.dg/vect/bb-slp-pattern-1.c: If you are testing on the
+	LoongArch architecture, you need to add the "-mlasx" compilation
+	option to generate vectorized code.
+	* gcc.dg/vect/slp-widen-mult-half.c: Dito.
+	* gcc.dg/vect/vect-widen-mult-const-s16.c: Dito.
+	* gcc.dg/vect/vect-widen-mult-const-u16.c: Dito.
+	* gcc.dg/vect/vect-widen-mult-half-u8.c: Dito.
+	* gcc.dg/vect/vect-widen-mult-half.c: Dito.
+	* gcc.dg/vect/vect-widen-mult-u16.c: Dito.
+	* gcc.dg/vect/vect-widen-mult-u8-s16-s32.c: Dito.
+	* gcc.dg/vect/vect-widen-mult-u8-u32.c: Dito.
+	* gcc.dg/vect/vect-widen-mult-u8.c: Dito.
+---
+ src/gcc/testsuite/gcc.dg/vect/bb-slp-pattern-1.c           | 1 +
+ src/gcc/testsuite/gcc.dg/vect/slp-widen-mult-half.c        | 1 +
+ src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-s16.c  | 1 +
+ src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-u16.c  | 1 +
+ src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half-u8.c    | 1 +
+ src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half.c       | 1 +
+ src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u16.c        | 1 +
+ src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-s16-s32.c | 1 +
+ src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-u32.c     | 1 +
+ src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8.c         | 1 +
+ 10 files changed, 10 insertions(+)
+
+diff --git a/src/gcc/testsuite/gcc.dg/vect/bb-slp-pattern-1.c b/src/gcc/testsuite/gcc.dg/vect/bb-slp-pattern-1.c
+index 47b1a4366..52ffca82a 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/bb-slp-pattern-1.c
++++ b/src/gcc/testsuite/gcc.dg/vect/bb-slp-pattern-1.c
+@@ -1,4 +1,5 @@
+ /* { dg-require-effective-target vect_int } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-* } } */
+ 
+ #include <stdarg.h>
+ #include "tree-vect.h"
+diff --git a/src/gcc/testsuite/gcc.dg/vect/slp-widen-mult-half.c b/src/gcc/testsuite/gcc.dg/vect/slp-widen-mult-half.c
+index e3bfee333..cd44e551f 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/slp-widen-mult-half.c
++++ b/src/gcc/testsuite/gcc.dg/vect/slp-widen-mult-half.c
+@@ -1,6 +1,7 @@
+ /* Disabling epilogues until we find a better way to deal with scans.  */
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-* } } */
+ 
+ #include "tree-vect.h"
+ 
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-s16.c b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-s16.c
+index 4c95dd201..082c758cb 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-s16.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-s16.c
+@@ -2,6 +2,7 @@
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
+ /* { dg-additional-options "-fno-ipa-icf" } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-*} } */
+ 
+ #include "tree-vect.h"
+ 
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-u16.c b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-u16.c
+index 4075f815c..a95e617ad 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-u16.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-const-u16.c
+@@ -2,6 +2,7 @@
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
+ /* { dg-additional-options "-fno-ipa-icf" } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-*} } */
+ 
+ #include "tree-vect.h"
+ 
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half-u8.c b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half-u8.c
+index c4ac88e18..14d96645a 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half-u8.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half-u8.c
+@@ -2,6 +2,7 @@
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
+ /* { dg-additional-options "-fno-ipa-icf" } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-*} } */
+ 
+ #include "tree-vect.h"
+ 
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half.c b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half.c
+index ebbf4f5e8..7901dae85 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-half.c
+@@ -1,6 +1,7 @@
+ /* Disabling epilogues until we find a better way to deal with scans.  */
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-*} } */
+ 
+ #include "tree-vect.h"
+ 
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u16.c b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u16.c
+index 2e28baae0..21b39953e 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u16.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u16.c
+@@ -1,6 +1,7 @@
+ /* Disabling epilogues until we find a better way to deal with scans.  */
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-*} } */
+ 
+ #include <stdarg.h>
+ #include "tree-vect.h"
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-s16-s32.c b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-s16-s32.c
+index d277f0b2b..4827e11b2 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-s16-s32.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-s16-s32.c
+@@ -1,6 +1,7 @@
+ /* Disabling epilogues until we find a better way to deal with scans.  */
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-*} } */
+ 
+ #include <stdarg.h>
+ #include "tree-vect.h"
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-u32.c b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-u32.c
+index f50358802..87eb9e0cb 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-u32.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8-u32.c
+@@ -1,5 +1,6 @@
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-* } } */
+ 
+ #include <stdarg.h>
+ #include "tree-vect.h"
+diff --git a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8.c b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8.c
+index 03d137941..507d30c35 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8.c
++++ b/src/gcc/testsuite/gcc.dg/vect/vect-widen-mult-u8.c
+@@ -1,5 +1,6 @@
+ /* { dg-additional-options "--param vect-epilogues-nomask=0" } */
+ /* { dg-require-effective-target vect_int } */
++/* { dg-additional-options "-mlasx" { target loongarch*-*-*} } */
+ 
+ #include <stdarg.h>
+ #include "tree-vect.h"
+-- 
+2.45.2
+

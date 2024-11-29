@@ -1,7 +1,7 @@
-From 63a8100fd922d01c128831c018e140f04a66306f Mon Sep 17 00:00:00 2001
+From a51a1aa9fb384132c872f61b2125bae4b77d66c5 Mon Sep 17 00:00:00 2001
 From: Xi Ruoyao <xry111@xry111.site>
 Date: Wed, 6 Jul 2022 23:22:29 +0800
-Subject: [PATCH 002/133] loongarch: avoid unnecessary sign-extend after 32-bit
+Subject: [PATCH 002/301] loongarch: avoid unnecessary sign-extend after 32-bit
  division
 
 Like add.w/sub.w/mul.w, div.w/mod.w/div.wu/mod.wu also sign-extend the
@@ -40,13 +40,13 @@ gcc/testsuite/ChangeLog:
 Signed-off-by: Peng Fan <fanpeng@loongson.cn>
 Signed-off-by: ticat_fp <fanpeng@loongson.cn>
 ---
- gcc/config/loongarch/loongarch.md          | 12 ++++++++----
- gcc/testsuite/gcc.target/loongarch/div-4.c |  9 +++++++++
+ src/gcc/config/loongarch/loongarch.md          | 12 ++++++++----
+ src/gcc/testsuite/gcc.target/loongarch/div-4.c |  9 +++++++++
  2 files changed, 17 insertions(+), 4 deletions(-)
- create mode 100644 gcc/testsuite/gcc.target/loongarch/div-4.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/div-4.c
 
-diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
-index 63781518533..37cc3e0e669 100644
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 637815185..37cc3e0e6 100644
 --- a/src/gcc/config/loongarch/loongarch.md
 +++ b/src/gcc/config/loongarch/loongarch.md
 @@ -753,6 +753,7 @@
@@ -82,9 +82,9 @@ index 63781518533..37cc3e0e669 100644
    ""
  {
    return loongarch_output_division ("<insn>.w<u>\t%0,%1,%2", operands);
-diff --git a/gcc/testsuite/gcc.target/loongarch/div-4.c b/gcc/testsuite/gcc.target/loongarch/div-4.c
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-4.c b/src/gcc/testsuite/gcc.target/loongarch/div-4.c
 new file mode 100644
-index 00000000000..a52f87d6caf
+index 000000000..a52f87d6c
 --- /dev/null
 +++ b/src/gcc/testsuite/gcc.target/loongarch/div-4.c
 @@ -0,0 +1,9 @@
@@ -98,5 +98,5 @@ index 00000000000..a52f87d6caf
 +  return a / b;
 +}
 -- 
-2.43.4
+2.45.2
 

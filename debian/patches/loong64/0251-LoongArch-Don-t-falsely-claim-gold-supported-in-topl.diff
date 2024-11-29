@@ -1,0 +1,49 @@
+From c419a965b4543cc82033203a13252086b5103079 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 21 Feb 2024 23:54:53 +0800
+Subject: [PATCH 251/301] LoongArch: Don't falsely claim gold supported in
+ toplevel configure
+
+The gold linker has never been ported to LoongArch (and it seems
+unlikely to be ported in the future as the new architectures are
+focusing on lld and/or mold for fast linkers).
+
+ChangeLog:
+
+	* configure.ac (ENABLE_GOLD): Remove loongarch*-*-* from target
+	list.
+	* configure: Regenerate.
+---
+ src/configure    | 2 +-
+ src/configure.ac | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/configure b/src/configure
+index a049747b5..d375f6f6b 100755
+--- a/src/configure
++++ b/src/configure
+@@ -3075,7 +3075,7 @@ case "${ENABLE_GOLD}" in
+       # Check for target supported by gold.
+       case "${target}" in
+         i?86-*-* | x86_64-*-* | sparc*-*-* | powerpc*-*-* | arm*-*-* \
+-        | aarch64*-*-* | tilegx*-*-* | mips*-*-* | s390*-*-* | loongarch*-*-*)
++        | aarch64*-*-* | tilegx*-*-* | mips*-*-* | s390*-*-*)
+ 	  configdirs="$configdirs gold"
+ 	  if test x${ENABLE_GOLD} = xdefault; then
+ 	    default_ld=gold
+diff --git a/src/configure.ac b/src/configure.ac
+index cf39d4637..afc09c9d1 100644
+--- a/src/configure.ac
++++ b/src/configure.ac
+@@ -354,7 +354,7 @@ case "${ENABLE_GOLD}" in
+       # Check for target supported by gold.
+       case "${target}" in
+         i?86-*-* | x86_64-*-* | sparc*-*-* | powerpc*-*-* | arm*-*-* \
+-        | aarch64*-*-* | tilegx*-*-* | mips*-*-* | s390*-*-* | loongarch*-*-*)
++        | aarch64*-*-* | tilegx*-*-* | mips*-*-* | s390*-*-*)
+ 	  configdirs="$configdirs gold"
+ 	  if test x${ENABLE_GOLD} = xdefault; then
+ 	    default_ld=gold
+-- 
+2.45.2
+

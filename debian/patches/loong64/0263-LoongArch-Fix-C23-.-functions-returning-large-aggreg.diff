@@ -1,0 +1,48 @@
+From 24f57a2cfa7a0b54fd5c1ffb66da125d2725963b Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 25 Oct 2024 06:15:21 +0000
+Subject: [PATCH 263/301] LoongArch: Fix C23 (...) functions returning large
+ aggregates [PR114175]
+
+We were assuming TYPE_NO_NAMED_ARGS_STDARG_P don't have any named
+arguments and there is nothing to advance, but that is not the case
+for (...) functions returning by hidden reference which have one such
+artificial argument.  This is causing gcc.dg/c23-stdarg-6.c and
+gcc.dg/c23-stdarg-8.c to fail.
+
+Fix the issue by checking if arg.type is NULL, as r14-9503 explains.
+
+gcc/ChangeLog:
+
+        PR target/114175
+        * config/loongarch/loongarch.cc
+        (loongarch_setup_incoming_varargs): Only skip
+        loongarch_function_arg_advance for TYPE_NO_NAMED_ARGS_STDARG_P
+        functions if arg.type is NULL.
+---
+ src/gcc/config/loongarch/loongarch.cc | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index c7f99b3ed..0c6907c84 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -767,7 +767,14 @@ loongarch_setup_incoming_varargs (cumulative_args_t cum,
+      argument.  Advance a local copy of CUM past the last "real" named
+      argument, to find out how many registers are left over.  */
+   local_cum = *get_cumulative_args (cum);
+-  loongarch_function_arg_advance (pack_cumulative_args (&local_cum), arg);
++
++  /* For a C23 variadic function w/o any named argument, and w/o an
++     artifical argument for large return value, skip advancing args.
++     There is such an artifical argument iff. arg.type is non-NULL
++     (PR 114175).  */
++  if (!TYPE_NO_NAMED_ARGS_STDARG_P (TREE_TYPE (current_function_decl))
++      || arg.type != NULL_TREE)
++    loongarch_function_arg_advance (pack_cumulative_args (&local_cum), arg);
+ 
+   /* Found out how many registers we need to save.  */
+   gp_saved = MAX_ARGS_IN_REGISTERS - local_cum.num_gprs;
+-- 
+2.45.2
+

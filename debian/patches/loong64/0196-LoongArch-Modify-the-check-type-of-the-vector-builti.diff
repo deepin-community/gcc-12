@@ -1,0 +1,68 @@
+From af88320b60f5d9ef2e6c067dcd5edfc9e0df89db Mon Sep 17 00:00:00 2001
+From: chenxiaolong <chenxiaolong@loongson.cn>
+Date: Wed, 13 Dec 2023 09:31:07 +0800
+Subject: [PATCH 196/301] LoongArch: Modify the check type of the vector
+ builtin function.
+
+On LoongArch architecture, using the latest gcc14 in regression test,
+it is found that the vector test cases in vector directory appear FAIL
+entries with unmatched pointer types. In order to solve this kind of
+problem, the type of the variable in the check result is modified with
+the parameter type defined in the vector builtin function.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/simd_correctness_check.h:The variable
+	types in the check results are modified in conjunction with the
+	parameter types defined in the vector builtin function.
+---
+ .../loongarch/vector/simd_correctness_check.h       | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/simd_correctness_check.h b/src/gcc/testsuite/gcc.target/loongarch/vector/simd_correctness_check.h
+index eb7fbd59c..551340bd5 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/simd_correctness_check.h
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/simd_correctness_check.h
+@@ -8,11 +8,12 @@
+       int fail = 0;                                                           \
+       for (size_t i = 0; i < sizeof (res) / sizeof (res[0]); ++i)             \
+         {                                                                     \
+-          long *temp_ref = &ref[i], *temp_res = &res[i];                      \
++          long long *temp_ref = (long long *)&ref[i],                         \
++		*temp_res = (long long *)&res[i];			      \
+           if (abs (*temp_ref - *temp_res) > 0)                                \
+             {                                                                 \
+               printf (" error: %s at line %ld , expected " #ref               \
+-                      "[%ld]:0x%lx, got: 0x%lx\n",                            \
++                      "[%ld]:0x%016lx, got: 0x%016lx\n",                      \
+                       __FILE__, line, i, *temp_ref, *temp_res);               \
+               fail = 1;                                                       \
+             }                                                                 \
+@@ -28,11 +29,11 @@
+       int fail = 0;                                                           \
+       for (size_t i = 0; i < sizeof (res) / sizeof (res[0]); ++i)             \
+         {                                                                     \
+-          int *temp_ref = &ref[i], *temp_res = &res[i];                       \
++          int *temp_ref = (int *)&ref[i], *temp_res = (int *)&res[i];         \
+           if (abs (*temp_ref - *temp_res) > 0)                                \
+             {                                                                 \
+               printf (" error: %s at line %ld , expected " #ref               \
+-                      "[%ld]:0x%x, got: 0x%x\n",                              \
++                      "[%ld]:0x%08x, got: 0x%08x\n",                          \
+                       __FILE__, line, i, *temp_ref, *temp_res);               \
+               fail = 1;                                                       \
+             }                                                                 \
+@@ -47,8 +48,8 @@
+     {                                                                         \
+       if (ref != res)                                                         \
+         {                                                                     \
+-          printf (" error: %s at line %ld , expected %d, got %d\n", __FILE__, \
+-                  line, ref, res);                                            \
++          printf (" error: %s at line %ld , expected 0x:%016x",               \
++		  "got 0x:%016x\n", __FILE__, line, ref, res);                \
+         }                                                                     \
+     }                                                                         \
+   while (0)
+-- 
+2.45.2
+

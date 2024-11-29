@@ -1,0 +1,51 @@
+From 3e4f7d2c494fcdb8d05079fb0792c5bd78221bb1 Mon Sep 17 00:00:00 2001
+From: chenxiaolong <chenxiaolong@loongson.cn>
+Date: Sat, 13 Jan 2024 15:28:34 +0800
+Subject: [PATCH 227/301] LoongArch: testsuite:Fix fail in gen-vect-{2,25}.c
+ file.
+
+1.Added  dg-do compile on LoongArch.
+  When binutils does not support vector instruction sets, an error occurs
+because the assembler does not recognize vector instructions.
+
+2.Added "-mlsx" option for vectorization on LoongArch.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.dg/tree-ssa/gen-vect-2.c: Added detection of compilation
+	behavior and "-mlsx" option on LoongArch.
+	* gcc.dg/tree-ssa/gen-vect-25.c: Dito.
+---
+ src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-2.c  | 2 ++
+ src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-25.c | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-2.c b/src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-2.c
+index 42171a2fb..395d6f7ee 100644
+--- a/src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-2.c
++++ b/src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-2.c
+@@ -1,6 +1,8 @@
+ /* { dg-do run { target vect_cmdline_needed } } */
++/* { dg-do compile { target { loongarch_sx && {! loongarch_sx_hw } } } } */
+ /* { dg-options "-O2 -fno-tree-loop-distribute-patterns -ftree-vectorize -fdump-tree-vect-details -fvect-cost-model=dynamic" } */
+ /* { dg-additional-options "-mno-sse" { target { i?86-*-* x86_64-*-* } } } */
++/* { dg-additional-options "-mlsx" { target { loongarch*-*-* } } } */
+ 
+ #include <stdlib.h>
+ 
+diff --git a/src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-25.c b/src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-25.c
+index 60ec27054..cea7f246a 100644
+--- a/src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-25.c
++++ b/src/gcc/testsuite/gcc.dg/tree-ssa/gen-vect-25.c
+@@ -1,6 +1,8 @@
+ /* { dg-do run { target vect_cmdline_needed } } */
++/* { dg-do compile { target { loongarch_sx && {! loongarch_sx_hw } } } } */
+ /* { dg-options "-O2 -ftree-vectorize -fdump-tree-vect-details -fvect-cost-model=dynamic" } */
+ /* { dg-options "-O2 -ftree-vectorize -fdump-tree-vect-details -fvect-cost-model=dynamic -mno-sse" { target { i?86-*-* x86_64-*-* } } } */
++/* { dg-additional-options "-mlsx" { target { loongarch*-*-* } } } */
+ 
+ #include <stdlib.h>
+ 
+-- 
+2.45.2
+

@@ -1,0 +1,208 @@
+From f8959c21b5e0eb504682b0e60ebbbc5c8484779d Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 25 Oct 2024 02:13:53 +0000
+Subject: [PATCH 158/301] LoongArch: Add fine-grained control for LAM_BH and
+ LAMCAS
+
+gcc/ChangeLog:
+
+        * config/loongarch/genopts/isa-evolution.in: (lam-bh, lamcas):
+        Add.
+        * config/loongarch/loongarch-str.h: Regenerate.
+        * config/loongarch/loongarch.opt: Regenerate.
+        * config/loongarch/loongarch-cpucfg-map.h: Regenerate.
+        * config/loongarch/loongarch-cpu.cc
+        (ISA_BASE_LA64V110_FEATURES): Include OPTION_MASK_ISA_LAM_BH
+        and OPTION_MASK_ISA_LAMCAS.
+        * config/loongarch/sync.md (atomic_add<mode:SHORT>): Use
+        TARGET_LAM_BH instead of ISA_BASE_IS_LA64V110.  Remove empty
+        lines from assembly output.
+        (atomic_exchange<mode>_short): Likewise.
+        (atomic_exchange<mode:SHORT>): Likewise.
+        (atomic_fetch_add<mode>_short): Likewise.
+        (atomic_fetch_add<mode:SHORT>): Likewise.
+        (atomic_cas_value_strong<mode>_amcas): Use TARGET_LAMCAS instead
+        of ISA_BASE_IS_LA64V110.
+        (atomic_compare_and_swap<mode>): Likewise.
+        (atomic_compare_and_swap<mode:GPR>): Likewise.
+        (atomic_compare_and_swap<mode:SHORT>): Likewise.
+        * config/loongarch/loongarch.cc (loongarch_asm_code_end): Dump
+        status if -mlam-bh and -mlamcas if -fverbose-asm.
+---
+ .../config/loongarch/genopts/isa-evolution.in  |  2 ++
+ src/gcc/config/loongarch/loongarch-cpu.cc      |  3 ++-
+ .../config/loongarch/loongarch-cpucfg-map.h    |  2 ++
+ src/gcc/config/loongarch/loongarch-str.h       |  2 ++
+ src/gcc/config/loongarch/loongarch.cc          |  2 ++
+ src/gcc/config/loongarch/loongarch.opt         |  8 ++++++++
+ src/gcc/config/loongarch/sync.md               | 18 +++++++++---------
+ 7 files changed, 27 insertions(+), 10 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/genopts/isa-evolution.in b/src/gcc/config/loongarch/genopts/isa-evolution.in
+index e58f0d6a1..a6bc3f87f 100644
+--- a/src/gcc/config/loongarch/genopts/isa-evolution.in
++++ b/src/gcc/config/loongarch/genopts/isa-evolution.in
+@@ -1,2 +1,4 @@
+ 2	26	div32		Support div.w[u] and mod.w[u] instructions with inputs not sign-extended.
++2	27	lam-bh		Support am{swap/add}[_db].{b/h} instructions.
++2	28	lamcas		Support amcas[_db].{b/h/w/d} instructions.
+ 3	23	ld-seq-sa	Do not need load-load barriers (dbar 0x700).
+diff --git a/src/gcc/config/loongarch/loongarch-cpu.cc b/src/gcc/config/loongarch/loongarch-cpu.cc
+index 76d66fa55..bbce82c9c 100644
+--- a/src/gcc/config/loongarch/loongarch-cpu.cc
++++ b/src/gcc/config/loongarch/loongarch-cpu.cc
+@@ -38,7 +38,8 @@ along with GCC; see the file COPYING3.  If not see
+    initializers!  */
+ 
+ #define ISA_BASE_LA64V110_FEATURES \
+-  (OPTION_MASK_ISA_DIV32 | OPTION_MASK_ISA_LD_SEQ_SA)
++  (OPTION_MASK_ISA_DIV32 | OPTION_MASK_ISA_LD_SEQ_SA \
++   | OPTION_MASK_ISA_LAM_BH | OPTION_MASK_ISA_LAMCAS)
+ 
+ int64_t loongarch_isa_base_features[N_ISA_BASE_TYPES] = {
+   /* [ISA_BASE_LA64V100] = */ 0,
+diff --git a/src/gcc/config/loongarch/loongarch-cpucfg-map.h b/src/gcc/config/loongarch/loongarch-cpucfg-map.h
+index 0c078c397..02ff16712 100644
+--- a/src/gcc/config/loongarch/loongarch-cpucfg-map.h
++++ b/src/gcc/config/loongarch/loongarch-cpucfg-map.h
+@@ -30,6 +30,8 @@ static constexpr struct {
+   HOST_WIDE_INT isa_evolution_bit;
+ } cpucfg_map[] = {
+   { 2, 1u << 26, OPTION_MASK_ISA_DIV32 },
++  { 2, 1u << 27, OPTION_MASK_ISA_LAM_BH },
++  { 2, 1u << 28, OPTION_MASK_ISA_LAMCAS },
+   { 3, 1u << 23, OPTION_MASK_ISA_LD_SEQ_SA },
+ };
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-str.h b/src/gcc/config/loongarch/loongarch-str.h
+index cd9dbb41b..0fee9abe5 100644
+--- a/src/gcc/config/loongarch/loongarch-str.h
++++ b/src/gcc/config/loongarch/loongarch-str.h
+@@ -70,5 +70,7 @@ along with GCC; see the file COPYING3.  If not see
+ #define STR_EXPLICIT_RELOCS_ALWAYS "always"
+ 
+ #define OPTSTR_DIV32   "div32"
++#define OPTSTR_LAM_BH  "lam-bh"
++#define OPTSTR_LAMCAS  "lamcas"
+ #define OPTSTR_LD_SEQ_SA   "ld-seq-sa"
+ #endif /* LOONGARCH_STR_H */
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 208ee2be0..e86e83826 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -11446,6 +11446,8 @@ loongarch_asm_code_end (void)
+       fprintf (asm_out_file, "%s Base ISA: %s\n", ASM_COMMENT_START,
+ 	       loongarch_isa_base_strings [la_target.isa.base]);
+       DUMP_FEATURE (TARGET_DIV32);
++      DUMP_FEATURE (TARGET_LAM_BH);
++      DUMP_FEATURE (TARGET_LAMCAS);
+       DUMP_FEATURE (TARGET_LD_SEQ_SA);
+     }
+ 
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 5251f705d..ea0d5bb4e 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -267,6 +267,14 @@ mdiv32
+ Target Mask(ISA_DIV32) Var(isa_evolution)
+ Support div.w[u] and mod.w[u] instructions with inputs not sign-extended.
+ 
++mlam-bh
++Target Mask(ISA_LAM_BH) Var(isa_evolution)
++Support am{swap/add}[_db].{b/h} instructions.
++
++mlamcas
++Target Mask(ISA_LAMCAS) Var(isa_evolution)
++Support amcas[_db].{b/h/w/d} instructions.
++
+ mld-seq-sa
+ Target Mask(ISA_LD_SEQ_SA) Var(isa_evolution)
+ Do not need load-load barriers (dbar 0x700).
+diff --git a/src/gcc/config/loongarch/sync.md b/src/gcc/config/loongarch/sync.md
+index 65443c899..a678e7131 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -124,7 +124,7 @@
+       return "ld.<size>\t%0,%1\\n\\t"
+ 	     "dbar\t0x14";
+     case MEMMODEL_RELAXED:
+-      return TARGET_LD_SEQ_SA ? "ld.<size>\t%0,%1\\n\\t"
++      return TARGET_LD_SEQ_SA ? "ld.<size>\t%0,%1"
+ 			      : "ld.<size>\t%0,%1\\n\\t"
+ 				"dbar\t0x700";
+ 
+@@ -193,7 +193,7 @@
+ 		       (match_operand:SHORT 1 "reg_or_0_operand" "rJ"))
+ 	   (match_operand:SI 2 "const_int_operand")] ;; model
+ 	 UNSPEC_SYNC_OLD_OP))]
+-  "ISA_BASE_IS_LA64V110"
++  "TARGET_LAM_BH"
+   "amadd%A2.<amo>\t$zero,%z1,%0"
+   [(set (attr "length") (const_int 4))])
+ 
+@@ -230,7 +230,7 @@
+ 	  UNSPEC_SYNC_EXCHANGE))
+    (set (match_dup 1)
+ 	(match_operand:SHORT 2 "register_operand" "r"))]
+-  "ISA_BASE_IS_LA64V110"
++  "TARGET_LAM_BH"
+   "amswap%A3.<amo>\t%0,%z2,%1"
+   [(set (attr "length") (const_int 4))])
+ 
+@@ -266,7 +266,7 @@
+ 			       (match_operand:QHWD 3 "reg_or_0_operand" "rJ")
+ 			       (match_operand:SI 4 "const_int_operand")]  ;; mod_s
+ 	 UNSPEC_COMPARE_AND_SWAP))]
+-  "ISA_BASE_IS_LA64V110"
++  "TARGET_LAMCAS"
+   "ori\t%0,%z2,0\n\tamcas%A4.<amo>\t%0,%z3,%1"
+   [(set (attr "length") (const_int 8))])
+ 
+@@ -296,7 +296,7 @@
+ 
+   operands[6] = mod_s;
+ 
+-  if (ISA_BASE_IS_LA64V110)
++  if (TARGET_LAMCAS)
+     emit_insn (gen_atomic_cas_value_strong<mode>_amcas (operands[1], operands[2],
+ 							 operands[3], operands[4],
+ 							 operands[6]));
+@@ -422,7 +422,7 @@
+ 
+   operands[6] = mod_s;
+ 
+-  if (ISA_BASE_IS_LA64V110)
++  if (TARGET_LAMCAS)
+     emit_insn (gen_atomic_cas_value_strong<mode>_amcas (operands[1], operands[2],
+ 						       operands[3], operands[4],
+ 						       operands[6]));
+@@ -642,7 +642,7 @@
+ 	(match_operand:SHORT 2 "register_operand"))]
+   ""
+ {
+-  if (ISA_BASE_IS_LA64V110)
++  if (TARGET_LAM_BH)
+     emit_insn (gen_atomic_exchange<mode>_short (operands[0], operands[1], operands[2], operands[3]));
+   else
+     {
+@@ -663,7 +663,7 @@
+ 		     (match_operand:SHORT 2 "reg_or_0_operand" "rJ"))
+ 	   (match_operand:SI 3 "const_int_operand")] ;; model
+ 	 UNSPEC_SYNC_OLD_OP))]
+-  "ISA_BASE_IS_LA64V110"
++  "TARGET_LAM_BH"
+   "amadd%A3.<amo>\t%0,%z2,%1"
+   [(set (attr "length") (const_int 4))])
+ 
+@@ -678,7 +678,7 @@
+ 	 UNSPEC_SYNC_OLD_OP))]
+   ""
+ {
+-  if (ISA_BASE_IS_LA64V110)
++  if (TARGET_LAM_BH)
+     emit_insn (gen_atomic_fetch_add<mode>_short (operands[0], operands[1],
+ 					     operands[2], operands[3]));
+   else
+-- 
+2.45.2
+

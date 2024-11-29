@@ -1,0 +1,156 @@
+From 8093bc030377bf6d76f6c00b6709e48cfdbc0d6f Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 16 Nov 2023 09:21:47 +0800
+Subject: [PATCH 156/301] LoongArch: Take the advantage of -mdiv32 if it's
+ enabled
+
+With -mdiv32, we can assume div.w[u] and mod.w[u] works on low 32 bits
+of a 64-bit GPR even if it's not sign-extended.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (DIV): New mode iterator.
+	(<optab:ANY_DIV><mode:GPR>3): Don't expand if TARGET_DIV32.
+	(<optab:ANY_DIV>di3_fake): Disable if TARGET_DIV32.
+	(*<optab:ANY_DIV><mode:GPR>3): Allow SImode if TARGET_DIV32.
+	(<optab:ANY_DIV>si3_extended): New insn if TARGET_DIV32.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/div-div32.c: New test.
+	* gcc.target/loongarch/div-no-div32.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.md         | 31 ++++++++++++++++---
+ .../gcc.target/loongarch/div-div32.c          | 31 +++++++++++++++++++
+ .../gcc.target/loongarch/div-no-div32.c       | 11 +++++++
+ 3 files changed, 68 insertions(+), 5 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/div-div32.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/div-no-div32.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 52e40a208..c4e7af107 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -408,6 +408,10 @@
+ ;; st.w.
+ (define_mode_iterator ST_ANY [QHWD ANYF])
+ 
++;; A mode for anything legal as a input of a div or mod instruction.
++(define_mode_iterator DIV [(DI "TARGET_64BIT")
++			   (SI "!TARGET_64BIT || TARGET_DIV32")])
++
+ ;; In GPR templates, a string like "mul.<d>" will expand to "mul.w" in the
+ ;; 32-bit version and "mul.d" in the 64-bit version.
+ (define_mode_attr d [(SI "w") (DI "d")])
+@@ -914,7 +918,7 @@
+ 		     (match_operand:GPR 2 "register_operand")))]
+   ""
+ {
+- if (GET_MODE (operands[0]) == SImode && TARGET_64BIT)
++ if (GET_MODE (operands[0]) == SImode && TARGET_64BIT && !TARGET_DIV32)
+   {
+     rtx reg1 = gen_reg_rtx (DImode);
+     rtx reg2 = gen_reg_rtx (DImode);
+@@ -934,9 +938,9 @@
+ })
+ 
+ (define_insn "*<optab><mode>3"
+-  [(set (match_operand:X 0 "register_operand" "=r,&r,&r")
+-	(any_div:X (match_operand:X 1 "register_operand" "r,r,0")
+-		   (match_operand:X 2 "register_operand" "r,r,r")))]
++  [(set (match_operand:DIV 0 "register_operand" "=r,&r,&r")
++	(any_div:DIV (match_operand:DIV 1 "register_operand" "r,r,0")
++		     (match_operand:DIV 2 "register_operand" "r,r,r")))]
+   ""
+ {
+   return loongarch_output_division ("<insn>.<d><u>\t%0,%1,%2", operands);
+@@ -949,6 +953,23 @@
+ 	(const_string "yes")
+ 	(const_string "no")))])
+ 
++(define_insn "<optab>si3_extended"
++  [(set (match_operand:DI 0 "register_operand" "=r,&r,&r")
++	(sign_extend
++	  (any_div:SI (match_operand:SI 1 "register_operand" "r,r,0")
++		      (match_operand:SI 2 "register_operand" "r,r,r"))))]
++  "TARGET_64BIT && TARGET_DIV32"
++{
++  return loongarch_output_division ("<insn>.w<u>\t%0,%1,%2", operands);
++}
++  [(set_attr "type" "idiv")
++   (set_attr "mode" "SI")
++   (set (attr "enabled")
++      (if_then_else
++	(match_test "!!which_alternative == loongarch_check_zero_div_p()")
++	(const_string "yes")
++	(const_string "no")))])
++
+ (define_insn "<optab>di3_fake"
+   [(set (match_operand:DI 0 "register_operand" "=r,&r,&r")
+ 	(sign_extend:DI
+@@ -957,7 +978,7 @@
+ 	     (any_div:DI (match_operand:DI 1 "register_operand" "r,r,0")
+ 			 (match_operand:DI 2 "register_operand" "r,r,r")) 0)]
+ 	  UNSPEC_FAKE_ANY_DIV)))]
+-  "TARGET_64BIT"
++  "TARGET_64BIT && !TARGET_DIV32"
+ {
+   return loongarch_output_division ("<insn>.w<u>\t%0,%1,%2", operands);
+ }
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-div32.c b/src/gcc/testsuite/gcc.target/loongarch/div-div32.c
+new file mode 100644
+index 000000000..8b1f686ec
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/div-div32.c
+@@ -0,0 +1,31 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d -mdiv32" } */
++/* { dg-final { scan-assembler "div\.w" } } */
++/* { dg-final { scan-assembler "div\.wu" } } */
++/* { dg-final { scan-assembler "mod\.w" } } */
++/* { dg-final { scan-assembler "mod\.wu" } } */
++/* { dg-final { scan-assembler-not "slli\.w.*,0" } } */
++
++int
++divw (long a, long b)
++{
++  return (int)a / (int)b;
++}
++
++unsigned int
++divwu (long a, long b)
++{
++  return (unsigned int)a / (unsigned int)b;
++}
++
++int
++modw (long a, long b)
++{
++  return (int)a % (int)b;
++}
++
++unsigned int
++modwu (long a, long b)
++{
++  return (unsigned int)a % (unsigned int)b;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-no-div32.c b/src/gcc/testsuite/gcc.target/loongarch/div-no-div32.c
+new file mode 100644
+index 000000000..f0f697ba5
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/div-no-div32.c
+@@ -0,0 +1,11 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d" } */
++/* { dg-final { scan-assembler "div\.w" } } */
++/* { dg-final { scan-assembler "div\.wu" } } */
++/* { dg-final { scan-assembler "mod\.w" } } */
++/* { dg-final { scan-assembler "mod\.wu" } } */
++
++/* -mno-div32 should be implied by -march=loongarch64.  */
++/* { dg-final { scan-assembler-times "slli\.w\[^\n\]*0" 8 } } */
++
++#include "div-div32.c"
+-- 
+2.45.2
+

@@ -1,0 +1,110 @@
+From 38d88c3f752f7337f738a7dd734059c65af1f3c8 Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Fri, 15 Mar 2024 09:30:26 +0800
+Subject: [PATCH 265/301] LoongArch: Change loongarch_expand_vec_cmp()'s return
+ type from bool to void.
+
+This function is always return true at the end of function implementation,
+so the return value is useless.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (vec_cmp<mode><mode256_i>): Remove checking
+	of loongarch_expand_vec_cmp()'s return value.
+	(vec_cmpu<ILASX:mode><mode256_i>): Ditto.
+	* config/loongarch/lsx.md (vec_cmp<mode><mode_i>): Ditto.
+	(vec_cmpu<ILSX:mode><mode_i>): Ditto.
+	* config/loongarch/loongarch-protos.h
+	(loongarch_expand_vec_cmp): Change loongarch_expand_vec_cmp()'s return
+	type from bool to void.
+	* config/loongarch/loongarch.cc (loongarch_expand_vec_cmp): Ditto.
+---
+ src/gcc/config/loongarch/lasx.md            | 6 ++----
+ src/gcc/config/loongarch/loongarch-protos.h | 2 +-
+ src/gcc/config/loongarch/loongarch.cc       | 3 +--
+ src/gcc/config/loongarch/lsx.md             | 6 ++----
+ 4 files changed, 6 insertions(+), 11 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index f3b5ea373..45a0a8cc8 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -1378,8 +1378,7 @@
+ 	   (match_operand:LASX 3 "register_operand")]))]
+   "ISA_HAS_LASX"
+ {
+-  bool ok = loongarch_expand_vec_cmp (operands);
+-  gcc_assert (ok);
++  loongarch_expand_vec_cmp (operands);
+   DONE;
+ })
+ 
+@@ -1390,8 +1389,7 @@
+ 	   (match_operand:ILASX 3 "register_operand")]))]
+   "ISA_HAS_LASX"
+ {
+-  bool ok = loongarch_expand_vec_cmp (operands);
+-  gcc_assert (ok);
++  loongarch_expand_vec_cmp (operands);
+   DONE;
+ })
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index 3dac20279..8523da8d6 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -95,7 +95,7 @@ extern void loongarch_split_lsx_fill_d (rtx, rtx);
+ extern const char *loongarch_output_move (rtx, rtx);
+ #ifdef RTX_CODE
+ extern void loongarch_expand_scc (rtx *);
+-extern bool loongarch_expand_vec_cmp (rtx *);
++extern void loongarch_expand_vec_cmp (rtx *);
+ extern void loongarch_expand_conditional_branch (rtx *);
+ extern void loongarch_expand_conditional_move (rtx *);
+ extern void loongarch_expand_conditional_trap (rtx);
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index d225ee791..d243add17 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -10801,13 +10801,12 @@ loongarch_expand_vec_cond_mask_expr (machine_mode mode, machine_mode vimode,
+ }
+ 
+ /* Expand integer vector comparison */
+-bool
++void
+ loongarch_expand_vec_cmp (rtx operands[])
+ {
+ 
+   rtx_code code = GET_CODE (operands[1]);
+   loongarch_expand_lsx_cmp (operands[0], code, operands[2], operands[3]);
+-  return true;
+ }
+ 
+ /* Implement TARGET_PROMOTE_FUNCTION_MODE.  */
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index d5aa3f46f..dc81093e9 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -518,8 +518,7 @@
+ 	   (match_operand:LSX 3 "register_operand")]))]
+   "ISA_HAS_LSX"
+ {
+-  bool ok = loongarch_expand_vec_cmp (operands);
+-  gcc_assert (ok);
++  loongarch_expand_vec_cmp (operands);
+   DONE;
+ })
+ 
+@@ -530,8 +529,7 @@
+ 	   (match_operand:ILSX 3 "register_operand")]))]
+   "ISA_HAS_LSX"
+ {
+-  bool ok = loongarch_expand_vec_cmp (operands);
+-  gcc_assert (ok);
++  loongarch_expand_vec_cmp (operands);
+   DONE;
+ })
+ 
+-- 
+2.45.2
+

@@ -1,0 +1,137 @@
+From 1e1ed3fa323528185d32a327170daa351afcdf1e Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 26 Jan 2024 18:28:32 +0800
+Subject: [PATCH 260/301] LoongArch: Emit R_LARCH_RELAX for TLS IE with
+ non-extreme code model to allow the IE to LE linker relaxation
+
+In Binutils we need to make IE to LE relaxation only allowed when there
+is an R_LARCH_RELAX after R_LARCH_TLE_IE_PC_{HI20,LO12} so an invalid
+"partial" relaxation won't happen with the extreme code model.  So if we
+are emitting %ie_pc_{hi20,lo12} in a non-extreme code model, emit an
+R_LARCH_RELAX to allow the relaxation.  The IE to LE relaxation does not
+require the pcalau12i and the ld instruction to be adjacent, so we don't
+need to limit ourselves to use the macro.
+
+For the distro maintainers backporting changes: this change depends on
+r14-8721, without r14-8721 R_LARCH_RELAX can be emitted mistakenly in
+the extreme code model.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_print_operand_reloc):
+	Support 'Q' for R_LARCH_RELAX for TLS IE.
+	(loongarch_output_move): Use 'Q' to print R_LARCH_RELAX for TLS
+	IE.
+	* config/loongarch/loongarch.md (ld_from_got<mode>): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/tls-ie-relax.c: New test.
+	* gcc.target/loongarch/tls-ie-norelax.c: New test.
+	* gcc.target/loongarch/tls-ie-extreme.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc             | 15 ++++++++++++++-
+ src/gcc/config/loongarch/loongarch.md             |  2 +-
+ .../gcc.target/loongarch/tls-ie-extreme.c         |  5 +++++
+ .../gcc.target/loongarch/tls-ie-norelax.c         |  5 +++++
+ .../testsuite/gcc.target/loongarch/tls-ie-relax.c | 11 +++++++++++
+ 5 files changed, 36 insertions(+), 2 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/tls-ie-extreme.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/tls-ie-norelax.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/tls-ie-relax.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 863748a50..c7f99b3ed 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -4977,7 +4977,7 @@ loongarch_output_move (rtx dest, rtx src)
+ 	  if (type == SYMBOL_TLS_LE)
+ 	    return "lu12i.w\t%0,%h1";
+ 	  else
+-	    return "pcalau12i\t%0,%h1";
++	    return "%Q1pcalau12i\t%0,%h1";
+ 	}
+ 
+       if (src_code == CONST_INT)
+@@ -6140,6 +6140,7 @@ loongarch_print_operand_reloc (FILE *file, rtx op, bool hi64_part,
+    'L'  Print the low-part relocation associated with OP.
+    'm'	Print one less than CONST_INT OP in decimal.
+    'N'	Print the inverse of the integer branch condition for comparison OP.
++   'Q'  Print R_LARCH_RELAX for TLS IE.
+    'r'  Print address 12-31bit relocation associated with OP.
+    'R'  Print address 32-51bit relocation associated with OP.
+    'T'	Print 'f' for (eq:CC ...), 't' for (ne:CC ...),
+@@ -6276,6 +6277,18 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+ 					    letter);
+       break;
+ 
++    case 'Q':
++      if (!TARGET_LINKER_RELAXATION)
++	break;
++
++      if (code == HIGH)
++	op = XEXP (op, 0);
++
++      if (loongarch_classify_symbolic_expression (op) == SYMBOL_TLS_IE)
++	fprintf (file, ".reloc\t.,R_LARCH_RELAX\n\t");
++
++      break;
++
+     case 'r':
+       loongarch_print_operand_reloc (file, op, false /* hi64_part */,
+ 				     true /* lo_reloc */);
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 248ad12bb..d2c7c3b05 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -2620,7 +2620,7 @@
+ 				(match_operand:P 2 "symbolic_operand")))]
+ 	UNSPEC_LOAD_FROM_GOT))]
+   ""
+-  "ld.<d>\t%0,%1,%L2"
++  "%Q2ld.<d>\t%0,%1,%L2"
+   [(set_attr "type" "move")]
+ )
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/tls-ie-extreme.c b/src/gcc/testsuite/gcc.target/loongarch/tls-ie-extreme.c
+new file mode 100644
+index 000000000..00c545a3e
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/tls-ie-extreme.c
+@@ -0,0 +1,5 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d -mcmodel=extreme -mexplicit-relocs=auto -mrelax" } */
++/* { dg-final { scan-assembler-not "R_LARCH_RELAX" { target tls_native } } } */
++
++#include "tls-ie-relax.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/tls-ie-norelax.c b/src/gcc/testsuite/gcc.target/loongarch/tls-ie-norelax.c
+new file mode 100644
+index 000000000..dd6bf3634
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/tls-ie-norelax.c
+@@ -0,0 +1,5 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mcmodel=normal -mexplicit-relocs -mno-relax" } */
++/* { dg-final { scan-assembler-not "R_LARCH_RELAX" { target tls_native } } } */
++
++#include "tls-ie-relax.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/tls-ie-relax.c b/src/gcc/testsuite/gcc.target/loongarch/tls-ie-relax.c
+new file mode 100644
+index 000000000..e9f7569b1
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/tls-ie-relax.c
+@@ -0,0 +1,11 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mcmodel=normal -mexplicit-relocs -mrelax" } */
++/* { dg-final { scan-assembler-times "R_LARCH_RELAX" 2 { target tls_native } } } */
++
++extern __thread int errno;
++
++void
++unimplemented (void)
++{
++  errno = -38;
++}
+-- 
+2.45.2
+
