@@ -1,0 +1,148 @@
+From 80461fdaf7ef40419cf1fa0bd57db3993042540a Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 18 Nov 2023 03:19:07 +0800
+Subject: [PATCH 155/301] LoongArch: Add evolution features of base ISA
+ revisions
+
+	* config/loongarch/loongarch-def.h:
+	(loongarch_isa_base_features): Declare.  Define it in ...
+	* config/loongarch/loongarch-cpu.cc
+	(loongarch_isa_base_features): ... here.
+	(fill_native_cpu_config): If we know the base ISA of the CPU
+	model from PRID, use it instead of la64 (v1.0).  Check if all
+	expected features of this base ISA is available, emit a warning
+	if not.
+	* config/loongarch/loongarch-opts.cc (config_target_isa): Enable
+	the features implied by the base ISA if not -march=native.
+---
+ src/gcc/config/loongarch/loongarch-cpu.cc  | 62 +++++++++++++++-------
+ src/gcc/config/loongarch/loongarch-def.h   |  5 ++
+ src/gcc/config/loongarch/loongarch-opts.cc |  3 ++
+ 3 files changed, 52 insertions(+), 18 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch-cpu.cc b/src/gcc/config/loongarch/loongarch-cpu.cc
+index e1cd85d02..76d66fa55 100644
+--- a/src/gcc/config/loongarch/loongarch-cpu.cc
++++ b/src/gcc/config/loongarch/loongarch-cpu.cc
+@@ -32,6 +32,19 @@ along with GCC; see the file COPYING3.  If not see
+ #include "loongarch-cpucfg-map.h"
+ #include "loongarch-str.h"
+ 
++/* loongarch_isa_base_features defined here instead of loongarch-def.c
++   because we need to use options.h.  Pay attention on the order of elements
++   in the initializer becaue ISO C++ does not allow C99 designated
++   initializers!  */
++
++#define ISA_BASE_LA64V110_FEATURES \
++  (OPTION_MASK_ISA_DIV32 | OPTION_MASK_ISA_LD_SEQ_SA)
++
++int64_t loongarch_isa_base_features[N_ISA_BASE_TYPES] = {
++  /* [ISA_BASE_LA64V100] = */ 0,
++  /* [ISA_BASE_LA64V110] = */ ISA_BASE_LA64V110_FEATURES,
++};
++
+ /* Native CPU detection with "cpucfg" */
+ static uint32_t cpucfg_cache[N_CPUCFG_WORDS] = { 0 };
+ 
+@@ -127,24 +140,22 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+ 	 With: base architecture (ARCH)
+ 	 At:   cpucfg_words[1][1:0] */
+ 
+-      switch (cpucfg_cache[1] & 0x3)
+-	{
+-	  case 0x02:
+-	    tmp = ISA_BASE_LA64V100;
+-	    break;
+-
+-	  default:
+-	    fatal_error (UNKNOWN_LOCATION,
+-			 "unknown native base architecture %<0x%x%>, "
+-			 "%qs failed", (unsigned int) (cpucfg_cache[1] & 0x3),
+-			 "-m" OPTSTR_ARCH "=" STR_CPU_NATIVE);
+-	}
+-
+-      /* Check consistency with PRID presets.  */
+-      if (native_cpu_type != CPU_NATIVE && tmp != preset.base)
+-	warning (0, "base architecture %qs differs from PRID preset %qs",
+-		 loongarch_isa_base_strings[tmp],
+-		 loongarch_isa_base_strings[preset.base]);
++      if (native_cpu_type != CPU_NATIVE)
++	tmp = loongarch_cpu_default_isa[native_cpu_type].base;
++      else
++	switch (cpucfg_cache[1] & 0x3)
++	  {
++	    case 0x02:
++	      tmp = ISA_BASE_LA64V100;
++	      break;
++
++	    default:
++	      fatal_error (UNKNOWN_LOCATION,
++			   "unknown native base architecture %<0x%x%>, "
++			   "%qs failed",
++			   (unsigned int) (cpucfg_cache[1] & 0x3),
++			   "-m" OPTSTR_ARCH "=" STR_CPU_NATIVE);
++	  }
+ 
+       /* Use the native value anyways.  */
+       preset.base = tmp;
+@@ -227,6 +238,21 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+       for (const auto &entry: cpucfg_map)
+ 	if (cpucfg_cache[entry.cpucfg_word] & entry.cpucfg_bit)
+ 	  preset.evolution |= entry.isa_evolution_bit;
++
++      if (native_cpu_type != CPU_NATIVE)
++	{
++	  /* Check if the local CPU really supports the features of the base
++	     ISA of probed native_cpu_type.  If any feature is not detected,
++	     either GCC or the hardware is buggy.  */
++	  auto base_isa_feature = loongarch_isa_base_features[preset.base];
++	  if ((preset.evolution & base_isa_feature) != base_isa_feature)
++	    warning (0,
++		     "detected base architecture %qs, but some of its "
++		     "features are not detected; the detected base "
++		     "architecture may be unreliable, only detected "
++		     "features will be enabled",
++		     loongarch_isa_base_strings[preset.base]);
++	}
+     }
+ 
+   if (tune_native_p)
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index cb99caebe..ca0a324dd 100644
+--- a/src/gcc/config/loongarch/loongarch-def.h
++++ b/src/gcc/config/loongarch/loongarch-def.h
+@@ -55,12 +55,17 @@ extern "C" {
+ 
+ /* enum isa_base */
+ extern const char* loongarch_isa_base_strings[];
++
+ /* LoongArch V1.00.  */
+ #define ISA_BASE_LA64V100     0
+ /* LoongArch V1.10.  */
+ #define ISA_BASE_LA64V110     1
+ #define N_ISA_BASE_TYPES      2
+ 
++/* Unlike other arrays, this is defined in loongarch-cpu.cc.  The problem is
++   we cannot use the C++ header options.h in loongarch-def.c.  */
++extern int64_t loongarch_isa_base_features[];
++
+ /* enum isa_ext_* */
+ extern const char* loongarch_isa_ext_strings[];
+ #define ISA_EXT_NONE	      0
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index f10a9d3ff..390720479 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -284,6 +284,9 @@ config_target_isa:
+   /* Get default ISA from "-march" or its default value.  */
+   t.isa = loongarch_cpu_default_isa[t.cpu_arch];
+ 
++  if (t.cpu_arch != CPU_NATIVE)
++    t.isa.evolution |= loongarch_isa_base_features[t.isa.base];
++
+   /* Apply incremental changes.  */
+   /* "-march=native" overrides the default FPU type.  */
+ 
+-- 
+2.45.2
+

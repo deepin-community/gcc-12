@@ -1,0 +1,43 @@
+From 6b690c4cef6a13bf622e75910f4199ac29b2fcfe Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 25 Oct 2024 03:30:35 +0000
+Subject: [PATCH 228/301] LoongArch: Remove constraint z from movsi_internal
+
+We don't allow SImode in FCC, so constraint z is never really used
+here.
+
+gcc/ChangeLog:
+
+        * config/loongarch/loongarch.md (movsi_internal): Remove
+        constraint z.
+---
+ src/gcc/config/loongarch/loongarch.md | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 4c7e28ace..23d8dc126 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -2197,8 +2197,8 @@
+ })
+ 
+ (define_insn_and_split "*movsi_internal"
+-  [(set (match_operand:SI 0 "nonimmediate_operand" "=r,r,r,w,*f,*f,*r,*m,*r,*z")
+-	(match_operand:SI 1 "move_operand" "r,Yd,w,rJ,*r*J,*m,*f,*f,*z,*r"))]
++  [(set (match_operand:SI 0 "nonimmediate_operand" "=r,r,r,w,*f,f,*r,*m")
++   (match_operand:SI 1 "move_operand" "r,Yd,w,rJ,*r*J,m,*f,*f"))]
+   "(register_operand (operands[0], SImode)
+     || reg_or_0_operand (operands[1], SImode))"
+   { return loongarch_output_move (operands[0], operands[1]); }
+@@ -2211,7 +2211,7 @@
+   DONE;
+ }
+   "
+-  [(set_attr "move_type" "move,const,load,store,mgtf,fpload,mftg,fpstore,mftg,mgtf")
++  [(set_attr "move_type" "move,const,load,store,mgtf,fpload,mftg,fpstore")
+    (set_attr "mode" "SI")])
+ 
+ ;; 16-bit Integer moves
+-- 
+2.45.2
+

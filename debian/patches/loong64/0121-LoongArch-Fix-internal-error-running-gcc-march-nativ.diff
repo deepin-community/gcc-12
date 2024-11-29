@@ -1,7 +1,7 @@
-From b9fed6401cf9bcac190b9be0fa5cc7627c8067a5 Mon Sep 17 00:00:00 2001
+From 16f1f5a0342947050c902720fe18bd363b7e4df1 Mon Sep 17 00:00:00 2001
 From: Xi Ruoyao <xry111@xry111.site>
 Date: Fri, 17 Nov 2023 20:44:17 +0800
-Subject: [PATCH 121/133] LoongArch: Fix internal error running "gcc
+Subject: [PATCH 121/301] LoongArch: Fix internal error running "gcc
  -march=native" on LA664
 
 On LA664, the PRID preset is ISA_BASE_LA64V110 but the base architecture
@@ -30,15 +30,15 @@ gcc/ChangeLog:
 
 Signed-off-by: ticat_fp <fanpeng@loongson.cn>
 ---
- gcc/config/loongarch/genopts/loongarch-strings | 1 +
- gcc/config/loongarch/genopts/loongarch.opt.in  | 3 +++
- gcc/config/loongarch/loongarch-def.c           | 1 +
- gcc/config/loongarch/loongarch-str.h           | 1 +
- gcc/config/loongarch/loongarch.opt             | 3 +++
+ src/gcc/config/loongarch/genopts/loongarch-strings | 1 +
+ src/gcc/config/loongarch/genopts/loongarch.opt.in  | 3 +++
+ src/gcc/config/loongarch/loongarch-def.c           | 1 +
+ src/gcc/config/loongarch/loongarch-str.h           | 1 +
+ src/gcc/config/loongarch/loongarch.opt             | 3 +++
  5 files changed, 9 insertions(+)
 
-diff --git a/gcc/config/loongarch/genopts/loongarch-strings b/gcc/config/loongarch/genopts/loongarch-strings
-index 70802f9237f..eb5086fe362 100644
+diff --git a/src/gcc/config/loongarch/genopts/loongarch-strings b/src/gcc/config/loongarch/genopts/loongarch-strings
+index 70802f923..eb5086fe3 100644
 --- a/src/gcc/config/loongarch/genopts/loongarch-strings
 +++ b/src/gcc/config/loongarch/genopts/loongarch-strings
 @@ -30,6 +30,7 @@ STR_CPU_LA664	      la664
@@ -49,8 +49,8 @@ index 70802f9237f..eb5086fe362 100644
  
  # -mfpu
  OPTSTR_ISA_EXT_FPU    fpu
-diff --git a/gcc/config/loongarch/genopts/loongarch.opt.in b/gcc/config/loongarch/genopts/loongarch.opt.in
-index ab9796165d6..99145fc4fc2 100644
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index b808284d2..eca5a39e1 100644
 --- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
 +++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
 @@ -32,6 +32,9 @@ Basic ISAs of LoongArch:
@@ -63,8 +63,8 @@ index ab9796165d6..99145fc4fc2 100644
  ;; ISA extensions / adjustments
  Enum
  Name(isa_ext_fpu) Type(int)
-diff --git a/gcc/config/loongarch/loongarch-def.c b/gcc/config/loongarch/loongarch-def.c
-index c980fa37edf..fe4474e7782 100644
+diff --git a/src/gcc/config/loongarch/loongarch-def.c b/src/gcc/config/loongarch/loongarch-def.c
+index c980fa37e..fe4474e77 100644
 --- a/src/gcc/config/loongarch/loongarch-def.c
 +++ b/src/gcc/config/loongarch/loongarch-def.c
 @@ -165,6 +165,7 @@ loongarch_cpu_multipass_dfa_lookahead[N_TUNE_TYPES] = {
@@ -75,8 +75,8 @@ index c980fa37edf..fe4474e7782 100644
  };
  
  const char*
-diff --git a/gcc/config/loongarch/loongarch-str.h b/gcc/config/loongarch/loongarch-str.h
-index f6d7bcd50ca..ecfebf9dbd1 100644
+diff --git a/src/gcc/config/loongarch/loongarch-str.h b/src/gcc/config/loongarch/loongarch-str.h
+index f6d7bcd50..ecfebf9db 100644
 --- a/src/gcc/config/loongarch/loongarch-str.h
 +++ b/src/gcc/config/loongarch/loongarch-str.h
 @@ -33,6 +33,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -87,8 +87,8 @@ index f6d7bcd50ca..ecfebf9dbd1 100644
  
  #define OPTSTR_ISA_EXT_FPU "fpu"
  #define STR_NONE "none"
-diff --git a/gcc/config/loongarch/loongarch.opt b/gcc/config/loongarch/loongarch.opt
-index 430cf429389..22a4faa415f 100644
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index df6c7b401..7bd9c3efb 100644
 --- a/src/gcc/config/loongarch/loongarch.opt
 +++ b/src/gcc/config/loongarch/loongarch.opt
 @@ -39,6 +39,9 @@ Basic ISAs of LoongArch:
@@ -102,5 +102,5 @@ index 430cf429389..22a4faa415f 100644
  Enum
  Name(isa_ext_fpu) Type(int)
 -- 
-2.43.4
+2.45.2
 

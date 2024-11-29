@@ -1,0 +1,127 @@
+From bbb4df8bb5c5b0f3a267a47699c7a281e43b7f8a Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Thu, 8 Aug 2024 10:39:54 +0800
+Subject: [PATCH 295/301] LoongArch: Drop vcond{,u} expanders.
+
+Optabs vcond{,u} will be removed for GCC 15.  Since regtest shows no
+fallout, dropping the expanders, now.
+
+gcc/ChangeLog:
+
+	PR target/114189
+	* config/loongarch/lasx.md (vcondu<LASX:mode><ILASX:mode>): Delete.
+	(vcond<LASX:mode><LASX_2:mode>): Likewise.
+	* config/loongarch/lsx.md (vcondu<LSX:mode><ILSX:mode>): Likewise.
+	(vcond<LSX:mode><LSX_2:mode>): Likewise.
+---
+ src/gcc/config/loongarch/lasx.md | 37 --------------------------------
+ src/gcc/config/loongarch/lsx.md  | 31 --------------------------
+ 2 files changed, 68 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 3775155ca..be2f6ca8e 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -165,9 +165,6 @@
+ ;; All vector modes with 256 bits.
+ (define_mode_iterator LASX [V4DF V8SF V4DI V8SI V16HI V32QI])
+ 
+-;; Same as LASX.  Used by vcond to iterate two modes.
+-(define_mode_iterator LASX_2 [V4DF V8SF V4DI V8SI V16HI V32QI])
+-
+ ;; Only used for splitting insert_d and copy_{u,s}.d.
+ (define_mode_iterator LASX_D [V4DI V4DF])
+ 
+@@ -762,40 +759,6 @@
+    DONE;
+ })
+ 
+-;; FIXME: 256??
+-(define_expand "vcondu<LASX:mode><ILASX:mode>"
+-  [(match_operand:LASX 0 "register_operand")
+-   (match_operand:LASX 1 "reg_or_m1_operand")
+-   (match_operand:LASX 2 "reg_or_0_operand")
+-   (match_operator 3 ""
+-    [(match_operand:ILASX 4 "register_operand")
+-     (match_operand:ILASX 5 "register_operand")])]
+-  "ISA_HAS_LASX
+-   && (GET_MODE_NUNITS (<LASX:MODE>mode)
+-       == GET_MODE_NUNITS (<ILASX:MODE>mode))"
+-{
+-  loongarch_expand_vec_cond_expr (<LASX:MODE>mode, <LASX:VIMODE256>mode,
+-				  operands);
+-  DONE;
+-})
+-
+-;; FIXME: 256??
+-(define_expand "vcond<LASX:mode><LASX_2:mode>"
+-  [(match_operand:LASX 0 "register_operand")
+-   (match_operand:LASX 1 "reg_or_m1_operand")
+-   (match_operand:LASX 2 "reg_or_0_operand")
+-   (match_operator 3 ""
+-     [(match_operand:LASX_2 4 "register_operand")
+-      (match_operand:LASX_2 5 "register_operand")])]
+-  "ISA_HAS_LASX
+-   && (GET_MODE_NUNITS (<LASX:MODE>mode)
+-       == GET_MODE_NUNITS (<LASX_2:MODE>mode))"
+-{
+-  loongarch_expand_vec_cond_expr (<LASX:MODE>mode, <LASX:VIMODE256>mode,
+-				  operands);
+-  DONE;
+-})
+-
+ ;; Same as vcond_
+ (define_expand "vcond_mask_<mode><mode256_i>"
+   [(match_operand:LASX 0 "register_operand")
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index c7480aafd..5cb5bc61f 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -186,9 +186,6 @@
+ ;; All vector modes with 128 bits.
+ (define_mode_iterator LSX      [V2DF V4SF V2DI V4SI V8HI V16QI])
+ 
+-;; Same as LSX.  Used by vcond to iterate two modes.
+-(define_mode_iterator LSX_2    [V2DF V4SF V2DI V4SI V8HI V16QI])
+-
+ ;; Only used for vilvh and splitting insert_d and copy_{u,s}.d.
+ (define_mode_iterator LSX_D    [V2DI V2DF])
+ 
+@@ -533,34 +530,6 @@
+   DONE;
+ })
+ 
+-(define_expand "vcondu<LSX:mode><ILSX:mode>"
+-  [(match_operand:LSX 0 "register_operand")
+-   (match_operand:LSX 1 "reg_or_m1_operand")
+-   (match_operand:LSX 2 "reg_or_0_operand")
+-   (match_operator 3 ""
+-     [(match_operand:ILSX 4 "register_operand")
+-      (match_operand:ILSX 5 "register_operand")])]
+-  "ISA_HAS_LSX
+-   && (GET_MODE_NUNITS (<LSX:MODE>mode) == GET_MODE_NUNITS (<ILSX:MODE>mode))"
+-{
+-  loongarch_expand_vec_cond_expr (<LSX:MODE>mode, <LSX:VIMODE>mode, operands);
+-  DONE;
+-})
+-
+-(define_expand "vcond<LSX:mode><LSX_2:mode>"
+-  [(match_operand:LSX 0 "register_operand")
+-   (match_operand:LSX 1 "reg_or_m1_operand")
+-   (match_operand:LSX 2 "reg_or_0_operand")
+-   (match_operator 3 ""
+-     [(match_operand:LSX_2 4 "register_operand")
+-      (match_operand:LSX_2 5 "register_operand")])]
+-  "ISA_HAS_LSX
+-   && (GET_MODE_NUNITS (<LSX:MODE>mode) == GET_MODE_NUNITS (<LSX_2:MODE>mode))"
+-{
+-  loongarch_expand_vec_cond_expr (<LSX:MODE>mode, <LSX:VIMODE>mode, operands);
+-  DONE;
+-})
+-
+ (define_expand "vcond_mask_<mode><mode_i>"
+   [(match_operand:LSX 0 "register_operand")
+    (match_operand:LSX 1 "reg_or_m1_operand")
+-- 
+2.45.2
+

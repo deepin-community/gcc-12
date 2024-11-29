@@ -1,0 +1,925 @@
+From 1980fc52d7c69445a66c11f08fe90342678d6f03 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 1 Dec 2023 10:09:33 +0800
+Subject: [PATCH 173/301] LoongArch: Switch loongarch-def from C to C++ to make
+ it possible.
+
+We'll use HOST_WIDE_INT in LoongArch static properties in following patches.
+
+To keep the same readability as C99 designated initializers, create a
+std::array like data structure with position setter function, and add
+field setter functions for structs used in loongarch-def.cc.
+
+Remove unneeded guards #if
+!defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+in loongarch-def.h and loongarch-opts.h.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-def.h: Remove extern "C".
+	(loongarch_isa_base_strings): Declare as loongarch_def_array
+	instead of plain array.
+	(loongarch_isa_ext_strings): Likewise.
+	(loongarch_abi_base_strings): Likewise.
+	(loongarch_abi_ext_strings): Likewise.
+	(loongarch_cmodel_strings): Likewise.
+	(loongarch_cpu_strings): Likewise.
+	(loongarch_cpu_default_isa): Likewise.
+	(loongarch_cpu_issue_rate): Likewise.
+	(loongarch_cpu_multipass_dfa_lookahead): Likewise.
+	(loongarch_cpu_cache): Likewise.
+	(loongarch_cpu_align): Likewise.
+	(loongarch_cpu_rtx_cost_data): Likewise.
+	(loongarch_isa): Add a constructor and field setter functions.
+	* config/loongarch/loongarch-opts.h (loongarch-defs.h): Do not
+	include for target libraries.
+	* config/loongarch/loongarch-opts.cc: Comment code that doesn't
+	run and causes compilation errors.
+	* config/loongarch/loongarch-tune.h (LOONGARCH_TUNE_H): Likewise.
+	(struct loongarch_rtx_cost_data): Likewise.
+	(struct loongarch_cache): Likewise.
+	(struct loongarch_align): Likewise.
+	* config/loongarch/t-loongarch: Compile loongarch-def.cc with the
+	C++ compiler.
+	* config/loongarch/loongarch-def-array.h: New file for a
+	std:array like data structure with position setter function.
+	* config/loongarch/loongarch-def.c: Rename to ...
+	* config/loongarch/loongarch-def.cc: ... here.
+	(loongarch_cpu_strings): Define as loongarch_def_array instead
+	of plain array.
+	(loongarch_cpu_default_isa): Likewise.
+	(loongarch_cpu_cache): Likewise.
+	(loongarch_cpu_align): Likewise.
+	(loongarch_cpu_rtx_cost_data): Likewise.
+	(loongarch_cpu_issue_rate): Likewise.
+	(loongarch_cpu_multipass_dfa_lookahead): Likewise.
+	(loongarch_isa_base_strings): Likewise.
+	(loongarch_isa_ext_strings): Likewise.
+	(loongarch_abi_base_strings): Likewise.
+	(loongarch_abi_ext_strings): Likewise.
+	(loongarch_cmodel_strings): Likewise.
+	(abi_minimal_isa): Likewise.
+	(loongarch_rtx_cost_optimize_size): Use field setter functions
+	instead of designated initializers.
+	(loongarch_rtx_cost_data): Implement default constructor.
+---
+ .../config/loongarch/loongarch-def-array.h    |  40 +++
+ src/gcc/config/loongarch/loongarch-def.c      | 227 ------------------
+ src/gcc/config/loongarch/loongarch-def.cc     | 187 +++++++++++++++
+ src/gcc/config/loongarch/loongarch-def.h      |  55 +++--
+ src/gcc/config/loongarch/loongarch-opts.cc    |   7 +
+ src/gcc/config/loongarch/loongarch-opts.h     |   5 +-
+ src/gcc/config/loongarch/loongarch-tune.h     | 123 +++++++++-
+ src/gcc/config/loongarch/t-loongarch          |   4 +-
+ 8 files changed, 390 insertions(+), 258 deletions(-)
+ create mode 100644 src/gcc/config/loongarch/loongarch-def-array.h
+ delete mode 100644 src/gcc/config/loongarch/loongarch-def.c
+ create mode 100644 src/gcc/config/loongarch/loongarch-def.cc
+
+diff --git a/src/gcc/config/loongarch/loongarch-def-array.h b/src/gcc/config/loongarch/loongarch-def-array.h
+new file mode 100644
+index 000000000..bdb3e9c6a
+--- /dev/null
++++ b/src/gcc/config/loongarch/loongarch-def-array.h
+@@ -0,0 +1,40 @@
++/* A std::array like data structure for LoongArch static properties.
++   Copyright (C) 2023 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++#ifndef _LOONGARCH_DEF_ARRAY_H
++#define _LOONGARCH_DEF_ARRAY_H 1
++
++template <class T, int N>
++class loongarch_def_array {
++private:
++  T arr[N];
++public:
++  loongarch_def_array () : arr{} {}
++
++  T &operator[] (int n) { return arr[n]; }
++  const T &operator[] (int n) const { return arr[n]; }
++
++  loongarch_def_array set (int idx, T &&value)
++  {
++    (*this)[idx] = value;
++    return *this;
++  }
++};
++
++#endif
+diff --git a/src/gcc/config/loongarch/loongarch-def.c b/src/gcc/config/loongarch/loongarch-def.c
+deleted file mode 100644
+index fe4474e77..000000000
+--- a/src/gcc/config/loongarch/loongarch-def.c
++++ /dev/null
+@@ -1,227 +0,0 @@
+-/* LoongArch static properties.
+-   Copyright (C) 2021-2022 Free Software Foundation, Inc.
+-   Contributed by Loongson Ltd.
+-
+-This file is part of GCC.
+-
+-GCC is free software; you can redistribute it and/or modify
+-it under the terms of the GNU General Public License as published by
+-the Free Software Foundation; either version 3, or (at your option)
+-any later version.
+-
+-GCC is distributed in the hope that it will be useful,
+-but WITHOUT ANY WARRANTY; without even the implied warranty of
+-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-GNU General Public License for more details.
+-
+-You should have received a copy of the GNU General Public License
+-along with GCC; see the file COPYING3.  If not see
+-<http://www.gnu.org/licenses/>.  */
+-
+-#include "loongarch-def.h"
+-#include "loongarch-str.h"
+-
+-/* CPU property tables.  */
+-const char*
+-loongarch_cpu_strings[N_TUNE_TYPES] = {
+-  [CPU_NATIVE]		  = STR_CPU_NATIVE,
+-  [CPU_ABI_DEFAULT]	  = STR_CPU_ABI_DEFAULT,
+-  [CPU_LOONGARCH64]	  = STR_CPU_LOONGARCH64,
+-  [CPU_LA464]		  = STR_CPU_LA464,
+-  [CPU_LA664]		  = STR_CPU_LA664,
+-};
+-
+-struct loongarch_isa
+-loongarch_cpu_default_isa[N_ARCH_TYPES] = {
+-  [CPU_LOONGARCH64] = {
+-      .base = ISA_BASE_LA64V100,
+-      .fpu = ISA_EXT_FPU64,
+-      .simd = 0,
+-  },
+-  [CPU_LA464] = {
+-      .base = ISA_BASE_LA64V100,
+-      .fpu = ISA_EXT_FPU64,
+-      .simd = ISA_EXT_SIMD_LASX,
+-  },
+-  [CPU_LA664] = {
+-      .base = ISA_BASE_LA64V110,
+-      .fpu = ISA_EXT_FPU64,
+-      .simd = ISA_EXT_SIMD_LASX,
+-  },
+-};
+-
+-struct loongarch_cache
+-loongarch_cpu_cache[N_TUNE_TYPES] = {
+-  [CPU_LOONGARCH64] = {
+-      .l1d_line_size = 64,
+-      .l1d_size = 64,
+-      .l2d_size = 256,
+-      .simultaneous_prefetches = 4,
+-  },
+-  [CPU_LA464] = {
+-      .l1d_line_size = 64,
+-      .l1d_size = 64,
+-      .l2d_size = 256,
+-      .simultaneous_prefetches = 4,
+-  },
+-  [CPU_LA664] = {
+-      .l1d_line_size = 64,
+-      .l1d_size = 64,
+-      .l2d_size = 256,
+-      .simultaneous_prefetches = 4,
+-  },
+-};
+-
+-struct loongarch_align
+-loongarch_cpu_align[N_TUNE_TYPES] = {
+-  [CPU_LOONGARCH64] = {
+-    .function = "32",
+-    .label = "16",
+-  },
+-  [CPU_LA464] = {
+-    .function = "32",
+-    .label = "16",
+-  },
+-  [CPU_LA664] = {
+-    .function = "32",
+-    .label = "16",
+-  },
+-};
+-
+-
+-/* Default RTX cost initializer.  */
+-#define COSTS_N_INSNS(N) ((N) * 4)
+-#define DEFAULT_COSTS				\
+-    .fp_add		= COSTS_N_INSNS (1),	\
+-    .fp_mult_sf		= COSTS_N_INSNS (2),	\
+-    .fp_mult_df		= COSTS_N_INSNS (4),	\
+-    .fp_div_sf		= COSTS_N_INSNS (6),	\
+-    .fp_div_df		= COSTS_N_INSNS (8),	\
+-    .int_mult_si	= COSTS_N_INSNS (1),	\
+-    .int_mult_di	= COSTS_N_INSNS (1),	\
+-    .int_div_si		= COSTS_N_INSNS (4),	\
+-    .int_div_di		= COSTS_N_INSNS (6),	\
+-    .branch_cost	= 6,			\
+-    .memory_latency	= 4
+-
+-/* The following properties cannot be looked up directly using "cpucfg".
+- So it is necessary to provide a default value for "unknown native"
+- tune targets (i.e. -mtune=native while PRID does not correspond to
+- any known "-mtune" type).  */
+-
+-struct loongarch_rtx_cost_data
+-loongarch_cpu_rtx_cost_data[N_TUNE_TYPES] = {
+-  [CPU_NATIVE] = {
+-      DEFAULT_COSTS
+-  },
+-  [CPU_LOONGARCH64] = {
+-      DEFAULT_COSTS
+-  },
+-  [CPU_LA464] = {
+-      DEFAULT_COSTS
+-  },
+-  [CPU_LA664] = {
+-      DEFAULT_COSTS
+-  },
+-};
+-
+-/* RTX costs to use when optimizing for size.  */
+-const struct loongarch_rtx_cost_data
+-loongarch_rtx_cost_optimize_size = {
+-    .fp_add	      = 4,
+-    .fp_mult_sf	      = 4,
+-    .fp_mult_df	      = 4,
+-    .fp_div_sf	      = 4,
+-    .fp_div_df	      = 4,
+-    .int_mult_si      = 4,
+-    .int_mult_di      = 4,
+-    .int_div_si	      = 4,
+-    .int_div_di	      = 4,
+-    .branch_cost      = 6,
+-    .memory_latency   = 4,
+-};
+-
+-int
+-loongarch_cpu_issue_rate[N_TUNE_TYPES] = {
+-  [CPU_NATIVE]	      = 4,
+-  [CPU_LOONGARCH64]   = 4,
+-  [CPU_LA464]	      = 4,
+-  [CPU_LA664]	      = 6,
+-};
+-
+-int
+-loongarch_cpu_multipass_dfa_lookahead[N_TUNE_TYPES] = {
+-  [CPU_NATIVE]	      = 4,
+-  [CPU_LOONGARCH64]   = 4,
+-  [CPU_LA464]	      = 4,
+-  [CPU_LA664]	      = 6,
+-};
+-
+-/* Wiring string definitions from loongarch-str.h to global arrays
+-   with standard index values from loongarch-opts.h, so we can
+-   print config-related messages and do ABI self-spec filtering
+-   from the driver in a self-consistent manner.  */
+-
+-const char*
+-loongarch_isa_base_strings[N_ISA_BASE_TYPES] = {
+-  [ISA_BASE_LA64V100] = STR_ISA_BASE_LA64V100,
+-  [ISA_BASE_LA64V110] = STR_ISA_BASE_LA64V110,
+-};
+-
+-const char*
+-loongarch_isa_ext_strings[N_ISA_EXT_TYPES] = {
+-  [ISA_EXT_NONE] = STR_NONE,
+-  [ISA_EXT_FPU32] = STR_ISA_EXT_FPU32,
+-  [ISA_EXT_FPU64] = STR_ISA_EXT_FPU64,
+-  [ISA_EXT_SIMD_LSX] = STR_ISA_EXT_LSX,
+-  [ISA_EXT_SIMD_LASX] = STR_ISA_EXT_LASX,
+-};
+-
+-const char*
+-loongarch_abi_base_strings[N_ABI_BASE_TYPES] = {
+-  [ABI_BASE_LP64D] = STR_ABI_BASE_LP64D,
+-  [ABI_BASE_LP64F] = STR_ABI_BASE_LP64F,
+-  [ABI_BASE_LP64S] = STR_ABI_BASE_LP64S,
+-};
+-
+-const char*
+-loongarch_abi_ext_strings[N_ABI_EXT_TYPES] = {
+-  [ABI_EXT_BASE] = STR_ABI_EXT_BASE,
+-};
+-
+-const char*
+-loongarch_cmodel_strings[] = {
+-  [CMODEL_NORMAL]	  = STR_CMODEL_NORMAL,
+-  [CMODEL_TINY]		  = STR_CMODEL_TINY,
+-  [CMODEL_TINY_STATIC]	  = STR_CMODEL_TS,
+-  [CMODEL_MEDIUM]	  = STR_CMODEL_MEDIUM,
+-  [CMODEL_LARGE]	  = STR_CMODEL_LARGE,
+-  [CMODEL_EXTREME]	  = STR_CMODEL_EXTREME,
+-};
+-
+-
+-/* ABI-related definitions.  */
+-const struct loongarch_isa
+-abi_minimal_isa[N_ABI_BASE_TYPES][N_ABI_EXT_TYPES] = {
+-  [ABI_BASE_LP64D] = {
+-      [ABI_EXT_BASE] = {
+-	  .base = ISA_BASE_LA64V100,
+-	  .fpu = ISA_EXT_FPU64,
+-	  .simd = 0
+-      },
+-  },
+-  [ABI_BASE_LP64F] = {
+-      [ABI_EXT_BASE] = {
+-	  .base = ISA_BASE_LA64V100,
+-	  .fpu = ISA_EXT_FPU32,
+-	  .simd = 0
+-      },
+-  },
+-  [ABI_BASE_LP64S] = {
+-      [ABI_EXT_BASE] = {
+-	  .base = ISA_BASE_LA64V100,
+-	  .fpu = ISA_EXT_NONE,
+-	  .simd = 0
+-      },
+-  },
+-};
+diff --git a/src/gcc/config/loongarch/loongarch-def.cc b/src/gcc/config/loongarch/loongarch-def.cc
+new file mode 100644
+index 000000000..6990c86c2
+--- /dev/null
++++ b/src/gcc/config/loongarch/loongarch-def.cc
+@@ -0,0 +1,187 @@
++/* LoongArch static properties.
++   Copyright (C) 2021-2023 Free Software Foundation, Inc.
++   Contributed by Loongson Ltd.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++#include "loongarch-def.h"
++#include "loongarch-str.h"
++
++template <class T, int N>
++using array = loongarch_def_array<T, N>;
++
++template <class T>
++using array_tune = array<T, N_TUNE_TYPES>;
++
++template <class T>
++using array_arch = array<T, N_ARCH_TYPES>;
++
++/* CPU property tables.  */
++array_tune<const char *> loongarch_cpu_strings = array_tune<const char *> ()
++  .set (CPU_NATIVE, STR_CPU_NATIVE)
++  .set (CPU_ABI_DEFAULT, STR_CPU_ABI_DEFAULT)
++  .set (CPU_LOONGARCH64, STR_CPU_LOONGARCH64)
++  .set (CPU_LA464, STR_CPU_LA464)
++  .set (CPU_LA664, STR_CPU_LA664);
++
++array_arch<loongarch_isa> loongarch_cpu_default_isa =
++  array_arch<loongarch_isa> ()
++    .set (CPU_LOONGARCH64,
++	  loongarch_isa ()
++	    .base_ (ISA_BASE_LA64V100)
++	    .fpu_ (ISA_EXT_FPU64))
++    .set (CPU_LA464,
++	  loongarch_isa ()
++	    .base_ (ISA_BASE_LA64V100)
++	    .fpu_ (ISA_EXT_FPU64)
++	    .simd_ (ISA_EXT_SIMD_LASX))
++    .set (CPU_LA664,
++	  loongarch_isa ()
++	    .base_ (ISA_BASE_LA64V110)
++	    .fpu_ (ISA_EXT_FPU64)
++	    .simd_ (ISA_EXT_SIMD_LASX));
++
++static inline loongarch_cache la464_cache ()
++{
++  return loongarch_cache ()
++    .l1d_line_size_ (64)
++    .l1d_size_ (64)
++    .l2d_size_ (256)
++    .simultaneous_prefetches_ (4);
++}
++
++array_tune<loongarch_cache> loongarch_cpu_cache =
++  array_tune<loongarch_cache> ()
++    .set (CPU_LOONGARCH64, la464_cache ())
++    .set (CPU_LA464, la464_cache ())
++    .set (CPU_LA664, la464_cache ());
++
++static inline loongarch_align la464_align ()
++{
++  return loongarch_align ().function_ ("32").label_ ("16");
++}
++
++array_tune<loongarch_align> loongarch_cpu_align =
++  array_tune<loongarch_align> ()
++    .set (CPU_LOONGARCH64, la464_align ())
++    .set (CPU_LA464, la464_align ())
++    .set (CPU_LA664, la464_align ());
++
++#define COSTS_N_INSNS(N) ((N) * 4)
++
++/* Default RTX cost initializer.  */
++loongarch_rtx_cost_data::loongarch_rtx_cost_data ()
++  : fp_add (COSTS_N_INSNS (1)),
++    fp_mult_sf (COSTS_N_INSNS (2)),
++    fp_mult_df (COSTS_N_INSNS (4)),
++    fp_div_sf (COSTS_N_INSNS (6)),
++    fp_div_df (COSTS_N_INSNS (8)),
++    int_mult_si (COSTS_N_INSNS (1)),
++    int_mult_di (COSTS_N_INSNS (1)),
++    int_div_si (COSTS_N_INSNS (4)),
++    int_div_di (COSTS_N_INSNS (6)),
++    branch_cost (6),
++    memory_latency (4) {}
++
++/* The following properties cannot be looked up directly using "cpucfg".
++ So it is necessary to provide a default value for "unknown native"
++ tune targets (i.e. -mtune=native while PRID does not correspond to
++ any known "-mtune" type).  Currently all numbers are default.  */
++array_tune<loongarch_rtx_cost_data> loongarch_cpu_rtx_cost_data =
++  array_tune<loongarch_rtx_cost_data> ();
++
++/* RTX costs to use when optimizing for size.  */
++const loongarch_rtx_cost_data loongarch_rtx_cost_optimize_size =
++  loongarch_rtx_cost_data ()
++    .fp_add_ (4)
++    .fp_mult_sf_ (4)
++    .fp_mult_df_ (4)
++    .fp_div_sf_ (4)
++    .fp_div_df_ (4)
++    .int_mult_si_ (4)
++    .int_mult_di_ (4)
++    .int_div_si_ (4)
++    .int_div_di_ (4);
++
++array_tune<int> loongarch_cpu_issue_rate = array_tune<int> ()
++  .set (CPU_NATIVE, 4)
++  .set (CPU_LOONGARCH64, 4)
++  .set (CPU_LA464, 4)
++  .set (CPU_LA664, 6);
++
++array_tune<int> loongarch_cpu_multipass_dfa_lookahead = array_tune<int> ()
++  .set (CPU_NATIVE, 4)
++  .set (CPU_LOONGARCH64, 4)
++  .set (CPU_LA464, 4)
++  .set (CPU_LA664, 6);
++
++/* Wiring string definitions from loongarch-str.h to global arrays
++   with standard index values from loongarch-opts.h, so we can
++   print config-related messages and do ABI self-spec filtering
++   from the driver in a self-consistent manner.  */
++
++array<const char *, N_ISA_BASE_TYPES> loongarch_isa_base_strings =
++  array<const char *, N_ISA_BASE_TYPES> ()
++    .set (ISA_BASE_LA64V100, STR_ISA_BASE_LA64V100)
++    .set (ISA_BASE_LA64V110, STR_ISA_BASE_LA64V110);
++
++array<const char *, N_ISA_EXT_TYPES> loongarch_isa_ext_strings =
++  array<const char *, N_ISA_EXT_TYPES> ()
++    .set (ISA_EXT_NONE, STR_NONE)
++    .set (ISA_EXT_FPU32, STR_ISA_EXT_FPU32)
++    .set (ISA_EXT_FPU64, STR_ISA_EXT_FPU64)
++    .set (ISA_EXT_SIMD_LSX, STR_ISA_EXT_LSX)
++    .set (ISA_EXT_SIMD_LASX, STR_ISA_EXT_LASX);
++
++array<const char *, N_ABI_BASE_TYPES> loongarch_abi_base_strings =
++  array<const char *, N_ABI_BASE_TYPES> ()
++    .set (ABI_BASE_LP64D, STR_ABI_BASE_LP64D)
++    .set (ABI_BASE_LP64F, STR_ABI_BASE_LP64F)
++    .set (ABI_BASE_LP64S, STR_ABI_BASE_LP64S);
++
++array<const char *, N_ABI_EXT_TYPES> loongarch_abi_ext_strings =
++  array<const char *, N_ABI_EXT_TYPES> ()
++    .set (ABI_EXT_BASE, STR_ABI_EXT_BASE);
++
++array<const char *, N_CMODEL_TYPES> loongarch_cmodel_strings =
++  array<const char *, N_CMODEL_TYPES> ()
++    .set (CMODEL_NORMAL,		STR_CMODEL_NORMAL)
++    .set (CMODEL_TINY,		STR_CMODEL_TINY)
++    .set (CMODEL_TINY_STATIC,	STR_CMODEL_TS)
++    .set (CMODEL_MEDIUM,		STR_CMODEL_MEDIUM)
++    .set (CMODEL_LARGE,		STR_CMODEL_LARGE)
++    .set (CMODEL_EXTREME,		STR_CMODEL_EXTREME);
++
++array<array<loongarch_isa, N_ABI_EXT_TYPES>, N_ABI_BASE_TYPES>
++  abi_minimal_isa = array<array<loongarch_isa, N_ABI_EXT_TYPES>,
++			  N_ABI_BASE_TYPES> ()
++    .set (ABI_BASE_LP64D,
++	  array<loongarch_isa, N_ABI_EXT_TYPES> ()
++	    .set (ABI_EXT_BASE,
++		  loongarch_isa ()
++		    .base_ (ISA_BASE_LA64V100)
++		    .fpu_ (ISA_EXT_FPU64)))
++    .set (ABI_BASE_LP64F,
++	  array<loongarch_isa, N_ABI_EXT_TYPES> ()
++	    .set (ABI_EXT_BASE,
++		  loongarch_isa ()
++		    .base_ (ISA_BASE_LA64V100)
++		    .fpu_ (ISA_EXT_FPU32)))
++    .set (ABI_BASE_LP64S,
++	  array<loongarch_isa, N_ABI_EXT_TYPES> ()
++	    .set (ABI_EXT_BASE,
++		  loongarch_isa ().base_ (ISA_BASE_LA64V100)));
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index ef848f606..5ac70dfdd 100644
+--- a/src/gcc/config/loongarch/loongarch-def.h
++++ b/src/gcc/config/loongarch/loongarch-def.h
+@@ -50,20 +50,18 @@ along with GCC; see the file COPYING3.  If not see
+ #include <stdint.h>
+ #endif
+ 
++#include "loongarch-def-array.h"
+ #include "loongarch-tune.h"
+ 
+-#ifdef __cplusplus
+-extern "C" {
+-#endif
+-
+ /* enum isa_base */
+-extern const char* loongarch_isa_base_strings[];
+ 
+ /* LoongArch V1.00.  */
+ #define ISA_BASE_LA64V100     0
+ /* LoongArch V1.10.  */
+ #define ISA_BASE_LA64V110     1
+ #define N_ISA_BASE_TYPES      2
++extern loongarch_def_array<const char *, N_ISA_BASE_TYPES>
++  loongarch_isa_base_strings;
+ 
+ #if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+ /* Unlike other arrays, this is defined in loongarch-cpu.cc.  The problem is
+@@ -72,7 +70,6 @@ extern int64_t loongarch_isa_base_features[];
+ #endif
+ 
+ /* enum isa_ext_* */
+-extern const char* loongarch_isa_ext_strings[];
+ #define ISA_EXT_NONE	      0
+ #define ISA_EXT_FPU32	      1
+ #define ISA_EXT_FPU64	      2
+@@ -80,13 +77,16 @@ extern const char* loongarch_isa_ext_strings[];
+ #define ISA_EXT_SIMD_LSX      3
+ #define ISA_EXT_SIMD_LASX     4
+ #define N_ISA_EXT_TYPES	      5
++extern loongarch_def_array<const char *, N_ISA_EXT_TYPES>
++  loongarch_isa_ext_strings;
+ 
+ /* enum abi_base */
+-extern const char* loongarch_abi_base_strings[];
+ #define ABI_BASE_LP64D	      0
+ #define ABI_BASE_LP64F	      1
+ #define ABI_BASE_LP64S	      2
+ #define N_ABI_BASE_TYPES      3
++extern loongarch_def_array<const char *, N_ABI_BASE_TYPES>
++  loongarch_abi_base_strings;
+ 
+ #define TO_LP64_ABI_BASE(C) (C)
+ 
+@@ -99,12 +99,12 @@ extern const char* loongarch_abi_base_strings[];
+ 
+ 
+ /* enum abi_ext */
+-extern const char* loongarch_abi_ext_strings[];
+ #define ABI_EXT_BASE	      0
+ #define N_ABI_EXT_TYPES	      1
++extern loongarch_def_array<const char *, N_ABI_EXT_TYPES>
++  loongarch_abi_ext_strings;
+ 
+ /* enum cmodel */
+-extern const char* loongarch_cmodel_strings[];
+ #define CMODEL_NORMAL	      0
+ #define CMODEL_TINY	      1
+ #define CMODEL_TINY_STATIC    2
+@@ -112,6 +112,8 @@ extern const char* loongarch_cmodel_strings[];
+ #define CMODEL_LARGE	      4
+ #define CMODEL_EXTREME	      5
+ #define N_CMODEL_TYPES	      6
++extern loongarch_def_array<const char *, N_CMODEL_TYPES>
++  loongarch_cmodel_strings;
+ 
+ /* enum explicit_relocs */
+ #define EXPLICIT_RELOCS_AUTO	0
+@@ -126,7 +128,6 @@ extern const char* loongarch_cmodel_strings[];
+ #define M_OPT_ABSENT(opt_enum)  ((opt_enum) == M_OPT_UNSET)
+ 
+ 
+-#if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+ /* Internal representation of the target.  */
+ struct loongarch_isa
+ {
+@@ -139,6 +140,13 @@ struct loongarch_isa
+ 
+      Using int64_t instead of HOST_WIDE_INT for C compatibility.  */
+   int64_t evolution;
++
++  loongarch_isa () : base (0), fpu (0), simd (0), evolution (0) {}
++  loongarch_isa base_ (int _base) { base = _base; return *this; }
++  loongarch_isa fpu_ (int _fpu) { fpu = _fpu; return *this; }
++  loongarch_isa simd_ (int _simd) { simd = _simd; return *this; }
++  loongarch_isa evolution_ (int64_t _evolution)
++    { evolution = _evolution; return *this; }
+ };
+ 
+ struct loongarch_abi
+@@ -156,9 +164,6 @@ struct loongarch_target
+   int cmodel;	    /* CMODEL_ */
+ };
+ 
+-extern struct loongarch_isa loongarch_cpu_default_isa[];
+-#endif
+-
+ /* CPU properties.  */
+ /* index */
+ #define CPU_NATIVE	  0
+@@ -170,15 +175,19 @@ extern struct loongarch_isa loongarch_cpu_default_isa[];
+ #define N_TUNE_TYPES	  5
+ 
+ /* parallel tables.  */
+-extern const char* loongarch_cpu_strings[];
+-extern int loongarch_cpu_issue_rate[];
+-extern int loongarch_cpu_multipass_dfa_lookahead[];
++extern loongarch_def_array<const char *, N_ARCH_TYPES>
++  loongarch_cpu_strings;
++extern loongarch_def_array<loongarch_isa, N_ARCH_TYPES>
++  loongarch_cpu_default_isa;
++extern loongarch_def_array<int, N_TUNE_TYPES>
++  loongarch_cpu_issue_rate;
++extern loongarch_def_array<int, N_TUNE_TYPES>
++  loongarch_cpu_multipass_dfa_lookahead;
++extern loongarch_def_array<loongarch_cache, N_TUNE_TYPES>
++  loongarch_cpu_cache;
++extern loongarch_def_array<loongarch_align, N_TUNE_TYPES>
++  loongarch_cpu_align;
++extern loongarch_def_array<loongarch_rtx_cost_data, N_TUNE_TYPES>
++  loongarch_cpu_rtx_cost_data;
+ 
+-extern struct loongarch_cache loongarch_cpu_cache[];
+-extern struct loongarch_align loongarch_cpu_align[];
+-extern struct loongarch_rtx_cost_data loongarch_cpu_rtx_cost_data[];
+-
+-#ifdef __cplusplus
+-}
+-#endif
+ #endif /* LOONGARCH_DEF_H */
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index 390720479..45fc521e4 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -163,6 +163,7 @@ loongarch_config_target (struct loongarch_target *target,
+ 			 int follow_multilib_list_p)
+ {
+   struct loongarch_target t;
++
+   if (!target)
+     return;
+ 
+@@ -657,12 +658,18 @@ abi_str (struct loongarch_abi abi)
+ 		     strlen (loongarch_abi_base_strings[abi.base]));
+   else
+     {
++      /* This situation has not yet occurred, so in order to avoid the
++	 -Warray-bounds warning during C++ syntax checking, this part
++	 of the code is commented first.  */
++      /*
+       APPEND_STRING (loongarch_abi_base_strings[abi.base])
+       APPEND1 ('/')
+       APPEND_STRING (loongarch_abi_ext_strings[abi.ext])
+       APPEND1 ('\0')
+ 
+       return XOBFINISH (&msg_obstack, const char *);
++      */
++      gcc_unreachable ();
+     }
+ }
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index 9b3d023ac..0dabf1551 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -21,7 +21,10 @@ along with GCC; see the file COPYING3.  If not see
+ #ifndef LOONGARCH_OPTS_H
+ #define LOONGARCH_OPTS_H
+ 
++/* This is a C++ header and it shouldn't be used by target libraries.  */
++#if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+ #include "loongarch-def.h"
++#endif
+ 
+ /* Target configuration */
+ extern struct loongarch_target la_target;
+@@ -33,7 +36,6 @@ struct loongarch_flags {
+     int sx[2];
+ };
+ 
+-#if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+ 
+ /* Initialize loongarch_target from separate option variables.  */
+ void
+@@ -54,7 +56,6 @@ void
+ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+ 				 struct gcc_options *opts,
+ 				 struct gcc_options *opts_set);
+-#endif
+ 
+ 
+ /* Macros for common conditional expressions used in loongarch.{c,h,md} */
+diff --git a/src/gcc/config/loongarch/loongarch-tune.h b/src/gcc/config/loongarch/loongarch-tune.h
+index d961963f0..616b94e87 100644
+--- a/src/gcc/config/loongarch/loongarch-tune.h
++++ b/src/gcc/config/loongarch/loongarch-tune.h
+@@ -21,6 +21,8 @@ along with GCC; see the file COPYING3.  If not see
+ #ifndef LOONGARCH_TUNE_H
+ #define LOONGARCH_TUNE_H
+ 
++#include "loongarch-def-array.h"
++
+ /* RTX costs of various operations on the different architectures.  */
+ struct loongarch_rtx_cost_data
+ {
+@@ -35,6 +37,76 @@ struct loongarch_rtx_cost_data
+   unsigned short int_div_di;
+   unsigned short branch_cost;
+   unsigned short memory_latency;
++
++  /* Default RTX cost initializer, implemented in loongarch-def.cc.  */
++  loongarch_rtx_cost_data ();
++
++  loongarch_rtx_cost_data fp_add_ (unsigned short _fp_add)
++  {
++    fp_add = _fp_add;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data fp_mult_sf_ (unsigned short _fp_mult_sf)
++  {
++    fp_mult_sf = _fp_mult_sf;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data fp_mult_df_ (unsigned short _fp_mult_df)
++  {
++    fp_mult_df = _fp_mult_df;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data fp_div_sf_ (unsigned short _fp_div_sf)
++  {
++    fp_div_sf = _fp_div_sf;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data fp_div_df_ (unsigned short _fp_div_df)
++  {
++    fp_div_df = _fp_div_df;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data int_mult_si_ (unsigned short _int_mult_si)
++  {
++    int_mult_si = _int_mult_si;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data int_mult_di_ (unsigned short _int_mult_di)
++  {
++    int_mult_di = _int_mult_di;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data int_div_si_ (unsigned short _int_div_si)
++  {
++    int_div_si = _int_div_si;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data int_div_di_ (unsigned short _int_div_di)
++  {
++    int_div_di = _int_div_di;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data branch_cost_ (unsigned short _branch_cost)
++  {
++    branch_cost = _branch_cost;
++    return *this;
++  }
++
++  loongarch_rtx_cost_data memory_latency_ (unsigned short _memory_latency)
++  {
++    memory_latency = _memory_latency;
++    return *this;
++  }
++
+ };
+ 
+ /* Costs to use when optimizing for size.  */
+@@ -42,10 +114,39 @@ extern const struct loongarch_rtx_cost_data loongarch_rtx_cost_optimize_size;
+ 
+ /* Cache size record of known processor models.  */
+ struct loongarch_cache {
+-    int l1d_line_size;  /* bytes */
+-    int l1d_size;       /* KiB */
+-    int l2d_size;       /* kiB */
+-    int simultaneous_prefetches; /* number of parallel prefetch */
++  int l1d_line_size;  /* bytes */
++  int l1d_size;       /* KiB */
++  int l2d_size;       /* kiB */
++  int simultaneous_prefetches; /* number of parallel prefetch */
++
++  loongarch_cache () : l1d_line_size (0),
++		       l1d_size (0),
++		       l2d_size (0),
++		       simultaneous_prefetches (0) {}
++
++  loongarch_cache l1d_line_size_ (int _l1d_line_size)
++  {
++    l1d_line_size = _l1d_line_size;
++    return *this;
++  }
++
++  loongarch_cache l1d_size_ (int _l1d_size)
++  {
++    l1d_size = _l1d_size;
++    return *this;
++  }
++
++  loongarch_cache l2d_size_ (int _l2d_size)
++  {
++    l2d_size = _l2d_size;
++    return *this;
++  }
++
++  loongarch_cache simultaneous_prefetches_ (int _simultaneous_prefetches)
++  {
++    simultaneous_prefetches = _simultaneous_prefetches;
++    return *this;
++  }
+ };
+ 
+ /* Alignment for functions and labels for best performance.  For new uarchs
+@@ -54,6 +155,20 @@ struct loongarch_cache {
+ struct loongarch_align {
+   const char *function;	/* default value for -falign-functions */
+   const char *label;	/* default value for -falign-labels */
++
++  loongarch_align () : function (nullptr), label (nullptr) {}
++
++  loongarch_align function_ (const char *_function)
++  {
++    function = _function;
++    return *this;
++  }
++
++  loongarch_align label_ (const char *_label)
++  {
++    label = _label;
++    return *this;
++  }
+ };
+ 
+ #endif /* LOONGARCH_TUNE_H */
+diff --git a/src/gcc/config/loongarch/t-loongarch b/src/gcc/config/loongarch/t-loongarch
+index 57b1176bc..a1a40431f 100644
+--- a/src/gcc/config/loongarch/t-loongarch
++++ b/src/gcc/config/loongarch/t-loongarch
+@@ -64,8 +64,8 @@ loongarch-cpu.o: $(srcdir)/config/loongarch/loongarch-cpu.cc $(LA_STR_H) \
+ 		 $(srcdir)/config/loongarch/loongarch-cpucfg-map.h
+ 	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
+ 
+-loongarch-def.o: $(srcdir)/config/loongarch/loongarch-def.c $(LA_STR_H)
+-	$(CC) -c $(ALL_CFLAGS) $(INCLUDES) $<
++loongarch-def.o: $(srcdir)/config/loongarch/loongarch-def.cc $(LA_STR_H)
++	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
+ 
+ $(srcdir)/config/loongarch/loongarch.opt: s-loongarch-opt ; @true
+ s-loongarch-opt: $(srcdir)/config/loongarch/genopts/genstr.sh \
+-- 
+2.45.2
+

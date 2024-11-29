@@ -1,0 +1,85 @@
+From c8732c191e0c5873f19c3296a4546aad0ebd3bc3 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 21 Nov 2023 09:09:25 +0800
+Subject: [PATCH 160/301] LoongArch: Fix libgcc build failure when libc is not
+ available
+
+To use int64_t we included <stdint.h> in loongarch-def.h.
+Unfortunately, loongarch-def.h is also used by libgcc etc., causing a
+build failure when building a "stage1" cross compiler at which the
+target libc is not built yet.
+
+As int64_t is used for a C-compatible replacement of HOST_WIDE_INT, it's
+not directly or indirectly referred by the target libraries.  So
+guard everything requiring stdint.h with #if then they'll not block
+target libraries.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-def.h (stdint.h): Guard with #if to
+	exclude it for target libraries.
+	(loongarch_isa_base_features): Likewise.
+	(loongarch_isa): Likewise.
+	(loongarch_abi): Likewise.
+	(loongarch_target): Likewise.
+	(loongarch_cpu_default_isa): Likewise.
+---
+ src/gcc/config/loongarch/loongarch-def.h | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index ca0a324dd..ef848f606 100644
+--- a/src/gcc/config/loongarch/loongarch-def.h
++++ b/src/gcc/config/loongarch/loongarch-def.h
+@@ -46,7 +46,10 @@ along with GCC; see the file COPYING3.  If not see
+ #ifndef LOONGARCH_DEF_H
+ #define LOONGARCH_DEF_H
+ 
++#if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+ #include <stdint.h>
++#endif
++
+ #include "loongarch-tune.h"
+ 
+ #ifdef __cplusplus
+@@ -62,9 +65,11 @@ extern const char* loongarch_isa_base_strings[];
+ #define ISA_BASE_LA64V110     1
+ #define N_ISA_BASE_TYPES      2
+ 
++#if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+ /* Unlike other arrays, this is defined in loongarch-cpu.cc.  The problem is
+    we cannot use the C++ header options.h in loongarch-def.c.  */
+ extern int64_t loongarch_isa_base_features[];
++#endif
+ 
+ /* enum isa_ext_* */
+ extern const char* loongarch_isa_ext_strings[];
+@@ -121,6 +126,7 @@ extern const char* loongarch_cmodel_strings[];
+ #define M_OPT_ABSENT(opt_enum)  ((opt_enum) == M_OPT_UNSET)
+ 
+ 
++#if !defined(IN_LIBGCC2) && !defined(IN_TARGET_LIBS) && !defined(IN_RTS)
+ /* Internal representation of the target.  */
+ struct loongarch_isa
+ {
+@@ -150,6 +156,9 @@ struct loongarch_target
+   int cmodel;	    /* CMODEL_ */
+ };
+ 
++extern struct loongarch_isa loongarch_cpu_default_isa[];
++#endif
++
+ /* CPU properties.  */
+ /* index */
+ #define CPU_NATIVE	  0
+@@ -162,7 +171,6 @@ struct loongarch_target
+ 
+ /* parallel tables.  */
+ extern const char* loongarch_cpu_strings[];
+-extern struct loongarch_isa loongarch_cpu_default_isa[];
+ extern int loongarch_cpu_issue_rate[];
+ extern int loongarch_cpu_multipass_dfa_lookahead[];
+ 
+-- 
+2.45.2
+

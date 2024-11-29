@@ -1,0 +1,83 @@
+From fc3ada96095eaf849f412aa8be4d6d6feff95183 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Wed, 6 Dec 2023 15:04:53 +0800
+Subject: [PATCH 180/301] LoongArch: Vectorized loop unrolling is disable for
+ divf/sqrtf/rsqrtf when -mrecip is enabled.
+
+Using -mrecip generates a sequence of instructions to replace divf, sqrtf and rsqrtf. The number
+of generated instructions is close to or exceeds the maximum issue instructions per cycle of the
+LoongArch, so vectorized loop unrolling is not performed on them.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_vector_costs::determine_suggested_unroll_factor):
+	If m_has_recip is true, uf return 1.
+	(loongarch_vector_costs::add_stmt_cost): Detect the use of approximate instruction sequence.
+---
+ src/gcc/config/loongarch/loongarch.cc | 36 +++++++++++++++++++++++++--
+ 1 file changed, 34 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index f6d3c851f..f7ccec95f 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -3970,7 +3970,9 @@ protected:
+   /* Reduction factor for suggesting unroll factor.  */
+   unsigned m_reduc_factor = 0;
+   /* True if the loop contains an average operation. */
+-  bool m_has_avg =false;
++  bool m_has_avg = false;
++  /* True if the loop uses approximation instruction sequence.  */
++  bool m_has_recip = false;
+ };
+ 
+ /* Implement TARGET_VECTORIZE_CREATE_COSTS.  */
+@@ -4017,7 +4019,7 @@ loongarch_vector_costs::determine_suggested_unroll_factor (loop_vec_info loop_vi
+ {
+   class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
+ 
+-  if (m_has_avg)
++  if (m_has_avg || m_has_recip)
+     return 1;
+ 
+   /* Don't unroll if it's specified explicitly not to be unrolled.  */
+@@ -4077,6 +4079,36 @@ loongarch_vector_costs::add_stmt_cost (int count, vect_cost_for_stmt kind,
+ 	}
+     }
+ 
++  combined_fn cfn;
++  if (kind == vector_stmt
++      && stmt_info
++      && stmt_info->stmt)
++    {
++      /* Detect the use of approximate instruction sequence.  */
++      if ((TARGET_RECIP_VEC_SQRT || TARGET_RECIP_VEC_RSQRT)
++	  && (cfn = gimple_call_combined_fn (stmt_info->stmt)) != CFN_LAST)
++	switch (cfn)
++	  {
++	  case CFN_BUILT_IN_SQRTF:
++	    m_has_recip = true;
++	  default:
++	    break;
++	  }
++      else if (TARGET_RECIP_VEC_DIV
++	       && gimple_code (stmt_info->stmt) == GIMPLE_ASSIGN)
++	{
++	  machine_mode mode = TYPE_MODE (vectype);
++	  switch (gimple_assign_rhs_code (stmt_info->stmt))
++	    {
++	    case RDIV_EXPR:
++	      if (GET_MODE_INNER (mode) == SFmode)
++		m_has_recip = true;
++	    default:
++	      break;
++	    }
++	}
++    }
++
+   return retval;
+ }
+ 
+-- 
+2.45.2
+

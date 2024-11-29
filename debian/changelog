@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin10) unstable; urgency=medium
+
+  * LoongArch: sync to lastest commit: 60e99901aef8e7efd4d60adf9f82021fcbd1101f
+
+ -- Peng Fan <fanpeng@loongson.cn>  Mon, 23 Dec 2024 08:35:28 +0000
+
 gcc-12 (12.3.0-17deepin9) unstable; urgency=medium
 
   * move libgcc_s.so.1 to /usr for DEP17

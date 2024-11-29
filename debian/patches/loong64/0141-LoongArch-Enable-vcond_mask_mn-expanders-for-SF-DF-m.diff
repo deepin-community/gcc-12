@@ -1,0 +1,418 @@
+From 4967417c4d2414b069b8e931537e03b215fb75e3 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Thu, 26 Oct 2023 09:34:32 +0800
+Subject: [PATCH 141/301] LoongArch:Enable vcond_mask_mn expanders for SF/DF
+ modes.
+
+If the vcond_mask patterns don't support fp modes, the vector
+FP comparison instructions will not be generated.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (vcond_mask_<ILASX:mode><ILASX:mode>): Change to
+	(vcond_mask_<mode><mode256_i>): this.
+	* config/loongarch/lsx.md (vcond_mask_<ILSX:mode><ILSX:mode>): Change to
+	(vcond_mask_<mode><mode_i>): this.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/lasx/lasx-vcond-1.c: New test.
+	* gcc.target/loongarch/vector/lasx/lasx-vcond-2.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-vcond-1.c: New test.
+	* gcc.target/loongarch/vector/lsx/lsx-vcond-2.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 14 +--
+ src/gcc/config/loongarch/lsx.md               | 14 +--
+ .../loongarch/vector/lasx/lasx-vcond-1.c      | 64 ++++++++++++++
+ .../loongarch/vector/lasx/lasx-vcond-2.c      | 87 +++++++++++++++++++
+ .../loongarch/vector/lsx/lsx-vcond-1.c        | 64 ++++++++++++++
+ .../loongarch/vector/lsx/lsx-vcond-2.c        | 87 +++++++++++++++++++
+ 6 files changed, 316 insertions(+), 14 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-1.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-1.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 442fda246..f0f2dd08d 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -906,15 +906,15 @@
+ })
+ 
+ ;; Same as vcond_
+-(define_expand "vcond_mask_<ILASX:mode><ILASX:mode>"
+-  [(match_operand:ILASX 0 "register_operand")
+-   (match_operand:ILASX 1 "reg_or_m1_operand")
+-   (match_operand:ILASX 2 "reg_or_0_operand")
+-   (match_operand:ILASX 3 "register_operand")]
++(define_expand "vcond_mask_<mode><mode256_i>"
++  [(match_operand:LASX 0 "register_operand")
++   (match_operand:LASX 1 "reg_or_m1_operand")
++   (match_operand:LASX 2 "reg_or_0_operand")
++   (match_operand:<VIMODE256> 3 "register_operand")]
+   "ISA_HAS_LASX"
+ {
+-  loongarch_expand_vec_cond_mask_expr (<ILASX:MODE>mode,
+-				      <ILASX:VIMODE256>mode, operands);
++  loongarch_expand_vec_cond_mask_expr (<MODE>mode,
++				       <VIMODE256>mode, operands);
+   DONE;
+ })
+ 
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index b4e92ae9c..4af32c8df 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -644,15 +644,15 @@
+   DONE;
+ })
+ 
+-(define_expand "vcond_mask_<ILSX:mode><ILSX:mode>"
+-  [(match_operand:ILSX 0 "register_operand")
+-   (match_operand:ILSX 1 "reg_or_m1_operand")
+-   (match_operand:ILSX 2 "reg_or_0_operand")
+-   (match_operand:ILSX 3 "register_operand")]
++(define_expand "vcond_mask_<mode><mode_i>"
++  [(match_operand:LSX 0 "register_operand")
++   (match_operand:LSX 1 "reg_or_m1_operand")
++   (match_operand:LSX 2 "reg_or_0_operand")
++   (match_operand:<VIMODE> 3 "register_operand")]
+   "ISA_HAS_LSX"
+ {
+-  loongarch_expand_vec_cond_mask_expr (<ILSX:MODE>mode,
+-				      <ILSX:VIMODE>mode, operands);
++  loongarch_expand_vec_cond_mask_expr (<MODE>mode,
++				       <VIMODE>mode, operands);
+   DONE;
+ })
+ 
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-1.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-1.c
+new file mode 100644
+index 000000000..ee9cb1a1f
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-1.c
+@@ -0,0 +1,64 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ftree-vectorize -fno-unroll-loops -fno-vect-cost-model -mlasx" } */
++
++#include <stdint-gcc.h>
++
++#define DEF_VCOND_VAR(DATA_TYPE, CMP_TYPE, COND, SUFFIX)	\
++  void __attribute__ ((noinline, noclone))			\
++  vcond_var_##CMP_TYPE##_##SUFFIX (DATA_TYPE *__restrict__ r,	\
++				   DATA_TYPE *__restrict__ x,	\
++				   DATA_TYPE *__restrict__ y,	\
++				   CMP_TYPE *__restrict__ a,	\
++				   CMP_TYPE *__restrict__ b,	\
++				   int n)			\
++  {								\
++    for (int i = 0; i < n; i++)					\
++      {								\
++	DATA_TYPE xval = x[i], yval = y[i];			\
++	CMP_TYPE aval = a[i], bval = b[i];			\
++	r[i] = aval COND bval ? xval : yval;			\
++      }								\
++  }
++
++#define TEST_COND_VAR_SIGNED_ALL(T, COND, SUFFIX)	\
++  T (int8_t, int8_t, COND, SUFFIX)			\
++  T (int16_t, int16_t, COND, SUFFIX)			\
++  T (int32_t, int32_t, COND, SUFFIX)			\
++  T (int64_t, int64_t, COND, SUFFIX)			\
++  T (float, int32_t, COND, SUFFIX##_float)		\
++  T (double, int64_t, COND, SUFFIX##_double)
++
++#define TEST_COND_VAR_UNSIGNED_ALL(T, COND, SUFFIX)	\
++  T (uint8_t, uint8_t, COND, SUFFIX)			\
++  T (uint16_t, uint16_t, COND, SUFFIX)			\
++  T (uint32_t, uint32_t, COND, SUFFIX)			\
++  T (uint64_t, uint64_t, COND, SUFFIX)			\
++  T (float, uint32_t, COND, SUFFIX##_float)		\
++  T (double, uint64_t, COND, SUFFIX##_double)
++
++#define TEST_COND_VAR_ALL(T, COND, SUFFIX)	\
++  TEST_COND_VAR_SIGNED_ALL (T, COND, SUFFIX)	\
++  TEST_COND_VAR_UNSIGNED_ALL (T, COND, SUFFIX)
++
++#define TEST_VAR_ALL(T)				\
++  TEST_COND_VAR_ALL (T, >, _gt)			\
++  TEST_COND_VAR_ALL (T, <, _lt)			\
++  TEST_COND_VAR_ALL (T, >=, _ge)		\
++  TEST_COND_VAR_ALL (T, <=, _le)		\
++  TEST_COND_VAR_ALL (T, ==, _eq)		\
++  TEST_COND_VAR_ALL (T, !=, _ne)
++
++TEST_VAR_ALL (DEF_VCOND_VAR)
++
++/* { dg-final { scan-assembler-times {\txvslt\.b} 4 } } */
++/* { dg-final { scan-assembler-times {\txvslt\.h} 4 } } */
++/* { dg-final { scan-assembler-times {\txvslt\.w} 4 } } */
++/* { dg-final { scan-assembler-times {\txvslt\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\txvsle\.b} 4 } } */
++/* { dg-final { scan-assembler-times {\txvsle\.h} 4 } } */
++/* { dg-final { scan-assembler-times {\txvsle\.w} 4 } } */
++/* { dg-final { scan-assembler-times {\txvsle\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\txvseq\.b} 4 } } */
++/* { dg-final { scan-assembler-times {\txvseq\.h} 4 } } */
++/* { dg-final { scan-assembler-times {\txvseq\.w} 4 } } */
++/* { dg-final { scan-assembler-times {\txvseq\.d} 4 } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
+new file mode 100644
+index 000000000..5f40ed44c
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lasx/lasx-vcond-2.c
+@@ -0,0 +1,87 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ftree-vectorize -fno-vect-cost-model -fno-unroll-loops  -mlasx" } */
++
++#include <stdint-gcc.h>
++
++#define eq(A, B) ((A) == (B))
++#define ne(A, B) ((A) != (B))
++#define olt(A, B) ((A) < (B))
++#define ole(A, B) ((A) <= (B))
++#define oge(A, B) ((A) >= (B))
++#define ogt(A, B) ((A) > (B))
++#define ordered(A, B) (!__builtin_isunordered (A, B))
++#define unordered(A, B) (__builtin_isunordered (A, B))
++#define ueq(A, B) (!__builtin_islessgreater (A, B))
++#define ult(A, B) (__builtin_isless (A, B))
++#define ule(A, B) (__builtin_islessequal (A, B))
++#define uge(A, B) (__builtin_isgreaterequal (A, B))
++#define ugt(A, B) (__builtin_isgreater (A, B))
++#define nueq(A, B) (__builtin_islessgreater (A, B))
++#define nult(A, B) (!__builtin_isless (A, B))
++#define nule(A, B) (!__builtin_islessequal (A, B))
++#define nuge(A, B) (!__builtin_isgreaterequal (A, B))
++#define nugt(A, B) (!__builtin_isgreater (A, B))
++
++#define TEST_LOOP(TYPE1, TYPE2, CMP)				\
++  void __attribute__ ((noinline, noclone))			\
++  test_##TYPE1##_##TYPE2##_##CMP##_var (TYPE1 *restrict dest,	\
++					TYPE1 *restrict src,	\
++					TYPE1 fallback,		\
++					TYPE2 *restrict a,	\
++					TYPE2 *restrict b,	\
++					int count)		\
++  {								\
++    for (int i = 0; i < count; ++i)				\
++      {\
++        TYPE2 aval = a[i]; \
++        TYPE2 bval = b[i]; \
++        TYPE1 srcval = src[i]; \
++        dest[i] = CMP (aval, bval) ? srcval : fallback;		\
++      }\
++  }
++
++#define TEST_CMP(CMP) \
++  TEST_LOOP (int32_t, float, CMP) \
++  TEST_LOOP (uint32_t, float, CMP) \
++  TEST_LOOP (float, float, CMP) \
++  TEST_LOOP (int64_t, double, CMP) \
++  TEST_LOOP (uint64_t, double, CMP) \
++  TEST_LOOP (double, double, CMP)
++
++TEST_CMP (eq)
++TEST_CMP (ne)
++TEST_CMP (olt)
++TEST_CMP (ole)
++TEST_CMP (oge)
++TEST_CMP (ogt)
++TEST_CMP (ordered)
++TEST_CMP (unordered)
++TEST_CMP (ueq)
++TEST_CMP (ult)
++TEST_CMP (ule)
++TEST_CMP (uge)
++TEST_CMP (ugt)
++TEST_CMP (nueq)
++TEST_CMP (nult)
++TEST_CMP (nule)
++TEST_CMP (nuge)
++TEST_CMP (nugt)
++
++/* { dg-final { scan-assembler-times {\txvfcmp\.ceq\.s} 2 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.ceq\.d} 2 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cne\.s} 2 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cne\.d} 2 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.slt\.s} 4 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.slt\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.sle\.s} 4 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.sle\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cor\.s} 2 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cor\.d} 2 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cun\.s} 2 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cun\.d} 2 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cueq\.s} 4 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cueq\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cule\.s} 8 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cule\.d} 8 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cult\.s} 8 } } */
++/* { dg-final { scan-assembler-times {\txvfcmp\.cult\.d} 8 } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-1.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-1.c
+new file mode 100644
+index 000000000..138adccfa
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-1.c
+@@ -0,0 +1,64 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ftree-vectorize -fno-unroll-loops -fno-vect-cost-model -mlsx" } */
++
++#include <stdint-gcc.h>
++
++#define DEF_VCOND_VAR(DATA_TYPE, CMP_TYPE, COND, SUFFIX)	\
++  void __attribute__ ((noinline, noclone))			\
++  vcond_var_##CMP_TYPE##_##SUFFIX (DATA_TYPE *__restrict__ r,	\
++				   DATA_TYPE *__restrict__ x,	\
++				   DATA_TYPE *__restrict__ y,	\
++				   CMP_TYPE *__restrict__ a,	\
++				   CMP_TYPE *__restrict__ b,	\
++				   int n)			\
++  {								\
++    for (int i = 0; i < n; i++)					\
++      {								\
++	DATA_TYPE xval = x[i], yval = y[i];			\
++	CMP_TYPE aval = a[i], bval = b[i];			\
++	r[i] = aval COND bval ? xval : yval;			\
++      }								\
++  }
++
++#define TEST_COND_VAR_SIGNED_ALL(T, COND, SUFFIX)	\
++  T (int8_t, int8_t, COND, SUFFIX)			\
++  T (int16_t, int16_t, COND, SUFFIX)			\
++  T (int32_t, int32_t, COND, SUFFIX)			\
++  T (int64_t, int64_t, COND, SUFFIX)			\
++  T (float, int32_t, COND, SUFFIX##_float)		\
++  T (double, int64_t, COND, SUFFIX##_double)
++
++#define TEST_COND_VAR_UNSIGNED_ALL(T, COND, SUFFIX)	\
++  T (uint8_t, uint8_t, COND, SUFFIX)			\
++  T (uint16_t, uint16_t, COND, SUFFIX)			\
++  T (uint32_t, uint32_t, COND, SUFFIX)			\
++  T (uint64_t, uint64_t, COND, SUFFIX)			\
++  T (float, uint32_t, COND, SUFFIX##_float)		\
++  T (double, uint64_t, COND, SUFFIX##_double)
++
++#define TEST_COND_VAR_ALL(T, COND, SUFFIX)	\
++  TEST_COND_VAR_SIGNED_ALL (T, COND, SUFFIX)	\
++  TEST_COND_VAR_UNSIGNED_ALL (T, COND, SUFFIX)
++
++#define TEST_VAR_ALL(T)				\
++  TEST_COND_VAR_ALL (T, >, _gt)			\
++  TEST_COND_VAR_ALL (T, <, _lt)			\
++  TEST_COND_VAR_ALL (T, >=, _ge)		\
++  TEST_COND_VAR_ALL (T, <=, _le)		\
++  TEST_COND_VAR_ALL (T, ==, _eq)		\
++  TEST_COND_VAR_ALL (T, !=, _ne)
++
++TEST_VAR_ALL (DEF_VCOND_VAR)
++
++/* { dg-final { scan-assembler-times {\tvslt\.b} 4 } } */
++/* { dg-final { scan-assembler-times {\tvslt\.h} 4 } } */
++/* { dg-final { scan-assembler-times {\tvslt\.w} 4 } } */
++/* { dg-final { scan-assembler-times {\tvslt\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\tvsle\.b} 4 } } */
++/* { dg-final { scan-assembler-times {\tvsle\.h} 4 } } */
++/* { dg-final { scan-assembler-times {\tvsle\.w} 4 } } */
++/* { dg-final { scan-assembler-times {\tvsle\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\tvseq\.b} 4 } } */
++/* { dg-final { scan-assembler-times {\tvseq\.h} 4 } } */
++/* { dg-final { scan-assembler-times {\tvseq\.w} 4 } } */
++/* { dg-final { scan-assembler-times {\tvseq\.d} 4 } } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
+new file mode 100644
+index 000000000..e8fe31f8f
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/lsx/lsx-vcond-2.c
+@@ -0,0 +1,87 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ftree-vectorize -fno-vect-cost-model -fno-unroll-loops  -mlsx" } */
++
++#include <stdint-gcc.h>
++
++#define eq(A, B) ((A) == (B))
++#define ne(A, B) ((A) != (B))
++#define olt(A, B) ((A) < (B))
++#define ole(A, B) ((A) <= (B))
++#define oge(A, B) ((A) >= (B))
++#define ogt(A, B) ((A) > (B))
++#define ordered(A, B) (!__builtin_isunordered (A, B))
++#define unordered(A, B) (__builtin_isunordered (A, B))
++#define ueq(A, B) (!__builtin_islessgreater (A, B))
++#define ult(A, B) (__builtin_isless (A, B))
++#define ule(A, B) (__builtin_islessequal (A, B))
++#define uge(A, B) (__builtin_isgreaterequal (A, B))
++#define ugt(A, B) (__builtin_isgreater (A, B))
++#define nueq(A, B) (__builtin_islessgreater (A, B))
++#define nult(A, B) (!__builtin_isless (A, B))
++#define nule(A, B) (!__builtin_islessequal (A, B))
++#define nuge(A, B) (!__builtin_isgreaterequal (A, B))
++#define nugt(A, B) (!__builtin_isgreater (A, B))
++
++#define TEST_LOOP(TYPE1, TYPE2, CMP)				\
++  void __attribute__ ((noinline, noclone))			\
++  test_##TYPE1##_##TYPE2##_##CMP##_var (TYPE1 *restrict dest,	\
++					TYPE1 *restrict src,	\
++					TYPE1 fallback,		\
++					TYPE2 *restrict a,	\
++					TYPE2 *restrict b,	\
++					int count)		\
++  {								\
++    for (int i = 0; i < count; ++i)				\
++      {\
++        TYPE2 aval = a[i]; \
++        TYPE2 bval = b[i]; \
++        TYPE1 srcval = src[i]; \
++        dest[i] = CMP (aval, bval) ? srcval : fallback;		\
++      }\
++  }
++
++#define TEST_CMP(CMP) \
++  TEST_LOOP (int32_t, float, CMP) \
++  TEST_LOOP (uint32_t, float, CMP) \
++  TEST_LOOP (float, float, CMP) \
++  TEST_LOOP (int64_t, double, CMP) \
++  TEST_LOOP (uint64_t, double, CMP) \
++  TEST_LOOP (double, double, CMP)
++
++TEST_CMP (eq)
++TEST_CMP (ne)
++TEST_CMP (olt)
++TEST_CMP (ole)
++TEST_CMP (oge)
++TEST_CMP (ogt)
++TEST_CMP (ordered)
++TEST_CMP (unordered)
++TEST_CMP (ueq)
++TEST_CMP (ult)
++TEST_CMP (ule)
++TEST_CMP (uge)
++TEST_CMP (ugt)
++TEST_CMP (nueq)
++TEST_CMP (nult)
++TEST_CMP (nule)
++TEST_CMP (nuge)
++TEST_CMP (nugt)
++
++/* { dg-final { scan-assembler-times {\tvfcmp\.ceq\.s} 2 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.ceq\.d} 2 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cne\.s} 2 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cne\.d} 2 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.slt\.s} 4 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.slt\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.sle\.s} 4 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.sle\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cor\.s} 2 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cor\.d} 2 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cun\.s} 2 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cun\.d} 2 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cueq\.s} 4 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cueq\.d} 4 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cule\.s} 8 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cule\.d} 8 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cult\.s} 8 } } */
++/* { dg-final { scan-assembler-times {\tvfcmp\.cult\.d} 8 } } */
+-- 
+2.45.2
+

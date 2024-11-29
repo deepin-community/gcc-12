@@ -1,0 +1,135 @@
+From d18b89800a4e4e5210f391a2bb309b90b22bdab4 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 9 Jun 2024 14:43:48 +0800
+Subject: [PATCH 281/301] LoongArch: Use bstrins for "value & (-1u << const)"
+
+A move/bstrins pair is as fast as a (addi.w|lu12i.w|lu32i.d|lu52i.d)/and
+pair, and twice fast as a srli/slli pair.  When the src reg and the dst
+reg happens to be the same, the move instruction can be optimized away.
+
+gcc/ChangeLog:
+
+	* config/loongarch/predicates.md (high_bitmask_operand): New
+	predicate.
+	* config/loongarch/constraints.md (Yy): New constriant.
+	* config/loongarch/loongarch.md (and<mode>3_align): New
+	define_insn_and_split.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/bstrins-1.c: New test.
+	* gcc.target/loongarch/bstrins-2.c: New test.
+---
+ src/gcc/config/loongarch/constraints.md         |  5 +++++
+ src/gcc/config/loongarch/loongarch.md           | 17 +++++++++++++++++
+ src/gcc/config/loongarch/predicates.md          |  4 ++++
+ .../testsuite/gcc.target/loongarch/bstrins-1.c  |  9 +++++++++
+ .../testsuite/gcc.target/loongarch/bstrins-2.c  | 14 ++++++++++++++
+ 5 files changed, 49 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/bstrins-1.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/bstrins-2.c
+
+diff --git a/src/gcc/config/loongarch/constraints.md b/src/gcc/config/loongarch/constraints.md
+index cec5d8857..f3f5776da 100644
+--- a/src/gcc/config/loongarch/constraints.md
++++ b/src/gcc/config/loongarch/constraints.md
+@@ -94,6 +94,7 @@
+ ;;       "A constant @code{move_operand} that can be safely loaded using
+ ;;	  @code{la}."
+ ;;    "Yx"
++;;    "Yy"
+ ;; "Z" -
+ ;;    "ZC"
+ ;;      "A memory operand whose address is formed by a base register and offset
+@@ -291,6 +292,10 @@
+    "@internal"
+    (match_operand 0 "low_bitmask_operand"))
+ 
++(define_constraint "Yy"
++   "@internal"
++   (match_operand 0 "high_bitmask_operand"))
++
+ (define_constraint "YI"
+   "@internal
+    A replicated vector const in which the replicated value is in the range
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 20494ce8a..55a759850 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -1542,6 +1542,23 @@
+   [(set_attr "move_type" "pick_ins")
+    (set_attr "mode" "<MODE>")])
+ 
++(define_insn_and_split "and<mode>3_align"
++  [(set (match_operand:GPR 0 "register_operand" "=r")
++	(and:GPR (match_operand:GPR 1 "register_operand" "r")
++		 (match_operand:GPR 2 "high_bitmask_operand" "Yy")))]
++  ""
++  "#"
++  ""
++  [(set (match_dup 0) (match_dup 1))
++   (set (zero_extract:GPR (match_dup 0) (match_dup 2) (const_int 0))
++	(const_int 0))]
++{
++  int len;
++
++  len = low_bitmask_len (<MODE>mode, ~INTVAL (operands[2]));
++  operands[2] = GEN_INT (len);
++})
++
+ (define_insn_and_split "*bstrins_<mode>_for_mask"
+   [(set (match_operand:GPR 0 "register_operand" "=r")
+ 	(and:GPR (match_operand:GPR 1 "register_operand" "r")
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 1d9a30695..95be8a4fe 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -293,6 +293,10 @@
+   (and (match_code "const_int")
+        (match_test "low_bitmask_len (mode, INTVAL (op)) > 12")))
+ 
++(define_predicate "high_bitmask_operand"
++  (and (match_code "const_int")
++       (match_test "low_bitmask_len (mode, ~INTVAL (op)) > 0")))
++
+ (define_predicate "d_operand"
+   (and (match_code "reg")
+        (match_test "GP_REG_P (REGNO (op))")))
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/bstrins-1.c b/src/gcc/testsuite/gcc.target/loongarch/bstrins-1.c
+new file mode 100644
+index 000000000..7cb3a9523
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/bstrins-1.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d" } */
++/* { dg-final { scan-assembler "bstrins\\.d\t\\\$r4,\\\$r0,4,0" } } */
++
++long
++x (long a)
++{
++  return a & -32;
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/bstrins-2.c b/src/gcc/testsuite/gcc.target/loongarch/bstrins-2.c
+new file mode 100644
+index 000000000..9777f502e
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/bstrins-2.c
+@@ -0,0 +1,14 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d" } */
++/* { dg-final { scan-assembler "bstrins\\.d\t\\\$r\[0-9\]+,\\\$r0,4,0" } } */
++
++struct aligned_buffer {
++  _Alignas(32) char x[1024];
++};
++
++extern int f(char *);
++int g(void)
++{
++  struct aligned_buffer buf;
++  return f(buf.x);
++}
+-- 
+2.45.2
+

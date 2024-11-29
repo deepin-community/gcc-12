@@ -1,0 +1,49 @@
+From e0cab61044f010c08055d1db15dcb229bee866bd Mon Sep 17 00:00:00 2001
+From: Li Wei <liwei@loongson.cn>
+Date: Tue, 28 Nov 2023 15:56:35 +0800
+Subject: [PATCH 169/301] LoongArch: Remove duplicate definition of
+ CLZ_DEFINED_VALUE_AT_ZERO.
+
+In the r14-5547 commit, C[LT]Z_DEFINED_VALUE_AT_ZERO were defined at
+the same time, but in fact, CLZ_DEFINED_VALUE_AT_ZERO has already been
+defined, so remove the duplicate definition.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.h (CTZ_DEFINED_VALUE_AT_ZERO): Add
+	description.
+	(CLZ_DEFINED_VALUE_AT_ZERO): Remove duplicate definition.
+---
+ src/gcc/config/loongarch/loongarch.h | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index 19cf6fd33..8b28be0e4 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -288,10 +288,12 @@ along with GCC; see the file COPYING3.  If not see
+ /* Define if loading short immediate values into registers sign extends.  */
+ #define SHORT_IMMEDIATES_SIGN_EXTEND 1
+ 
+-/* The clz.{w/d} instructions have the natural values at 0.  */
++/* The clz.{w/d}, ctz.{w/d} instructions have the natural values at 0.  */
+ 
+ #define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
+   ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE), 2)
++#define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
++  ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE), 2)
+ 
+ /* Standard register usage.  */
+ 
+@@ -1239,8 +1241,3 @@ struct GTY (()) machine_function
+ 
+ #define TARGET_EXPLICIT_RELOCS \
+   (la_opt_explicit_relocs == EXPLICIT_RELOCS_ALWAYS)
+-
+-#define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
+-  ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE), 2)
+-#define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
+-  ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE), 2)
+-- 
+2.45.2
+

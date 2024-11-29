@@ -1,0 +1,31 @@
+From cacf905ae1c7519eb3b585aa899893e0eac79e4a Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Wed, 6 Sep 2023 17:57:47 +0800
+Subject: [PATCH 062/301] LoongArch: Fix unintentional bash-ism in r14-3665.
+
+gcc/ChangeLog:
+
+	* config.gcc: remove non-POSIX syntax "<<<".
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config.gcc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config.gcc b/src/gcc/config.gcc
+index c8dd67aaf..6dae9606a 100644
+--- a/src/gcc/config.gcc
++++ b/src/gcc/config.gcc
+@@ -5282,7 +5282,7 @@ case "${target}" in
+ 				if test x${parse_state} = x"abi-base"; then
+ 					# Base ABI type
+ 					case ${component} in
+-					lp64d | lp64f | lp64s) elem_tmp="ABI_BASE_$(tr a-z A-Z <<< ${component}),";;
++					lp64d | lp64f | lp64s) elem_tmp="ABI_BASE_$(echo ${component} | tr a-z A-Z),";;
+ 					*)
+ 						echo "Unknown base ABI \"${component}\" in --with-multilib-list." 1>&2
+ 						exit 1
+-- 
+2.45.2
+

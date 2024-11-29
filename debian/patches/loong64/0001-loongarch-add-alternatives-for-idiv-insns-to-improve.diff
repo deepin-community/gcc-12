@@ -1,7 +1,7 @@
-From 2d0b5367d14fd6ceaadefc35c2a803746c489682 Mon Sep 17 00:00:00 2001
+From 1e6d1329bfc6d0e93006da98b09b0c52a2582085 Mon Sep 17 00:00:00 2001
 From: Xi Ruoyao <xry111@xry111.site>
 Date: Wed, 6 Jul 2022 13:45:55 +0800
-Subject: [PATCH 001/133] loongarch: add alternatives for idiv insns to improve
+Subject: [PATCH 001/301] loongarch: add alternatives for idiv insns to improve
  code generation
 
 Currently in the description of LoongArch integer division instructions,
@@ -40,19 +40,19 @@ gcc/testsuite/ChangeLog:
 Signed-off-by: Peng Fan <fanpeng@loongson.cn>
 Signed-off-by: ticat_fp <fanpeng@loongson.cn>
 ---
- gcc/config/loongarch/loongarch-protos.h    |  1 +
- gcc/config/loongarch/loongarch.cc          |  2 +-
- gcc/config/loongarch/loongarch.md          | 28 +++++++++++++++-------
- gcc/testsuite/gcc.target/loongarch/div-1.c |  9 +++++++
- gcc/testsuite/gcc.target/loongarch/div-2.c |  9 +++++++
- gcc/testsuite/gcc.target/loongarch/div-3.c |  9 +++++++
+ src/gcc/config/loongarch/loongarch-protos.h   |  1 +
+ src/gcc/config/loongarch/loongarch.cc         |  2 +-
+ src/gcc/config/loongarch/loongarch.md         | 28 +++++++++++++------
+ .../testsuite/gcc.target/loongarch/div-1.c    |  9 ++++++
+ .../testsuite/gcc.target/loongarch/div-2.c    |  9 ++++++
+ .../testsuite/gcc.target/loongarch/div-3.c    |  9 ++++++
  6 files changed, 49 insertions(+), 9 deletions(-)
- create mode 100644 gcc/testsuite/gcc.target/loongarch/div-1.c
- create mode 100644 gcc/testsuite/gcc.target/loongarch/div-2.c
- create mode 100644 gcc/testsuite/gcc.target/loongarch/div-3.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/div-1.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/div-2.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/div-3.c
 
-diff --git a/gcc/config/loongarch/loongarch-protos.h b/gcc/config/loongarch/loongarch-protos.h
-index 2144c2421ed..2287fd3763c 100644
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index 2144c2421..2287fd376 100644
 --- a/src/gcc/config/loongarch/loongarch-protos.h
 +++ b/src/gcc/config/loongarch/loongarch-protos.h
 @@ -130,6 +130,7 @@ extern bool loongarch_symbol_binds_local_p (const_rtx);
@@ -63,8 +63,8 @@ index 2144c2421ed..2287fd3763c 100644
  
  union loongarch_gen_fn_ptrs
  {
-diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
-index 33b1919e7a3..8b1b48d57c9 100644
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 33b1919e7..8b1b48d57 100644
 --- a/src/gcc/config/loongarch/loongarch.cc
 +++ b/src/gcc/config/loongarch/loongarch.cc
 @@ -2112,7 +2112,7 @@ loongarch_load_store_insns (rtx mem, rtx_insn *insn)
@@ -76,8 +76,8 @@ index 33b1919e7a3..8b1b48d57c9 100644
  loongarch_check_zero_div_p (void)
  {
    /* if -m[no-]check-zero-division is given explicitly.  */
-diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
-index b49e058407c..63781518533 100644
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index b49e05840..637815185 100644
 --- a/src/gcc/config/loongarch/loongarch.md
 +++ b/src/gcc/config/loongarch/loongarch.md
 @@ -111,6 +111,8 @@
@@ -134,9 +134,9 @@ index b49e058407c..63781518533 100644
  
  ;; Floating point multiply accumulate instructions.
  
-diff --git a/gcc/testsuite/gcc.target/loongarch/div-1.c b/gcc/testsuite/gcc.target/loongarch/div-1.c
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-1.c b/src/gcc/testsuite/gcc.target/loongarch/div-1.c
 new file mode 100644
-index 00000000000..b1683f8535f
+index 000000000..b1683f853
 --- /dev/null
 +++ b/src/gcc/testsuite/gcc.target/loongarch/div-1.c
 @@ -0,0 +1,9 @@
@@ -149,9 +149,9 @@ index 00000000000..b1683f8535f
 +{
 +  return a / b;
 +}
-diff --git a/gcc/testsuite/gcc.target/loongarch/div-2.c b/gcc/testsuite/gcc.target/loongarch/div-2.c
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-2.c b/src/gcc/testsuite/gcc.target/loongarch/div-2.c
 new file mode 100644
-index 00000000000..4c2beb5b930
+index 000000000..4c2beb5b9
 --- /dev/null
 +++ b/src/gcc/testsuite/gcc.target/loongarch/div-2.c
 @@ -0,0 +1,9 @@
@@ -164,9 +164,9 @@ index 00000000000..4c2beb5b930
 +{
 +  return b / a;
 +}
-diff --git a/gcc/testsuite/gcc.target/loongarch/div-3.c b/gcc/testsuite/gcc.target/loongarch/div-3.c
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/div-3.c b/src/gcc/testsuite/gcc.target/loongarch/div-3.c
 new file mode 100644
-index 00000000000..d25969263f5
+index 000000000..d25969263
 --- /dev/null
 +++ b/src/gcc/testsuite/gcc.target/loongarch/div-3.c
 @@ -0,0 +1,9 @@
@@ -180,5 +180,5 @@ index 00000000000..d25969263f5
 +  return b / a;
 +}
 -- 
-2.43.4
+2.45.2
 

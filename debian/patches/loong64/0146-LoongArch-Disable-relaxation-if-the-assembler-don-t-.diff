@@ -1,0 +1,258 @@
+From d93012566453a1ab4daefb02efe37d80c31f5d1c Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 3 Nov 2023 21:19:59 +0800
+Subject: [PATCH 146/301] LoongArch: Disable relaxation if the assembler don't
+ support conditional branch relaxation [PR112330]
+
+As the commit message of r14-4674 has indicated, if the assembler does
+not support conditional branch relaxation, a relocation overflow may
+happen on conditional branches when relaxation is enabled because the
+number of NOP instructions inserted by the assembler will be more than
+the number estimated by GCC.
+
+To work around this issue, disable relaxation by default if the
+assembler is detected incapable to perform conditional branch relaxation
+at GCC build time.  We also need to pass -mno-relax to the assembler to
+really disable relaxation.  But, if the assembler does not support
+-mrelax option at all, we should not pass -mno-relax to the assembler or
+it will immediately error out.  Also handle this with the build time
+assembler capability probing, and add a pair of options
+-m[no-]pass-mrelax-to-as to allow using a different assembler from the
+build-time one.
+
+With this change, if GCC is built with GAS 2.41, relaxation will be
+disabled by default.  So the default value of -mexplicit-relocs= is also
+changed to 'always' if -mno-relax is specified or implied by the
+build-time default, because using assembler macros for symbol addresses
+produces no benefit when relaxation is disabled.
+
+gcc/ChangeLog:
+
+	PR target/112330
+	* config/loongarch/genopts/loongarch.opt.in: Add
+	-m[no]-pass-relax-to-as.  Change the default of -m[no]-relax to
+	account conditional branch relaxation support status.
+	* config/loongarch/loongarch.opt: Regenerate.
+	* configure.ac (gcc_cv_as_loongarch_cond_branch_relax): Check if
+	the assembler supports conditional branch relaxation.
+	* configure: Regenerate.
+	* config.in: Regenerate.  Note that there are some unrelated
+	changes introduced by r14-5424 (which does not contain a
+	config.in regeneration).
+	* config/loongarch/loongarch-opts.h
+	(HAVE_AS_COND_BRANCH_RELAXATION): Define to 0 if not defined.
+	* config/loongarch/loongarch-driver.h (ASM_MRELAX_DEFAULT):
+	Define.
+	(ASM_MRELAX_SPEC): Define.
+	(ASM_SPEC): Use ASM_MRELAX_SPEC instead of "%{mno-relax}".
+	* config/loongarch/loongarch.cc: Take the setting of
+	-m[no-]relax into account when determining the default of
+	-mexplicit-relocs=.
+	* doc/invoke.texi: Document -m[no-]relax and
+	-m[no-]pass-mrelax-to-as for LoongArch.  Update the default
+	value of -mexplicit-relocs=.
+---
+ src/gcc/config.in                             | 35 ++++++++++++++++++-
+ .../config/loongarch/genopts/loongarch.opt.in |  6 +++-
+ src/gcc/config/loongarch/loongarch-driver.h   | 16 ++++++++-
+ src/gcc/config/loongarch/loongarch-opts.h     |  4 +++
+ src/gcc/config/loongarch/loongarch.cc         |  2 +-
+ src/gcc/config/loongarch/loongarch.opt        |  6 +++-
+ src/gcc/configure.ac                          | 10 ++++++
+ 7 files changed, 74 insertions(+), 5 deletions(-)
+
+diff --git a/src/gcc/config.in b/src/gcc/config.in
+index ecb51da71..a95d45360 100644
+--- a/src/gcc/config.in
++++ b/src/gcc/config.in
+@@ -373,6 +373,12 @@
+ #endif
+ 
+ 
++/* Define if your assembler supports conditional branch relaxation. */
++#ifndef USED_FOR_TARGET
++#undef HAVE_AS_COND_BRANCH_RELAXATION
++#endif
++
++
+ /* Define if your assembler supports the --debug-prefix-map option. */
+ #ifndef USED_FOR_TARGET
+ #undef HAVE_AS_DEBUG_PREFIX_MAP
+@@ -821,6 +827,20 @@
+ #endif
+ 
+ 
++/* Define to 1 if you have the Mac OS X function
++   CFLocaleCopyPreferredLanguages in the CoreFoundation framework. */
++#ifndef USED_FOR_TARGET
++#undef HAVE_CFLOCALECOPYPREFERREDLANGUAGES
++#endif
++
++
++/* Define to 1 if you have the Mac OS X function CFPreferencesCopyAppValue in
++   the CoreFoundation framework. */
++#ifndef USED_FOR_TARGET
++#undef HAVE_CFPREFERENCESCOPYAPPVALUE
++#endif
++
++
+ /* Define to 1 if you have the `clearerr_unlocked' function. */
+ #ifndef USED_FOR_TARGET
+ #undef HAVE_CLEARERR_UNLOCKED
+@@ -845,6 +865,13 @@
+ #endif
+ 
+ 
++/* Define if the GNU dcgettext() function is already present or preinstalled.
++   */
++#ifndef USED_FOR_TARGET
++#undef HAVE_DCGETTEXT
++#endif
++
++
+ /* Define to 1 if we found a declaration for 'abort', otherwise define to 0.
+    */
+ #ifndef USED_FOR_TARGET
+@@ -1577,6 +1604,12 @@
+ #endif
+ 
+ 
++/* Define if the GNU gettext() function is already present or preinstalled. */
++#ifndef USED_FOR_TARGET
++#undef HAVE_GETTEXT
++#endif
++
++
+ /* Define to 1 if you have the `gettimeofday' function. */
+ #ifndef USED_FOR_TARGET
+ #undef HAVE_GETTIMEOFDAY
+@@ -1608,7 +1641,7 @@
+ #endif
+ 
+ 
+-/* Define if you have the iconv() function. */
++/* Define if you have the iconv() function and it works. */
+ #ifndef USED_FOR_TARGET
+ #undef HAVE_ICONV
+ #endif
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index e7df1964a..bd3cfaf60 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -229,10 +229,14 @@ Target Var(TARGET_DIRECT_EXTERN_ACCESS) Init(0)
+ Avoid using the GOT to access external symbols.
+ 
+ mrelax
+-Target Var(loongarch_mrelax) Init(HAVE_AS_MRELAX_OPTION)
++Target Var(loongarch_mrelax) Init(HAVE_AS_MRELAX_OPTION && HAVE_AS_COND_BRANCH_RELAXATION)
+ Take advantage of linker relaxations to reduce the number of instructions
+ required to materialize symbol addresses.
+ 
++mpass-mrelax-to-as
++Target Var(loongarch_pass_mrelax_to_as) Init(HAVE_AS_MRELAX_OPTION)
++Pass -mrelax or -mno-relax option to the assembler.
++
+ -param=loongarch-vect-unroll-limit=
+ Target Joined UInteger Var(loongarch_vect_unroll_limit) Init(6) IntegerRange(1, 64) Param
+ Used to limit unroll factor which indicates how much the autovectorizer may
+diff --git a/src/gcc/config/loongarch/loongarch-driver.h b/src/gcc/config/loongarch/loongarch-driver.h
+index 59fa3263d..c8dba2cc4 100644
+--- a/src/gcc/config/loongarch/loongarch-driver.h
++++ b/src/gcc/config/loongarch/loongarch-driver.h
+@@ -51,9 +51,23 @@ along with GCC; see the file COPYING3.  If not see
+   "%{G*} %{,ada:-gnatea %{mabi=*} -gnatez} " \
+   "%(subtarget_cc1_spec)"
+ 
++#if HAVE_AS_MRELAX_OPTION && HAVE_AS_COND_BRANCH_RELAXATION
++#define ASM_MRELAX_DEFAULT "%{!mrelax:%{!mno-relax:-mrelax}}"
++#else
++#define ASM_MRELAX_DEFAULT "%{!mrelax:%{!mno-relax:-mno-relax}}"
++#endif
++
++#if HAVE_AS_MRELAX_OPTION
++#define ASM_MRELAX_SPEC \
++  "%{!mno-pass-mrelax-to-as:%{mrelax} %{mno-relax} " ASM_MRELAX_DEFAULT "}"
++#else
++#define ASM_MRELAX_SPEC \
++  "%{mpass-mrelax-to-as:%{mrelax} %{mno-relax} " ASM_MRELAX_DEFAULT "}"
++#endif
++
+ #undef ASM_SPEC
+ #define ASM_SPEC \
+-  "%{mabi=*} %{mno-relax} %(subtarget_asm_spec)"
++  "%{mabi=*} " ASM_MRELAX_SPEC " %(subtarget_asm_spec)"
+ 
+ 
+ extern const char*
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index c4975af00..dfbe9dd5c 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -103,6 +103,10 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+ #define HAVE_AS_MRELAX_OPTION 0
+ #endif
+ 
++#ifndef HAVE_AS_COND_BRANCH_RELAXATION
++#define HAVE_AS_COND_BRANCH_RELAXATION 0
++#endif
++
+ #ifndef HAVE_AS_TLS
+ #define HAVE_AS_TLS 0
+ #endif
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index db87f92b6..44d7d09d1 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -7427,7 +7427,7 @@ loongarch_option_override_internal (struct gcc_options *opts,
+ 
+   if (la_opt_explicit_relocs == M_OPT_UNSET)
+     la_opt_explicit_relocs = (HAVE_AS_EXPLICIT_RELOCS
+-			      ? (HAVE_AS_MRELAX_OPTION
++			      ? (loongarch_mrelax
+ 				 ? EXPLICIT_RELOCS_AUTO
+ 				 : EXPLICIT_RELOCS_ALWAYS)
+ 			      : EXPLICIT_RELOCS_NONE);
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 44376fd77..d936954b8 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -236,10 +236,14 @@ Target Var(TARGET_DIRECT_EXTERN_ACCESS) Init(0)
+ Avoid using the GOT to access external symbols.
+ 
+ mrelax
+-Target Var(loongarch_mrelax) Init(HAVE_AS_MRELAX_OPTION)
++Target Var(loongarch_mrelax) Init(HAVE_AS_MRELAX_OPTION && HAVE_AS_COND_BRANCH_RELAXATION)
+ Take advantage of linker relaxations to reduce the number of instructions
+ required to materialize symbol addresses.
+ 
++mpass-mrelax-to-as
++Target Var(loongarch_pass_mrelax_to_as) Init(HAVE_AS_MRELAX_OPTION)
++Pass -mrelax or -mno-relax option to the assembler.
++
+ -param=loongarch-vect-unroll-limit=
+ Target Joined UInteger Var(loongarch_vect_unroll_limit) Init(6) IntegerRange(1, 64) Param
+ Used to limit unroll factor which indicates how much the autovectorizer may
+diff --git a/src/gcc/configure.ac b/src/gcc/configure.ac
+index ba82636c3..4581b4dd5 100644
+--- a/src/gcc/configure.ac
++++ b/src/gcc/configure.ac
+@@ -5364,6 +5364,16 @@ configured with --enable-newlib-nano-formatted-io.])
+       [-mrelax], [.text],,
+       [AC_DEFINE(HAVE_AS_MRELAX_OPTION, 1,
+    [Define if your assembler supports -mrelax option.])])
++    gcc_GAS_CHECK_FEATURE([conditional branch relaxation support],
++      gcc_cv_as_loongarch_cond_branch_relax,
++      [],
++      [a:
++       .rept 32769
++       nop
++       .endr
++       beq $a0,$a1,a],,
++      [AC_DEFINE(HAVE_AS_COND_BRANCH_RELAXATION, 1,
++   [Define if your assembler supports conditional branch relaxation.])])
+ x:
+ 	.word 2
+ 	.text
+-- 
+2.45.2
+

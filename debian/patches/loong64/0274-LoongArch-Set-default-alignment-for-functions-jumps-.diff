@@ -1,0 +1,135 @@
+From 4cccc50fb57b0262661e5bd4d8f4fef3ec308fa5 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 2 Apr 2024 14:29:08 +0800
+Subject: [PATCH 274/301] LoongArch: Set default alignment for functions jumps
+ and loops [PR112919].
+
+Xi Ruoyao set the alignment rules under LA464 in commit r14-1839,
+but the macro ASM_OUTPUT_ALIGN_WITH_NOP was removed in R14-4674,
+which affected the alignment rules.
+
+So I set different aligns on LA464 and LA664 again to test the
+performance of spec2006, and modify the alignment based on the test
+results.
+
+gcc/ChangeLog:
+
+	PR target/112919
+	* config/loongarch/loongarch-def.cc (la664_align): Newly defined
+	function that sets alignment rules under the LA664 microarchitecture.
+	* config/loongarch/loongarch-opts.cc
+	(loongarch_target_option_override): If not optimizing for size, set
+	the default alignment to what the target wants.
+	* config/loongarch/loongarch-tune.h (struct loongarch_align): Add
+	new member variables jump and loop.
+---
+ src/gcc/config/loongarch/loongarch-def.cc  | 11 ++++++++---
+ src/gcc/config/loongarch/loongarch-opts.cc | 19 +++++++++++++------
+ src/gcc/config/loongarch/loongarch-tune.h  | 22 +++++++++++++++-------
+ 3 files changed, 36 insertions(+), 16 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch-def.cc b/src/gcc/config/loongarch/loongarch-def.cc
+index 533dd0af2..a48050c5f 100644
+--- a/src/gcc/config/loongarch/loongarch-def.cc
++++ b/src/gcc/config/loongarch/loongarch-def.cc
+@@ -81,14 +81,19 @@ array_tune<loongarch_cache> loongarch_cpu_cache =
+ 
+ static inline loongarch_align la464_align ()
+ {
+-  return loongarch_align ().function_ ("32").label_ ("16");
++  return loongarch_align ().function_ ("32").loop_ ("16").jump_ ("16");
++}
++
++static inline loongarch_align la664_align ()
++{
++  return loongarch_align ().function_ ("8").loop_ ("8").jump_ ("32");
+ }
+ 
+ array_tune<loongarch_align> loongarch_cpu_align =
+   array_tune<loongarch_align> ()
+-    .set (CPU_LOONGARCH64, la464_align ())
++    .set (CPU_LOONGARCH64, la664_align ())
+     .set (CPU_LA464, la464_align ())
+-    .set (CPU_LA664, la464_align ());
++    .set (CPU_LA664, la664_align ());
+ 
+ /* Default RTX cost initializer.  */
+ loongarch_rtx_cost_data::loongarch_rtx_cost_data ()
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index 062d430c2..c455c5e32 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -922,13 +922,20 @@ loongarch_target_option_override (struct loongarch_target *target,
+ {
+   loongarch_update_gcc_opt_status (target, opts, opts_set);
+ 
+-  /* alignments */
+-  if (opts->x_flag_align_functions && !opts->x_str_align_functions)
+-    opts->x_str_align_functions
+-      = loongarch_cpu_align[target->cpu_tune].function;
++  /* If not optimizing for size, set the default
++     alignment to what the target wants.  */
++  if (!opts->x_optimize_size)
++    {
++      if (opts->x_flag_align_functions && !opts->x_str_align_functions)
++	opts->x_str_align_functions
++	  = loongarch_cpu_align[target->cpu_tune].function;
++
++      if (opts->x_flag_align_loops && !opts->x_str_align_loops)
++	opts->x_str_align_loops = loongarch_cpu_align[target->cpu_tune].loop;
+ 
+-  if (opts->x_flag_align_labels && !opts->x_str_align_labels)
+-    opts->x_str_align_labels = loongarch_cpu_align[target->cpu_tune].label;
++      if (opts->x_flag_align_jumps && !opts->x_str_align_jumps)
++	opts->x_str_align_jumps = loongarch_cpu_align[target->cpu_tune].jump;
++    }
+ 
+   /* Set up parameters to be used in prefetching algorithm.  */
+   int simultaneous_prefetches
+diff --git a/src/gcc/config/loongarch/loongarch-tune.h b/src/gcc/config/loongarch/loongarch-tune.h
+index 26f163f0a..d286eee0b 100644
+--- a/src/gcc/config/loongarch/loongarch-tune.h
++++ b/src/gcc/config/loongarch/loongarch-tune.h
+@@ -162,14 +162,16 @@ struct loongarch_cache {
+   }
+ };
+ 
+-/* Alignment for functions and labels for best performance.  For new uarchs
+-   the value should be measured via benchmarking.  See the documentation for
+-   -falign-functions and -falign-labels in invoke.texi for the format.  */
++/* Alignment for functions loops and jumps for best performance.  For new
++   uarchs the value should be measured via benchmarking.  See the
++   documentation for -falign-functions, -falign-loops, and -falign-jumps in
++   invoke.texi for the format.  */
+ struct loongarch_align {
+   const char *function;	/* default value for -falign-functions */
+-  const char *label;	/* default value for -falign-labels */
++  const char *loop;	/* default value for -falign-loops */
++  const char *jump;	/* default value for -falign-jumps */
+ 
+-  loongarch_align () : function (nullptr), label (nullptr) {}
++  loongarch_align () : function (nullptr), loop (nullptr), jump (nullptr) {}
+ 
+   loongarch_align function_ (const char *_function)
+   {
+@@ -177,9 +179,15 @@ struct loongarch_align {
+     return *this;
+   }
+ 
+-  loongarch_align label_ (const char *_label)
++  loongarch_align loop_ (const char *_loop)
+   {
+-    label = _label;
++    loop = _loop;
++    return *this;
++  }
++
++  loongarch_align jump_ (const char *_jump)
++  {
++    jump = _jump;
+     return *this;
+   }
+ };
+-- 
+2.45.2
+

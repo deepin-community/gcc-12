@@ -1,0 +1,30 @@
+From 77c731e0c297a0fcf4ab280b39d79744a48b475d Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Thu, 7 Mar 2024 09:44:03 +0800
+Subject: [PATCH 259/301] LoongArch: testsuite: Add compilation options to the
+ regname-fp-s9.c.
+
+When the value of the macro DEFAULT_CFLAGS is set to '-ansi -pedantic-errors',
+regname-s9-fp.c will test to fail. To solve this problem, add the compilation
+option '-Wno-pedantic -std=gnu90' to this test case.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/regname-fp-s9.c: Add compilation option
+	'-Wno-pedantic -std=gnu90'.
+---
+ src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c b/src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c
+index d2e3b80f8..77a74f1f6 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/regname-fp-s9.c
+@@ -1,3 +1,4 @@
+ /* { dg-do compile } */
++/* { dg-additional-options "-Wno-pedantic -std=gnu90" } */
+ register long s9 asm("s9"); /* { dg-note "conflicts with 's9'" } */
+ register long fp asm("fp"); /* { dg-warning "register of 'fp' used for multiple global register variables" } */
+-- 
+2.45.2
+

@@ -1,0 +1,127 @@
+From 7a3d78e033220549a18526edcc43c4616579575a Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 28 Nov 2024 03:36:24 +0000
+Subject: [PATCH 006/301] LoongArch: adjust the default of -mexplicit-relocs by
+ checking gas feature
+
+The assembly produced with -mexplicit-relocs is not supported by gas <=
+2.39.  Check if the assembler supports explicit relocations and set the
+default accordingly.
+---
+ .../config/loongarch/genopts/loongarch.opt.in |  2 +-
+ src/gcc/config/loongarch/loongarch-opts.h     |  4 +++
+ src/gcc/config/loongarch/loongarch.opt        |  2 +-
+ src/gcc/configure                             | 34 ++++++++++++++++++-
+ src/gcc/configure.ac                          |  5 +++
+ 5 files changed, 44 insertions(+), 3 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index ef9ad0e88..0d961046b 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -155,7 +155,7 @@ Target Joined RejectNegative UInteger Var(loongarch_max_inline_memcpy_size) Init
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
+ mexplicit-relocs
+-Target Var(TARGET_EXPLICIT_RELOCS) Init(1)
++Target Var(TARGET_EXPLICIT_RELOCS) Init(HAVE_AS_EXPLICIT_RELOCS)
+ Use %reloc() assembly operators
+ 
+ ; The code model option names for -mcmodel.
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index 0557fff63..69e8762da 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -105,4 +105,8 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+ #define HAVE_AS_TLS 0
+ #endif
+ 
++#ifndef HAVE_AS_EXPLICIT_RELOCS
++#define HAVE_AS_EXPLICIT_RELOCS 0
++#endif
++
+ #endif /* LOONGARCH_OPTS_H */
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 179d648b3..84dff33a1 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -162,7 +162,7 @@ Target Joined RejectNegative UInteger Var(loongarch_max_inline_memcpy_size) Init
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
+ mexplicit-relocs
+-Target Var(TARGET_EXPLICIT_RELOCS) Init(1)
++Target Var(TARGET_EXPLICIT_RELOCS) Init(HAVE_AS_EXPLICIT_RELOCS)
+ Use %reloc() assembly operators
+ 
+ ; The code model option names for -mcmodel.
+diff --git a/src/gcc/configure b/src/gcc/configure
+index ac904c88f..2d80246e8 100755
+--- a/src/gcc/configure
++++ b/src/gcc/configure
+@@ -28835,7 +28835,7 @@ $as_echo "#define HAVE_AS_MARCH_ZIFENCEI 1" >>confdefs.h
+ fi
+ 
+     ;;
+-  loongarch*-*-*)
++    loongarch*-*-*)
+     { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for .dtprelword support" >&5
+ $as_echo_n "checking assembler for .dtprelword support... " >&6; }
+ if ${gcc_cv_as_loongarch_dtprelword+:} false; then :
+@@ -28871,6 +28871,38 @@ if test $gcc_cv_as_loongarch_dtprelword != yes; then
+ $as_echo "#define HAVE_AS_DTPRELWORD 1" >>confdefs.h
+ 
+ fi
++
++    { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for explicit relocation support" >&5
++$as_echo_n "checking assembler for explicit relocation support... " >&6; }
++if ${gcc_cv_as_loongarch_explicit_relocs+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  gcc_cv_as_loongarch_explicit_relocs=no
++  if test x$gcc_cv_as != x; then
++    $as_echo 'a:pcalau12i $t0,%pc_hi20(a)' > conftest.s
++    if { ac_try='$gcc_cv_as $gcc_cv_as_flags  -o conftest.o conftest.s >&5'
++  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
++  (eval $ac_try) 2>&5
++  ac_status=$?
++  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
++  test $ac_status = 0; }; }
++    then
++ gcc_cv_as_loongarch_explicit_relocs=yes
++    else
++      echo "configure: failed program was" >&5
++      cat conftest.s >&5
++    fi
++    rm -f conftest.o conftest.s
++  fi
++fi
++{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $gcc_cv_as_loongarch_explicit_relocs" >&5
++$as_echo "$gcc_cv_as_loongarch_explicit_relocs" >&6; }
++if test $gcc_cv_as_loongarch_explicit_relocs = yes; then
++
++$as_echo "#define HAVE_AS_EXPLICIT_RELOCS 1" >>confdefs.h
++
++fi
++
+     { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for -mrelax option" >&5
+ $as_echo_n "checking assembler for -mrelax option... " >&6; }
+ if ${gcc_cv_as_loongarch_relax+:} false; then :
+diff --git a/src/gcc/configure.ac b/src/gcc/configure.ac
+index 552a0b043..f8ef8a778 100644
+--- a/src/gcc/configure.ac
++++ b/src/gcc/configure.ac
+@@ -5332,6 +5332,11 @@ configured with --enable-newlib-nano-formatted-io.])
+     gcc_GAS_CHECK_FEATURE([.dtprelword support],
+       gcc_cv_as_loongarch_dtprelword, [2,18,0],,
+       [.section .tdata,"awT",@progbits
++    gcc_GAS_CHECK_FEATURE([explicit relocation support],
++      gcc_cv_as_loongarch_explicit_relocs,,
++      [a:pcalau12i $t0,%pc_hi20(a)],,
++      [AC_DEFINE(HAVE_AS_EXPLICIT_RELOCS, 1,
++   [Define if your assembler supports explicit relocation.])])
+ x:
+ 	.word 2
+ 	.text
+-- 
+2.45.2
+

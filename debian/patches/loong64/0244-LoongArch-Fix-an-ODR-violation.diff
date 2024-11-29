@@ -1,0 +1,60 @@
+From d9467677a1ee8ab3098aa1b0c551e0468dea929f Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 2 Feb 2024 05:37:38 +0800
+Subject: [PATCH 244/301] LoongArch: Fix an ODR violation
+
+When bootstrapping GCC 14 with --with-build-config=bootstrap-lto, an ODR
+violation is detected:
+
+    ../../gcc/config/loongarch/loongarch-opts.cc:57: warning:
+    'abi_minimal_isa' violates the C++ One Definition Rule [-Wodr]
+    57 | abi_minimal_isa[N_ABI_BASE_TYPES][N_ABI_EXT_TYPES];
+    ../../gcc/config/loongarch/loongarch-def.cc:186: note:
+    'abi_minimal_isa' was previously declared here
+    186 |   abi_minimal_isa = array<array<loongarch_isa, N_ABI_EXT_TYPES>,
+    ../../gcc/config/loongarch/loongarch-def.cc:186: note:
+    code may be misoptimized unless '-fno-strict-aliasing' is used
+
+Fix it by adding a proper declaration of abi_minimal_isa into
+loongarch-def.h and remove the ODR-violating local declaration in
+loongarch-opts.cc.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-def.h (abi_minimal_isa): Declare.
+	* config/loongarch/loongarch-opts.cc (abi_minimal_isa): Remove
+	the ODR-violating locale declaration.
+---
+ src/gcc/config/loongarch/loongarch-def.h   | 3 +++
+ src/gcc/config/loongarch/loongarch-opts.cc | 2 --
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index 28da3ae5f..fdcf43fc7 100644
+--- a/src/gcc/config/loongarch/loongarch-def.h
++++ b/src/gcc/config/loongarch/loongarch-def.h
+@@ -203,5 +203,8 @@ extern loongarch_def_array<loongarch_align, N_TUNE_TYPES>
+   loongarch_cpu_align;
+ extern loongarch_def_array<loongarch_rtx_cost_data, N_TUNE_TYPES>
+   loongarch_cpu_rtx_cost_data;
++extern loongarch_def_array<
++  loongarch_def_array<loongarch_isa, N_ABI_EXT_TYPES>,
++  N_ABI_BASE_TYPES> abi_minimal_isa;
+ 
+ #endif /* LOONGARCH_DEF_H */
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index a2b069d83..2ea3972d1 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -53,8 +53,6 @@ static const int tm_multilib_list[] = { TM_MULTILIB_LIST };
+ static int enabled_abi_types[N_ABI_BASE_TYPES][N_ABI_EXT_TYPES] = { 0 };
+ 
+ #define isa_required(ABI) (abi_minimal_isa[(ABI).base][(ABI).ext])
+-extern "C" const struct loongarch_isa
+-abi_minimal_isa[N_ABI_BASE_TYPES][N_ABI_EXT_TYPES];
+ 
+ static inline int
+ is_multilib_enabled (struct loongarch_abi abi)
+-- 
+2.45.2
+

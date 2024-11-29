@@ -1,0 +1,40 @@
+From 2a42f87e58cfb6c83cd32947cacf32978989f5c4 Mon Sep 17 00:00:00 2001
+From: Peng Fan <fanpeng@loongson.cn>
+Date: Thu, 28 Nov 2024 08:32:47 +0000
+Subject: [PATCH 250/301] LoongArch: When checking whether the assembler
+ supports conditional branch relaxation, add compilation parameter
+ "--fatal-warnings" to the assembler.
+
+ In binutils 2.40 and earlier versions, only a warning will be reported
+ when a relocation immediate value is out of bounds. As a result,
+ the value of the macro HAVE_AS_COND_BRANCH_RELAXATION will also be
+ defined as 1 when the assembler does not support conditional branch
+ relaxation. Therefore, add the compilation option "--fatal-warnings"
+ to avoid this problem.
+
+ gcc/ChangeLog:
+
+   * configure: Regenerate.
+   * configure.ac: Add parameter "--fatal-warnings" to assemble
+   when checking whether the assemble support conditional branch
+   relaxation.
+---
+ src/gcc/configure.ac | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/configure.ac b/src/gcc/configure.ac
+index 272d360aa..e52694927 100644
+--- a/src/gcc/configure.ac
++++ b/src/gcc/configure.ac
+@@ -5372,7 +5372,7 @@ configured with --enable-newlib-nano-formatted-io.])
+    [Define if your assembler supports -mrelax option.])])
+     gcc_GAS_CHECK_FEATURE([conditional branch relaxation support],
+       gcc_cv_as_loongarch_cond_branch_relax,
+-      [],
++      [--fatal-warnings],
+       [a:
+        .rept 32769
+        nop
+-- 
+2.45.2
+

@@ -1,0 +1,35 @@
+From 86a24c5966adba556ef607fa087f936e23abf96d Mon Sep 17 00:00:00 2001
+From: chenxiaolong <chenxiaolong@loongson.cn>
+Date: Wed, 10 Jan 2024 15:25:21 +0800
+Subject: [PATCH 221/301] LoongArch: testsuite: Add loongarch support to
+ slp-21.c.
+
+The function of this test is to check that the compiler supports vectorization
+using SLP and vec_{load/store/*}_lanes. However, vec_{load/store/*}_lanes are
+not supported on LoongArch, such as the corresponding "st4/ld4" directives on
+aarch64.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.dg/vect/slp-21.c: Add loongarch.
+---
+ src/gcc/testsuite/gcc.dg/vect/slp-21.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.dg/vect/slp-21.c b/src/gcc/testsuite/gcc.dg/vect/slp-21.c
+index 4b83adb98..3b7e92fe8 100644
+--- a/src/gcc/testsuite/gcc.dg/vect/slp-21.c
++++ b/src/gcc/testsuite/gcc.dg/vect/slp-21.c
+@@ -210,7 +210,7 @@ int main (void)
+ 
+    Not all vect_perm targets support that, and it's a bit too specific to have
+    its own effective-target selector, so we just test targets directly.  */
+-/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 4 "vect" { target { powerpc64*-*-* s390*-*-* } } } } */
+-/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 2 "vect" { target { vect_strided4 && { ! { powerpc64*-*-* s390*-*-* } } } } } } */
++/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 4 "vect" { target { powerpc64*-*-* s390*-*-* loongarch*-*-* } } } } */
++/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 2 "vect" { target { vect_strided4 && { ! { powerpc64*-*-* s390*-*-* loongarch*-*-* } } } } } } */
+ /* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 0 "vect"  { target { ! { vect_strided4 } } } } } */
+   
+-- 
+2.45.2
+

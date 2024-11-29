@@ -1,0 +1,33 @@
+From 613704170a8e1a1f13bdedb962e1252c05c2f534 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Wed, 28 Sep 2022 16:35:06 +0800
+Subject: [PATCH 019/301] LoongArch: Fixed a typo in the comment information of
+ the function loongarch_asan_shadow_offset.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_asan_shadow_offset):
+	Fixed typo in "asan_mapping.h".
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/loongarch.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 6e057bae4..8a5a0968f 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -6500,7 +6500,7 @@ static unsigned HOST_WIDE_INT
+ loongarch_asan_shadow_offset (void)
+ {
+   /* We only have libsanitizer support for LOONGARCH64 at present.
+-     This value is taken from the file libsanitizer/asan/asan_mappint.h.  */
++     This value is taken from the file libsanitizer/asan/asan_mapping.h.  */
+   return TARGET_64BIT ? (HOST_WIDE_INT_1 << 46) : 0;
+ }
+ 
+-- 
+2.45.2
+

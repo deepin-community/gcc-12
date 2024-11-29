@@ -1,0 +1,122 @@
+From da57952c4217776539d35514577eaab6896718ee Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 3 Feb 2024 03:16:14 +0800
+Subject: [PATCH 247/301] LoongArch: Fix wrong LSX FP vector negation
+
+We expanded (neg x) to (minus const0 x) for LSX FP vectors, this is
+wrong because -0.0 is not 0 - 0.0.  This causes some Python tests to
+fail when Python is built with LSX enabled.
+
+Use the vbitrevi.{d/w} instructions to simply reverse the sign bit
+instead.  We are already doing this for LASX and now we can unify them
+into simd.md.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lsx.md (neg<mode:FLSX>2): Remove the
+	incorrect expand.
+	* config/loongarch/simd.md (simdfmt_as_i): New define_mode_attr.
+	(elmsgnbit): Likewise.
+	(neg<mode:FVEC>2): New define_insn.
+	* config/loongarch/lasx.md (negv4df2, negv8sf2): Remove as they
+	are now instantiated in simd.md.
+---
+ src/gcc/config/loongarch/lasx.md | 16 ----------------
+ src/gcc/config/loongarch/lsx.md  | 11 -----------
+ src/gcc/config/loongarch/simd.md | 18 ++++++++++++++++++
+ 3 files changed, 18 insertions(+), 27 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 946811e1a..38f35bad6 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -3028,22 +3028,6 @@
+   [(set_attr "type" "simd_logic")
+    (set_attr "mode" "V8SF")])
+ 
+-(define_insn "negv4df2"
+-  [(set (match_operand:V4DF 0 "register_operand" "=f")
+-	(neg:V4DF (match_operand:V4DF 1 "register_operand" "f")))]
+-  "ISA_HAS_LASX"
+-  "xvbitrevi.d\t%u0,%u1,63"
+-  [(set_attr "type" "simd_logic")
+-   (set_attr "mode" "V4DF")])
+-
+-(define_insn "negv8sf2"
+-  [(set (match_operand:V8SF 0 "register_operand" "=f")
+-	(neg:V8SF (match_operand:V8SF 1 "register_operand" "f")))]
+-  "ISA_HAS_LASX"
+-  "xvbitrevi.w\t%u0,%u1,31"
+-  [(set_attr "type" "simd_logic")
+-   (set_attr "mode" "V8SF")])
+-
+ (define_insn "xvfmadd<mode>4"
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+ 	(fma:FLASX (match_operand:FLASX 1 "register_operand" "f")
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 612377436..d5aa3f46f 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -728,17 +728,6 @@
+   DONE;
+ })
+ 
+-(define_expand "neg<mode>2"
+-  [(set (match_operand:FLSX 0 "register_operand")
+-	(neg:FLSX (match_operand:FLSX 1 "register_operand")))]
+-  "ISA_HAS_LSX"
+-{
+-  rtx reg = gen_reg_rtx (<MODE>mode);
+-  emit_move_insn (reg, CONST0_RTX (<MODE>mode));
+-  emit_insn (gen_sub<mode>3 (operands[0], reg, operands[1]));
+-  DONE;
+-})
+-
+ (define_expand "lsx_vrepli<mode>"
+   [(match_operand:ILSX 0 "register_operand")
+    (match_operand 1 "const_imm10_operand")]
+diff --git a/src/gcc/config/loongarch/simd.md b/src/gcc/config/loongarch/simd.md
+index 8ac1d75a8..00d4c7831 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -85,12 +85,21 @@
+ (define_mode_attr simdifmt_for_f [(V2DF "l") (V4DF "l")
+ 				  (V4SF "w") (V8SF "w")])
+ 
++;; Suffix for integer mode in LSX or LASX instructions to operating FP
++;; vectors using integer vector operations.
++(define_mode_attr simdfmt_as_i [(V2DF "d") (V4DF "d")
++				(V4SF "w") (V8SF "w")])
++
+ ;; Size of vector elements in bits.
+ (define_mode_attr elmbits [(V2DI "64") (V4DI "64")
+ 			   (V4SI "32") (V8SI "32")
+ 			   (V8HI "16") (V16HI "16")
+ 			   (V16QI "8") (V32QI "8")])
+ 
++;; The index of sign bit in FP vector elements.
++(define_mode_attr elmsgnbit [(V2DF "63") (V4DF "63")
++			     (V4SF "31") (V8SF "31")])
++
+ ;; This attribute is used to form an immediate operand constraint using
+ ;; "const_<bitimm>_operand".
+ (define_mode_attr bitimm [(V16QI "uimm3") (V32QI "uimm3")
+@@ -457,6 +466,15 @@
+   DONE;
+ })
+ 
++;; FP negation.
++(define_insn "neg<mode>2"
++  [(set (match_operand:FVEC 0 "register_operand" "=f")
++	(neg:FVEC (match_operand:FVEC 1 "register_operand" "f")))]
++  ""
++  "<x>vbitrevi.<simdfmt_as_i>\t%<wu>0,%<wu>1,<elmsgnbit>"
++  [(set_attr "type" "simd_logic")
++   (set_attr "mode" "<MODE>")])
++
+ ; The LoongArch SX Instructions.
+ (include "lsx.md")
+ 
+-- 
+2.45.2
+

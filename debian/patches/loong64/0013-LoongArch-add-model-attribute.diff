@@ -1,0 +1,441 @@
+From 64ff701c03b4380fe69a775e5ac8c6bc90f54eb5 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 29 Jul 2022 21:45:40 +0800
+Subject: [PATCH 013/301] LoongArch: add model attribute
+
+A linker script and/or a section attribute may locate some object
+specially, so we need to handle the code model for such objects
+differently than the -mcmodel setting. This happens when the Linux
+kernel loads a module with per-CPU variables.
+
+Add an attribute to override the code model for a specific variable.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-protos.h (loongarch_symbol_type):
+	Add SYMBOL_PCREL64 and change the description for SYMBOL_PCREL.
+	* config/loongarch/loongarch.cc (loongarch_attribute_table):
+	New attribute table.
+	(TARGET_ATTRIBUTE_TABLE): Define the target hook.
+	(loongarch_handle_model_attribute): New static function.
+	(loongarch_classify_symbol): Take TARGET_CMODEL_EXTREME and the
+	model attribute of SYMBOL_REF_DECL into account returning
+	SYMBOL_PCREL or SYMBOL_PCREL64.
+	(loongarch_use_anchors_for_symbol_p): New static function.
+	(TARGET_USE_ANCHORS_FOR_SYMBOL_P): Define the target hook.
+	(loongarch_symbol_extreme_p): New static function.
+	(loongarch_symbolic_constant_p): Handle SYMBOL_PCREL64.
+	(loongarch_symbol_insns): Likewise.
+	(loongarch_split_symbol_type): Likewise.
+	(loongarch_split_symbol): Check SYMBOL_PCREL64 instead of
+	TARGET_CMODEL_EXTREME for PC-relative addressing.
+	(loongarch_print_operand_reloc): Likewise.
+	* doc/extend.texi (Variable Attributes): Document new
+	LoongArch specific attribute.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/attr-model-test.c: New test.
+	* gcc.target/loongarch/attr-model-1.c: New test.
+	* gcc.target/loongarch/attr-model-2.c: New test.
+	* gcc.target/loongarch/attr-model-diag.c: New test.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/loongarch-protos.h   |   8 +-
+ src/gcc/config/loongarch/loongarch.cc         | 190 ++++++++++++++++--
+ .../gcc.target/loongarch/attr-model-1.c       |   6 +
+ .../gcc.target/loongarch/attr-model-2.c       |   6 +
+ .../gcc.target/loongarch/attr-model-diag.c    |   7 +
+ .../gcc.target/loongarch/attr-model-test.c    |  25 +++
+ 6 files changed, 221 insertions(+), 21 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/attr-model-1.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/attr-model-2.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/attr-model-diag.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/attr-model-test.c
+
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index cadaad751..77b221724 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -28,7 +28,12 @@ along with GCC; see the file COPYING3.  If not see
+        The symbol's value will be loaded directly from the GOT.
+ 
+    SYMBOL_PCREL
+-       The symbol's value will be loaded directly from data section.
++       The symbol's value will be loaded directly from data section within
++       +/- 2GiB range.
++
++   SYMBOL_PCREL64
++       The symbol's value will be loaded directly from data section within
++       +/- 8EiB range.
+ 
+    SYMBOL_TLS
+        A thread-local symbol.
+@@ -42,6 +47,7 @@ along with GCC; see the file COPYING3.  If not see
+ enum loongarch_symbol_type {
+   SYMBOL_GOT_DISP,
+   SYMBOL_PCREL,
++  SYMBOL_PCREL64,
+   SYMBOL_TLS,
+   SYMBOL_TLS_IE,
+   SYMBOL_TLS_LE,
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index a848ea0ea..b80b1f8c7 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -1635,8 +1635,11 @@ loongarch_rtx_constant_in_small_data_p (machine_mode mode)
+ static enum loongarch_symbol_type
+ loongarch_classify_symbol (const_rtx x)
+ {
++  enum loongarch_symbol_type pcrel =
++    TARGET_CMODEL_EXTREME ? SYMBOL_PCREL64 : SYMBOL_PCREL;
++
+   if (!SYMBOL_REF_P (x))
+-    return SYMBOL_PCREL;
++    return pcrel;
+ 
+   if (SYMBOL_REF_TLS_MODEL (x))
+     return SYMBOL_TLS;
+@@ -1644,7 +1647,28 @@ loongarch_classify_symbol (const_rtx x)
+   if (!loongarch_symbol_binds_local_p (x))
+     return SYMBOL_GOT_DISP;
+ 
+-  return SYMBOL_PCREL;
++  tree t = SYMBOL_REF_DECL (x);
++  if (!t)
++    return pcrel;
++
++  t = lookup_attribute ("model", DECL_ATTRIBUTES (t));
++  if (!t)
++    return pcrel;
++
++  t = TREE_VALUE (TREE_VALUE (t));
++
++  /* loongarch_handle_model_attribute should reject other values.  */
++  gcc_assert (TREE_CODE (t) == STRING_CST);
++
++  const char *model = TREE_STRING_POINTER (t);
++  if (strcmp (model, "normal") == 0)
++    return SYMBOL_PCREL;
++  if (strcmp (model, "extreme") == 0)
++    return SYMBOL_PCREL64;
++
++  /* loongarch_handle_model_attribute should reject unknown model
++     name.  */
++  gcc_unreachable ();
+ }
+ 
+ /* Classify the base of symbolic expression X, given that X appears in
+@@ -1697,6 +1721,7 @@ loongarch_symbolic_constant_p (rtx x, enum loongarch_symbol_type *symbol_type)
+     case SYMBOL_TLSGD:
+     case SYMBOL_TLSLDM:
+     case SYMBOL_PCREL:
++    case SYMBOL_PCREL64:
+       /* GAS rejects offsets outside the range [-2^31, 2^31-1].  */
+       return sext_hwi (INTVAL (offset), 32) == INTVAL (offset);
+ 
+@@ -1731,6 +1756,9 @@ loongarch_symbol_insns (enum loongarch_symbol_type type, machine_mode mode)
+     case SYMBOL_TLSLDM:
+       return 3;
+ 
++    case SYMBOL_PCREL64:
++      return 5;
++
+     case SYMBOL_TLS:
+       /* We don't treat a bare TLS symbol as a constant.  */
+       return 0;
+@@ -1835,7 +1863,7 @@ loongarch_valid_offset_p (rtx x, machine_mode mode)
+   return true;
+ }
+ 
+-/* Should a symbol of type SYMBOL_TYPE should be split in two?  */
++/* Should a symbol of type SYMBOL_TYPE should be split in two or more?  */
+ 
+ bool
+ loongarch_split_symbol_type (enum loongarch_symbol_type symbol_type)
+@@ -1843,6 +1871,7 @@ loongarch_split_symbol_type (enum loongarch_symbol_type symbol_type)
+   switch (symbol_type)
+     {
+     case SYMBOL_PCREL:
++    case SYMBOL_PCREL64:
+     case SYMBOL_GOT_DISP:
+     case SYMBOL_TLS_IE:
+     case SYMBOL_TLS_LE:
+@@ -2720,6 +2749,20 @@ loongarch_force_address (rtx x, machine_mode mode)
+   return x;
+ }
+ 
++static bool
++loongarch_symbol_extreme_p (enum loongarch_symbol_type type)
++{
++  switch (type)
++    {
++      case SYMBOL_PCREL:
++	return false;
++      case SYMBOL_PCREL64:
++	return true;
++      default:
++	return TARGET_CMODEL_EXTREME;
++    }
++}
++
+ /* If MODE is MAX_MACHINE_MODE, ADDR appears as a move operand, otherwise
+    it appears in a MEM of that mode.  Return true if ADDR is a legitimate
+    constant in that context and can be split into high and low parts.
+@@ -2759,7 +2802,7 @@ loongarch_split_symbol (rtx temp, rtx addr, machine_mode mode, rtx *low_out)
+   high = gen_rtx_HIGH (Pmode, copy_rtx (addr));
+   high = loongarch_force_temporary (temp, high);
+ 
+-  if (TARGET_CMODEL_EXTREME && can_create_pseudo_p ())
++  if (loongarch_symbol_extreme_p (symbol_type) && can_create_pseudo_p ())
+     {
+       gcc_assert (TARGET_EXPLICIT_RELOCS);
+ 
+@@ -2773,14 +2816,16 @@ loongarch_split_symbol (rtx temp, rtx addr, machine_mode mode, rtx *low_out)
+   if (low_out)
+     switch (symbol_type)
+       {
+-      case SYMBOL_PCREL:
+-	{
+-	  if (TARGET_CMODEL_EXTREME && can_create_pseudo_p ())
++      case SYMBOL_PCREL64:
++	if (can_create_pseudo_p ())
++	  {
+ 	    *low_out = gen_rtx_PLUS (Pmode, high, temp1);
+-	  else
+-	    *low_out = gen_rtx_LO_SUM (Pmode, high, addr);
+-	  break;
+-	}
++	    break;
++	  }
++	/* fall through */
++      case SYMBOL_PCREL:
++	*low_out = gen_rtx_LO_SUM (Pmode, high, addr);
++	break;
+ 
+       case SYMBOL_GOT_DISP:
+ 	/* SYMBOL_GOT_DISP symbols are loaded from the GOT.  */
+@@ -4747,22 +4792,23 @@ loongarch_print_operand_reloc (FILE *file, rtx op, bool hi64_part,
+ 			       bool hi_reloc)
+ {
+   const char *reloc;
++  enum loongarch_symbol_type symbol_type =
++    loongarch_classify_symbolic_expression (op);
+ 
+-  if (TARGET_CMODEL_EXTREME)
++  if (loongarch_symbol_extreme_p (symbol_type))
+     gcc_assert (TARGET_EXPLICIT_RELOCS);
+ 
+-  switch (loongarch_classify_symbolic_expression (op))
++  switch (symbol_type)
+     {
+-    case SYMBOL_PCREL:
++    case SYMBOL_PCREL64:
+       if (hi64_part)
+ 	{
+-	  if (TARGET_CMODEL_EXTREME)
+-	    reloc = hi_reloc ? "%pc64_hi12" : "%pc64_lo20";
+-	  else
+-	    gcc_unreachable ();
++	  reloc = hi_reloc ? "%pc64_hi12" : "%pc64_lo20";
++	  break;
+ 	}
+-      else
+-	reloc = hi_reloc ? "%pc_hi20" : "%pc_lo12";
++      /* fall through */
++    case SYMBOL_PCREL:
++      reloc = hi_reloc ? "%pc_hi20" : "%pc_lo12";
+       break;
+ 
+     case SYMBOL_GOT_DISP:
+@@ -6344,6 +6390,104 @@ loongarch_starting_frame_offset (void)
+   return crtl->outgoing_args_size;
+ }
+ 
++static tree
++loongarch_handle_model_attribute (tree *node, tree name, tree arg, int,
++				  bool *no_add_attrs)
++{
++  tree decl = *node;
++  if (TREE_CODE (decl) == VAR_DECL)
++    {
++      if (DECL_THREAD_LOCAL_P (decl))
++	{
++	  error_at (DECL_SOURCE_LOCATION (decl),
++		    "%qE attribute cannot be specified for thread-local "
++		    "variables", name);
++	  *no_add_attrs = true;
++	  return NULL_TREE;
++	}
++      if (DECL_CONTEXT (decl)
++	  && TREE_CODE (DECL_CONTEXT (decl)) == FUNCTION_DECL
++	  && !TREE_STATIC (decl))
++	{
++	  error_at (DECL_SOURCE_LOCATION (decl),
++		    "%qE attribute cannot be specified for local "
++		    "variables", name);
++	  *no_add_attrs = true;
++	  return NULL_TREE;
++	}
++      if (DECL_REGISTER (decl))
++	{
++	  error_at (DECL_SOURCE_LOCATION (decl),
++		    "%qE attribute cannot be specified for register "
++		    "variables", name);
++	  *no_add_attrs = true;
++	  return NULL_TREE;
++	}
++      if (!TARGET_EXPLICIT_RELOCS)
++	{
++	  error_at (DECL_SOURCE_LOCATION (decl),
++		    "%qE attribute requires %s", name, "-mexplicit-relocs");
++	  *no_add_attrs = true;
++	  return NULL_TREE;
++	}
++
++      arg = TREE_VALUE (arg);
++      if (TREE_CODE (arg) != STRING_CST)
++	{
++	  error_at (DECL_SOURCE_LOCATION (decl),
++		    "invalid argument of %qE attribute", name);
++	  *no_add_attrs = true;
++	  return NULL_TREE;
++	}
++
++      const char *model = TREE_STRING_POINTER (arg);
++      if (strcmp (model, "normal") != 0
++	  && strcmp (model, "extreme") != 0)
++	{
++	  error_at (DECL_SOURCE_LOCATION (decl),
++		    "invalid argument of %qE attribute", name);
++	  *no_add_attrs = true;
++	  return NULL_TREE;
++	}
++
++      if (lookup_attribute ("model", DECL_ATTRIBUTES (decl)))
++	{
++	  error_at (DECL_SOURCE_LOCATION (decl),
++		    "multiple %qE attribute", name);
++	  *no_add_attrs = true;
++	  return NULL_TREE;
++	}
++    }
++  else
++    {
++      warning (OPT_Wattributes, "%qE attribute ignored", name);
++      *no_add_attrs = true;
++    }
++  return NULL_TREE;
++}
++
++static const struct attribute_spec loongarch_attribute_table[] =
++{
++  /* { name, min_len, max_len, decl_req, type_req, fn_type_req,
++       affects_type_identity, handler, exclude } */
++  { "model", 1, 1, true, false, false, false,
++    loongarch_handle_model_attribute, NULL },
++  /* The last attribute spec is set to be NULL.  */
++  {}
++};
++
++bool
++loongarch_use_anchors_for_symbol_p (const_rtx symbol)
++{
++  tree decl = SYMBOL_REF_DECL (symbol);
++
++  /* The section anchor optimization may break custom address model.  */
++  if (decl && lookup_attribute ("model", DECL_ATTRIBUTES (decl)))
++    return false;
++
++  return default_use_anchors_for_symbol_p (symbol);
++}
++
+ /* Initialize the GCC target structure.  */
+ #undef TARGET_ASM_ALIGNED_HI_OP
+ #define TARGET_ASM_ALIGNED_HI_OP "\t.half\t"
+@@ -6536,6 +6680,12 @@ loongarch_starting_frame_offset (void)
+ #undef  TARGET_HAVE_SPECULATION_SAFE_VALUE
+ #define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
+ 
++#undef  TARGET_ATTRIBUTE_TABLE
++#define TARGET_ATTRIBUTE_TABLE loongarch_attribute_table
++
++#undef  TARGET_USE_ANCHORS_FOR_SYMBOL_P
++#define TARGET_USE_ANCHORS_FOR_SYMBOL_P loongarch_use_anchors_for_symbol_p
++
+ struct gcc_target targetm = TARGET_INITIALIZER;
+ 
+ #include "gt-loongarch.h"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/attr-model-1.c b/src/gcc/testsuite/gcc.target/loongarch/attr-model-1.c
+new file mode 100644
+index 000000000..916d715b9
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/attr-model-1.c
+@@ -0,0 +1,6 @@
++/* { dg-do compile } */
++/* { dg-options "-mexplicit-relocs -mcmodel=normal -O2" } */
++/* { dg-final { scan-assembler-times "%pc64_hi12" 2 } } */
++
++#define ATTR_MODEL_TEST
++#include "attr-model-test.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/attr-model-2.c b/src/gcc/testsuite/gcc.target/loongarch/attr-model-2.c
+new file mode 100644
+index 000000000..a74c795ac
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/attr-model-2.c
+@@ -0,0 +1,6 @@
++/* { dg-do compile } */
++/* { dg-options "-mexplicit-relocs -mcmodel=extreme -O2" } */
++/* { dg-final { scan-assembler-times "%pc64_hi12" 3 } } */
++
++#define ATTR_MODEL_TEST
++#include "attr-model-test.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/attr-model-diag.c b/src/gcc/testsuite/gcc.target/loongarch/attr-model-diag.c
+new file mode 100644
+index 000000000..88beede74
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/attr-model-diag.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-mexplicit-relocs" } */
++
++__thread int x __attribute__((model("extreme"))); /* { dg-error "attribute cannot be specified for thread-local variables" } */
++register int y __asm__("tp") __attribute__((model("extreme"))); /* { dg-error "attribute cannot be specified for register variables" } */
++int z __attribute__((model(114))); /* { dg-error "invalid argument" } */
++int t __attribute__((model("good"))); /* { dg-error "invalid argument" } */
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/attr-model-test.c b/src/gcc/testsuite/gcc.target/loongarch/attr-model-test.c
+new file mode 100644
+index 000000000..5b61a7af9
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/attr-model-test.c
+@@ -0,0 +1,25 @@
++#ifdef ATTR_MODEL_TEST
++int x __attribute__((model("extreme")));
++int y __attribute__((model("normal")));
++int z;
++
++int
++test(void)
++{
++  return x + y + z;
++}
++
++/* The following will be used for kernel per-cpu storage implemention. */
++
++register char *per_cpu_base __asm__("r21");
++static int counter __attribute__((section(".data..percpu"), model("extreme")));
++
++void
++inc_counter(void)
++{
++  int *ptr = (int *)(per_cpu_base + (long)&counter);
++  (*ptr)++;
++}
++#endif
++
++int dummy;
+-- 
+2.45.2
+

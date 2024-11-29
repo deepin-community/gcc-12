@@ -1,0 +1,53 @@
+From 2e72c2d368920fb6f78ac067a6b44c8c2d4ca8a0 Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Thu, 7 Sep 2023 14:50:10 +0800
+Subject: [PATCH 061/301] LoongArch: Adjust C++ multilib header layout.
+
+For LoongArch, the toplevel library build is always aliased to
+one of the multilib variants.  This patch installs it with the
+actual MULTISUBDIR (instead of ".") so that the headers can be
+reached by the compiler.
+
+This patch is an update of
+https://gcc.gnu.org/pipermail/gcc-patches/2023-September/629435.html
+
+libstdc++-v3/ChangeLog:
+
+	* configure.host: Register t-loongarch in tmake_file.
+	* config/cpu/loongarch/t-loongarch: New file.  Manually refresh
+	MULTISUBDIR with $(shell $(CXX) --print-multi-directory).
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/libstdc++-v3/config/cpu/loongarch/t-loongarch | 1 +
+ src/libstdc++-v3/configure.host                   | 5 ++++-
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+ create mode 100644 src/libstdc++-v3/config/cpu/loongarch/t-loongarch
+
+diff --git a/src/libstdc++-v3/config/cpu/loongarch/t-loongarch b/src/libstdc++-v3/config/cpu/loongarch/t-loongarch
+new file mode 100644
+index 000000000..adfc8ebb9
+--- /dev/null
++++ b/src/libstdc++-v3/config/cpu/loongarch/t-loongarch
+@@ -0,0 +1 @@
++AM_MAKEFLAGS += " MULTISUBDIR=/$(shell $(CXX) --print-multi-directory)"
+diff --git a/src/libstdc++-v3/configure.host b/src/libstdc++-v3/configure.host
+index ec32980aa..592160e6d 100644
+--- a/src/libstdc++-v3/configure.host
++++ b/src/libstdc++-v3/configure.host
+@@ -315,7 +315,10 @@ esac
+ # Set any OS-dependent and CPU-dependent bits.
+ # THIS TABLE IS SORTED.  KEEP IT THAT WAY.
+ case "${host}" in
+-  *-*-linux* | *-*-uclinux*)
++ loongarch*)
++    tmake_file="cpu/loongarch/t-loongarch"
++    ;;
++ *-*-linux* | *-*-uclinux*)
+     case "${host_cpu}" in
+       i[567]86)
+         abi_baseline_pair=i486-linux-gnu
+-- 
+2.45.2
+

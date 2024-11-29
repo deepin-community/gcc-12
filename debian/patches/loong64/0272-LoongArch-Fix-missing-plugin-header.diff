@@ -1,0 +1,32 @@
+From efcfe8cf30f7bce1f570343ccdcfb9acba1072a2 Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Tue, 2 Apr 2024 09:20:32 +0800
+Subject: [PATCH 272/301] LoongArch: Fix missing plugin header
+
+gcc/ChangeLog:
+
+	* config/loongarch/t-loongarch: Add loongarch-def-arrays.h
+	to OPTION_H_EXTRA.
+---
+ src/gcc/config/loongarch/t-loongarch | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/t-loongarch b/src/gcc/config/loongarch/t-loongarch
+index 994f4d19c..488e8cff3 100644
+--- a/src/gcc/config/loongarch/t-loongarch
++++ b/src/gcc/config/loongarch/t-loongarch
+@@ -18,8 +18,9 @@
+ 
+ 
+ GTM_H += loongarch-multilib.h
+-OPTIONS_H_EXTRA += $(srcdir)/config/loongarch/loongarch-def.h	\
+-		   $(srcdir)/config/loongarch/loongarch-tune.h	\
++OPTIONS_H_EXTRA += $(srcdir)/config/loongarch/loongarch-def.h	    \
++		   $(srcdir)/config/loongarch/loongarch-def-array.h \
++		   $(srcdir)/config/loongarch/loongarch-tune.h	    \
+ 		   $(srcdir)/config/loongarch/loongarch-cpucfg-map.h
+ 
+ # Canonical target triplet from config.gcc
+-- 
+2.45.2
+

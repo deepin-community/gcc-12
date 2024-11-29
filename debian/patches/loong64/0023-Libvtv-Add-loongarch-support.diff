@@ -1,0 +1,59 @@
+From faa8e716ab70ac6d87c22026e0e7bd5758fce209 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 27 Sep 2022 15:28:43 +0800
+Subject: [PATCH 023/301] Libvtv: Add loongarch support.
+
+The loongarch64 specification permits page sizes of 4KiB, 16KiB and 64KiB,
+but only 16KiB pages are supported for now.
+
+Co-Authored-By: qijingwen <qijingwen@loongson.cn>
+
+include/ChangeLog:
+
+	* vtv-change-permission.h (defined): Determines whether the macro
+	__loongarch_lp64 is defined
+	(VTV_PAGE_SIZE): Set VTV_PAGE_SIZE to 16KiB for loongarch64.
+
+libvtv/ChangeLog:
+
+	* configure.tgt: Add loongarch support.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/include/vtv-change-permission.h | 4 ++++
+ src/libvtv/configure.tgt            | 3 +++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/src/include/vtv-change-permission.h b/src/include/vtv-change-permission.h
+index 70bdad92b..e7b9294a0 100644
+--- a/src/include/vtv-change-permission.h
++++ b/src/include/vtv-change-permission.h
+@@ -48,6 +48,10 @@ extern void __VLTChangePermission (int);
+ #else 
+ #if defined(__sun__) && defined(__svr4__) && defined(__sparc__)
+ #define VTV_PAGE_SIZE 8192
++#elif defined(__loongarch_lp64)
++/* The page size is configurable by the kernel to be 4, 16 or 64 KiB.
++   For now, only the default page size of 16KiB is supported.  */
++#define VTV_PAGE_SIZE 16384
+ #else
+ #define VTV_PAGE_SIZE 4096
+ #endif
+diff --git a/src/libvtv/configure.tgt b/src/libvtv/configure.tgt
+index aa2a3f675..6cdd1e97a 100644
+--- a/src/libvtv/configure.tgt
++++ b/src/libvtv/configure.tgt
+@@ -50,6 +50,9 @@ case "${target}" in
+ 	;;
+   x86_64-*-darwin[1]* | i?86-*-darwin[1]*)
+ 	;;
++  loongarch*-*-linux*)
++	VTV_SUPPORTED=yes
++	;;
+   *)
+ 	;;
+ esac
+-- 
+2.45.2
+

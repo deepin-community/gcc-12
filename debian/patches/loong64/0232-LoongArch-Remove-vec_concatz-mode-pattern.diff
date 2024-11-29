@@ -1,0 +1,75 @@
+From c9416ce318c695f37dc1298447e369370ad29f9c Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Wed, 24 Jan 2024 17:19:13 +0800
+Subject: [PATCH 232/301] LoongArch: Remove vec_concatz<mode> pattern.
+
+It is incorrect to use vld/vori to implement the vec_concatz<mode> because when the LSX
+instruction is used to update the value of the vector register, the upper 128 bits of
+the vector register will not be zeroed.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (@vec_concatz<mode>): Remove this define_insn pattern.
+	* config/loongarch/loongarch.cc (loongarch_expand_vector_group_init): Use vec_concat<mode>.
+---
+ src/gcc/config/loongarch/lasx.md      | 15 ---------------
+ src/gcc/config/loongarch/loongarch.cc | 17 ++++++-----------
+ 2 files changed, 6 insertions(+), 26 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index fdfd65e4a..a5128c30c 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -582,21 +582,6 @@
+   [(set_attr "type" "simd_insert")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "@vec_concatz<mode>"
+-  [(set (match_operand:LASX 0 "register_operand" "=f")
+-    (vec_concat:LASX
+-      (match_operand:<VHMODE256_ALL> 1 "nonimmediate_operand")
+-      (match_operand:<VHMODE256_ALL> 2 "const_0_operand")))]
+-  "ISA_HAS_LASX"
+-{
+-  if (MEM_P (operands[1]))
+-    return "vld\t%w0,%1";
+-  else
+-    return "vori.b\t%w0,%w1,0";
+-}
+-  [(set_attr "type" "simd_splat")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "vec_concat<mode>"
+   [(set (match_operand:LASX 0 "register_operand" "=f")
+ 	(vec_concat:LASX
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 1755102e6..0c9fdc321 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -9910,17 +9910,12 @@ loongarch_expand_vector_group_init (rtx target, rtx vals)
+       gcc_unreachable ();
+     }
+ 
+-  if (high == CONST0_RTX (half_mode))
+-    emit_insn (gen_vec_concatz (vmode, target, low, high));
+-  else
+-    {
+-      if (!register_operand (low, half_mode))
+-	low = force_reg (half_mode, low);
+-      if (!register_operand (high, half_mode))
+-	high = force_reg (half_mode, high);
+-      emit_insn (gen_rtx_SET (target,
+-			      gen_rtx_VEC_CONCAT (vmode, low, high)));
+-    }
++  if (!register_operand (low, half_mode))
++    low = force_reg (half_mode, low);
++  if (!register_operand (high, half_mode))
++    high = force_reg (half_mode, high);
++  emit_insn (gen_rtx_SET (target,
++			  gen_rtx_VEC_CONCAT (vmode, low, high)));
+ }
+ 
+ /* Expand initialization of a vector which has all same elements.  */
+-- 
+2.45.2
+

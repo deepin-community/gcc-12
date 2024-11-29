@@ -1,0 +1,80 @@
+From 6b107329da6ade3ce6ff9c0716406c759b825169 Mon Sep 17 00:00:00 2001
+From: chenxiaolong <chenxiaolong@loongson.cn>
+Date: Fri, 5 Jan 2024 11:43:29 +0800
+Subject: [PATCH 213/301] LoongArch: testsuite:Give up the detection of the
+ gcc.dg/fma-{3, 4, 6, 7}.c file.
+
+On the LoongArch architecture, the above four test cases need to be waived
+during testing. There are two situations:
+
+1. The function of fma-{3,6}.c test is to find the value of c-a*b, but on
+the LoongArch architecture, the function of the existing fnmsub instruction
+is to find the value of -(a*b - c);
+
+2. The function of fma-{4,7}.c test is to find the value of -(a*b)-c, but on
+the LoongArch architecture, the function of the existing fnmadd instruction
+is to find the value of -(a*b + c);
+
+Through the analysis of the above two cases, there will be positive and
+negative zero inequality.
+
+gcc/testsuite/ChangeLog
+
+	* gcc.dg/fma-3.c: The intermediate file corresponding to the
+	function does not produce the corresponding FNMA symbol, so the test
+	rules should be skipped when testing.
+	* gcc.dg/fma-4.c: The intermediate file corresponding to the
+	function does not produce the corresponding FNMS symbol, so skip the
+	test rules when testing.
+	* gcc.dg/fma-6.c: The cause is the same as fma-3.c.
+	* gcc.dg/fma-7.c: The cause is the same as fma-4.c
+---
+ src/gcc/testsuite/gcc.dg/fma-3.c | 2 +-
+ src/gcc/testsuite/gcc.dg/fma-4.c | 2 +-
+ src/gcc/testsuite/gcc.dg/fma-6.c | 2 +-
+ src/gcc/testsuite/gcc.dg/fma-7.c | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/gcc/testsuite/gcc.dg/fma-3.c b/src/gcc/testsuite/gcc.dg/fma-3.c
+index 699aa2c95..6649b54b6 100644
+--- a/src/gcc/testsuite/gcc.dg/fma-3.c
++++ b/src/gcc/testsuite/gcc.dg/fma-3.c
+@@ -12,4 +12,4 @@ f2 (double a, double b, double c)
+   return c - a * b;
+ }
+ 
+-/* { dg-final { scan-tree-dump-times { = \.FNMA \(} 2 "widening_mul" { target scalar_all_fma } } } */
++/* { dg-final { scan-tree-dump-times { = \.FNMA \(} 2 "widening_mul" { target { scalar_all_fma && { ! loongarch*-*-* } } } } } */
+diff --git a/src/gcc/testsuite/gcc.dg/fma-4.c b/src/gcc/testsuite/gcc.dg/fma-4.c
+index bff928f1f..f1701c196 100644
+--- a/src/gcc/testsuite/gcc.dg/fma-4.c
++++ b/src/gcc/testsuite/gcc.dg/fma-4.c
+@@ -12,4 +12,4 @@ f2 (double a, double b, double c)
+   return -(a * b) - c;
+ }
+ 
+-/* { dg-final { scan-tree-dump-times { = \.FNMS \(} 2 "widening_mul" { target scalar_all_fma } } } */
++/* { dg-final { scan-tree-dump-times { = \.FNMS \(} 2 "widening_mul" { target { scalar_all_fma && { ! loongarch*-*-* } } } } } */
+diff --git a/src/gcc/testsuite/gcc.dg/fma-6.c b/src/gcc/testsuite/gcc.dg/fma-6.c
+index 87258cec4..9e49b62b6 100644
+--- a/src/gcc/testsuite/gcc.dg/fma-6.c
++++ b/src/gcc/testsuite/gcc.dg/fma-6.c
+@@ -64,4 +64,4 @@ f10 (double a, double b, double c)
+   return -__builtin_fma (a, b, -c);
+ }
+ 
+-/* { dg-final { scan-tree-dump-times { = \.FNMA \(} 14 "optimized" { target scalar_all_fma } } } */
++/* { dg-final { scan-tree-dump-times { = \.FNMA \(} 14 "optimized" { target { scalar_all_fma && { ! loongarch*-*-* } } } } } */
+diff --git a/src/gcc/testsuite/gcc.dg/fma-7.c b/src/gcc/testsuite/gcc.dg/fma-7.c
+index f409cc8ee..86aacad7b 100644
+--- a/src/gcc/testsuite/gcc.dg/fma-7.c
++++ b/src/gcc/testsuite/gcc.dg/fma-7.c
+@@ -64,4 +64,4 @@ f10 (double a, double b, double c)
+   return -__builtin_fma (a, b, c);
+ }
+ 
+-/* { dg-final { scan-tree-dump-times { = \.FNMS \(} 14 "optimized" { target scalar_all_fma } } } */
++/* { dg-final { scan-tree-dump-times { = \.FNMS \(} 14 "optimized" { target { scalar_all_fma && { ! loongarch*-*-* } } } } } */
+-- 
+2.45.2
+

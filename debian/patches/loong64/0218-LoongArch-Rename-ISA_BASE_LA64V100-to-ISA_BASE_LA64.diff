@@ -1,0 +1,220 @@
+From a20904bcd70f6275475ae5866140f69b0a28a222 Mon Sep 17 00:00:00 2001
+From: Yang Yujie <yangyujie@loongson.cn>
+Date: Mon, 8 Jan 2024 09:14:08 +0800
+Subject: [PATCH 218/301] LoongArch: Rename ISA_BASE_LA64V100 to ISA_BASE_LA64
+
+LoongArch ISA manual v1.10 suggests that software should not depend on
+the ISA version number for marking processor features.  The ISA version
+number is now defined as a collective name of individual ISA evolutions.
+Since there is a independent ISA evolution mask now, we can drop the
+version information from the base ISA.
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/loongarch-strings: Rename.
+	* config/loongarch/genopts/loongarch.opt.in: Same.
+	* config/loongarch/loongarch-cpu.cc: Same.
+	* config/loongarch/loongarch-def.cc: Same.
+	* config/loongarch/loongarch-def.h: Same.
+	* config/loongarch/loongarch-opts.cc: Same.
+	* config/loongarch/loongarch-opts.h: Same.
+	* config/loongarch/loongarch-str.h: Same.
+	* config/loongarch/loongarch.opt: Same.
+---
+ src/gcc/config/loongarch/genopts/loongarch-strings |  2 +-
+ src/gcc/config/loongarch/genopts/loongarch.opt.in  |  2 +-
+ src/gcc/config/loongarch/loongarch-cpu.cc          |  2 +-
+ src/gcc/config/loongarch/loongarch-def.cc          | 14 +++++++-------
+ src/gcc/config/loongarch/loongarch-def.h           |  6 +++---
+ src/gcc/config/loongarch/loongarch-opts.cc         | 10 +++++-----
+ src/gcc/config/loongarch/loongarch-opts.h          |  2 +-
+ src/gcc/config/loongarch/loongarch-str.h           |  2 +-
+ src/gcc/config/loongarch/loongarch.opt             |  2 +-
+ 9 files changed, 21 insertions(+), 21 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/genopts/loongarch-strings b/src/gcc/config/loongarch/genopts/loongarch-strings
+index 411ad5696..ce70b8b9c 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch-strings
++++ b/src/gcc/config/loongarch/genopts/loongarch-strings
+@@ -29,7 +29,7 @@ STR_CPU_LA464	      la464
+ STR_CPU_LA664	      la664
+ 
+ # Base architecture
+-STR_ISA_BASE_LA64V100 la64
++STR_ISA_BASE_LA64 la64
+ 
+ # -mfpu
+ OPTSTR_ISA_EXT_FPU    fpu
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index a866dab84..851d8d1f3 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -33,7 +33,7 @@ Name(isa_base) Type(int)
+ Basic ISAs of LoongArch:
+ 
+ EnumValue
+-Enum(isa_base) String(@@STR_ISA_BASE_LA64V100@@) Value(ISA_BASE_LA64V100)
++Enum(isa_base) String(@@STR_ISA_BASE_LA64@@) Value(ISA_BASE_LA64)
+ 
+ ;; ISA extensions / adjustments
+ Enum
+diff --git a/src/gcc/config/loongarch/loongarch-cpu.cc b/src/gcc/config/loongarch/loongarch-cpu.cc
+index 7e0625835..551d4f72c 100644
+--- a/src/gcc/config/loongarch/loongarch-cpu.cc
++++ b/src/gcc/config/loongarch/loongarch-cpu.cc
+@@ -133,7 +133,7 @@ fill_native_cpu_config (struct loongarch_target *tgt)
+ 	switch (cpucfg_cache[1] & 0x3)
+ 	  {
+ 	    case 0x02:
+-	      tmp = ISA_BASE_LA64V100;
++	      tmp = ISA_BASE_LA64;
+ 	      break;
+ 
+ 	    default:
+diff --git a/src/gcc/config/loongarch/loongarch-def.cc b/src/gcc/config/loongarch/loongarch-def.cc
+index 843be78e4..533dd0af2 100644
+--- a/src/gcc/config/loongarch/loongarch-def.cc
++++ b/src/gcc/config/loongarch/loongarch-def.cc
+@@ -48,16 +48,16 @@ array_arch<loongarch_isa> loongarch_cpu_default_isa =
+   array_arch<loongarch_isa> ()
+     .set (CPU_LOONGARCH64,
+ 	  loongarch_isa ()
+-	    .base_ (ISA_BASE_LA64V100)
++	    .base_ (ISA_BASE_LA64)
+ 	    .fpu_ (ISA_EXT_FPU64))
+     .set (CPU_LA464,
+ 	  loongarch_isa ()
+-	    .base_ (ISA_BASE_LA64V100)
++	    .base_ (ISA_BASE_LA64)
+ 	    .fpu_ (ISA_EXT_FPU64)
+ 	    .simd_ (ISA_EXT_SIMD_LASX))
+     .set (CPU_LA664,
+ 	  loongarch_isa ()
+-	    .base_ (ISA_BASE_LA64V100)
++	    .base_ (ISA_BASE_LA64)
+ 	    .fpu_ (ISA_EXT_FPU64)
+ 	    .simd_ (ISA_EXT_SIMD_LASX)
+ 	    .evolution_ (OPTION_MASK_ISA_DIV32 | OPTION_MASK_ISA_LD_SEQ_SA
+@@ -153,7 +153,7 @@ array_tune<int> loongarch_cpu_multipass_dfa_lookahead = array_tune<int> ()
+ 
+ array<const char *, N_ISA_BASE_TYPES> loongarch_isa_base_strings =
+   array<const char *, N_ISA_BASE_TYPES> ()
+-    .set (ISA_BASE_LA64V100, STR_ISA_BASE_LA64V100);
++    .set (ISA_BASE_LA64, STR_ISA_BASE_LA64);
+ 
+ array<const char *, N_ISA_EXT_TYPES> loongarch_isa_ext_strings =
+   array<const char *, N_ISA_EXT_TYPES> ()
+@@ -189,15 +189,15 @@ array<array<loongarch_isa, N_ABI_EXT_TYPES>, N_ABI_BASE_TYPES>
+ 	  array<loongarch_isa, N_ABI_EXT_TYPES> ()
+ 	    .set (ABI_EXT_BASE,
+ 		  loongarch_isa ()
+-		    .base_ (ISA_BASE_LA64V100)
++		    .base_ (ISA_BASE_LA64)
+ 		    .fpu_ (ISA_EXT_FPU64)))
+     .set (ABI_BASE_LP64F,
+ 	  array<loongarch_isa, N_ABI_EXT_TYPES> ()
+ 	    .set (ABI_EXT_BASE,
+ 		  loongarch_isa ()
+-		    .base_ (ISA_BASE_LA64V100)
++		    .base_ (ISA_BASE_LA64)
+ 		    .fpu_ (ISA_EXT_FPU32)))
+     .set (ABI_BASE_LP64S,
+ 	  array<loongarch_isa, N_ABI_EXT_TYPES> ()
+ 	    .set (ABI_EXT_BASE,
+-		  loongarch_isa ().base_ (ISA_BASE_LA64V100)));
++		  loongarch_isa ().base_ (ISA_BASE_LA64)));
+diff --git a/src/gcc/config/loongarch/loongarch-def.h b/src/gcc/config/loongarch/loongarch-def.h
+index 9e5eee0e2..a133ea265 100644
+--- a/src/gcc/config/loongarch/loongarch-def.h
++++ b/src/gcc/config/loongarch/loongarch-def.h
+@@ -55,9 +55,9 @@ along with GCC; see the file COPYING3.  If not see
+ 
+ /* enum isa_base */
+ 
+-/* LoongArch V1.00.  */
+-#define ISA_BASE_LA64V100	0
+-#define N_ISA_BASE_TYPES	1
++/* LoongArch64 */
++#define ISA_BASE_LA64	      0
++#define N_ISA_BASE_TYPES      1
+ extern loongarch_def_array<const char *, N_ISA_BASE_TYPES>
+   loongarch_isa_base_strings;
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-opts.cc b/src/gcc/config/loongarch/loongarch-opts.cc
+index 935d09f45..cf4c7bc93 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -567,17 +567,17 @@ isa_default_abi (const struct loongarch_isa *isa)
+   switch (isa->fpu)
+     {
+       case ISA_EXT_FPU64:
+-	if (isa->base >= ISA_BASE_LA64V100)
++	if (isa->base >= ISA_BASE_LA64)
+ 	  abi.base = ABI_BASE_LP64D;
+ 	break;
+ 
+       case ISA_EXT_FPU32:
+-	if (isa->base >= ISA_BASE_LA64V100)
++	if (isa->base >= ISA_BASE_LA64)
+ 	  abi.base = ABI_BASE_LP64F;
+ 	break;
+ 
+       case ISA_EXT_NONE:
+-	if (isa->base >= ISA_BASE_LA64V100)
++	if (isa->base >= ISA_BASE_LA64)
+ 	  abi.base = ABI_BASE_LP64S;
+ 	break;
+ 
+@@ -596,8 +596,8 @@ isa_base_compat_p (const struct loongarch_isa *set1,
+ {
+   switch (set2->base)
+     {
+-      case ISA_BASE_LA64V100:
+-	return (set1->base >= ISA_BASE_LA64V100);
++      case ISA_BASE_LA64:
++	return (set1->base >= ISA_BASE_LA64);
+ 
+       default:
+ 	gcc_unreachable ();
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index 204338553..463812136 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -79,7 +79,7 @@ struct loongarch_flags {
+ #define TARGET_DOUBLE_FLOAT	  (la_target.isa.fpu == ISA_EXT_FPU64)
+ #define TARGET_DOUBLE_FLOAT_ABI	  (la_target.abi.base == ABI_BASE_LP64D)
+ 
+-#define TARGET_64BIT		  (la_target.isa.base == ISA_BASE_LA64V100)
++#define TARGET_64BIT		  (la_target.isa.base == ISA_BASE_LA64)
+ #define TARGET_ABI_LP64		  (la_target.abi.base == ABI_BASE_LP64D	\
+ 				   || la_target.abi.base == ABI_BASE_LP64F \
+ 				   || la_target.abi.base == ABI_BASE_LP64S)
+diff --git a/src/gcc/config/loongarch/loongarch-str.h b/src/gcc/config/loongarch/loongarch-str.h
+index a8821acb0..2251df38b 100644
+--- a/src/gcc/config/loongarch/loongarch-str.h
++++ b/src/gcc/config/loongarch/loongarch-str.h
+@@ -32,7 +32,7 @@ along with GCC; see the file COPYING3.  If not see
+ #define STR_CPU_LA464 "la464"
+ #define STR_CPU_LA664 "la664"
+ 
+-#define STR_ISA_BASE_LA64V100 "la64"
++#define STR_ISA_BASE_LA64 "la64"
+ 
+ #define OPTSTR_ISA_EXT_FPU "fpu"
+ #define STR_NONE "none"
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index b5a46df4e..df7314973 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -41,7 +41,7 @@ Name(isa_base) Type(int)
+ Basic ISAs of LoongArch:
+ 
+ EnumValue
+-Enum(isa_base) String(la64) Value(ISA_BASE_LA64V100)
++Enum(isa_base) String(la64) Value(ISA_BASE_LA64)
+ 
+ ;; ISA extensions / adjustments
+ Enum
+-- 
+2.45.2
+

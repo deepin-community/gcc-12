@@ -1,0 +1,45 @@
+From 60013772eb6db2a3270ab312140aea650ea5f3d5 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Thu, 16 Nov 2023 16:44:36 +0800
+Subject: [PATCH 148/301] LoongArch: Increase cost of vector aligned
+ store/load.
+
+Based on SPEC2017 performance evaluation results, it's better to make them equal
+to the cost of unaligned store/load so as to avoid odd alignment peeling.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc
+	(loongarch_builtin_vectorization_cost): Adjust.
+---
+ src/gcc/config/loongarch/loongarch.cc | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 44d7d09d1..70fad5927 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -3889,11 +3889,9 @@ loongarch_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
+       case scalar_stmt:
+       case scalar_load:
+       case vector_stmt:
+-      case vector_load:
+       case vec_to_scalar:
+       case scalar_to_vec:
+       case scalar_store:
+-      case vector_store:
+ 	return 1;
+ 
+       case vec_promote_demote:
+@@ -3901,6 +3899,8 @@ loongarch_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
+ 	return LASX_SUPPORTED_MODE_P (mode)
+ 	  && !LSX_SUPPORTED_MODE_P (mode) ? 2 : 1;
+ 
++      case vector_load:
++      case vector_store:
+       case unaligned_load:
+       case unaligned_store:
+ 	return 2;
+-- 
+2.45.2
+

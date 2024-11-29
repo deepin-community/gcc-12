@@ -1,0 +1,253 @@
+From 4bf63f54dc8ca36861e08512152e9a1073eecdf8 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 17 Dec 2023 05:38:20 +0800
+Subject: [PATCH 202/301] LoongArch: Expand left rotate to right rotate with
+ negated amount
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md (rotl<mode>3):
+	New define_expand.
+	* config/loongarch/simd.md (vrotl<mode>3): Likewise.
+	(rotl<mode>3): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/rotl-with-rotr.c: New test.
+	* gcc.target/loongarch/rotl-with-vrotr-b.c: New test.
+	* gcc.target/loongarch/rotl-with-vrotr-h.c: New test.
+	* gcc.target/loongarch/rotl-with-vrotr-w.c: New test.
+	* gcc.target/loongarch/rotl-with-vrotr-d.c: New test.
+	* gcc.target/loongarch/rotl-with-xvrotr-b.c: New test.
+	* gcc.target/loongarch/rotl-with-xvrotr-h.c: New test.
+	* gcc.target/loongarch/rotl-with-xvrotr-w.c: New test.
+	* gcc.target/loongarch/rotl-with-xvrotr-d.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.md         | 12 ++++++++
+ src/gcc/config/loongarch/simd.md              | 29 +++++++++++++++++++
+ .../gcc.target/loongarch/rotl-with-rotr.c     |  9 ++++++
+ .../gcc.target/loongarch/rotl-with-vrotr-b.c  |  7 +++++
+ .../gcc.target/loongarch/rotl-with-vrotr-d.c  |  7 +++++
+ .../gcc.target/loongarch/rotl-with-vrotr-h.c  |  7 +++++
+ .../gcc.target/loongarch/rotl-with-vrotr-w.c  | 28 ++++++++++++++++++
+ .../gcc.target/loongarch/rotl-with-xvrotr-b.c |  7 +++++
+ .../gcc.target/loongarch/rotl-with-xvrotr-d.c |  7 +++++
+ .../gcc.target/loongarch/rotl-with-xvrotr-h.c |  7 +++++
+ .../gcc.target/loongarch/rotl-with-xvrotr-w.c |  7 +++++
+ 11 files changed, 127 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-rotr.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-b.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-d.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-h.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-w.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-b.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-d.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-h.c
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-w.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 3d5b75825..ed4d4b906 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -2903,6 +2903,18 @@
+   [(set_attr "type" "shift,shift")
+    (set_attr "mode" "SI")])
+ 
++;; Expand left rotate to right rotate.
++(define_expand "rotl<mode>3"
++  [(set (match_dup 3)
++	(neg:SI (match_operand:SI 2 "register_operand")))
++   (set (match_operand:GPR 0 "register_operand")
++	(rotatert:GPR (match_operand:GPR 1 "register_operand")
++		      (match_dup 3)))]
++  ""
++  {
++    operands[3] = gen_reg_rtx (SImode);
++  });
++
+ ;; The following templates were added to generate "bstrpick.d + alsl.d"
+ ;; instruction pairs.
+ ;; It is required that the values of const_immalsl_operand and
+diff --git a/src/gcc/config/loongarch/simd.md b/src/gcc/config/loongarch/simd.md
+index 13202f79b..93fb39abc 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -268,6 +268,35 @@
+   [(set_attr "type" "simd_int_arith")
+    (set_attr "mode" "<MODE>")])
+ 
++;; Expand left rotate to right rotate.
++(define_expand "vrotl<mode>3"
++  [(set (match_dup 3)
++	(neg:IVEC (match_operand:IVEC 2 "register_operand")))
++   (set (match_operand:IVEC 0 "register_operand")
++	(rotatert:IVEC (match_operand:IVEC 1 "register_operand")
++		       (match_dup 3)))]
++  ""
++  {
++    operands[3] = gen_reg_rtx (<MODE>mode);
++  });
++
++;; Expand left rotate with a scalar amount to right rotate: negate the
++;; scalar before broadcasting it because scalar negation is cheaper than
++;; vector negation.
++(define_expand "rotl<mode>3"
++  [(set (match_dup 3)
++	(neg:SI (match_operand:SI 2 "register_operand")))
++   (set (match_dup 4)
++	(vec_duplicate:IVEC (subreg:<IVEC:UNITMODE> (match_dup 3) 0)))
++   (set (match_operand:IVEC 0 "register_operand")
++	(rotatert:IVEC (match_operand:IVEC 1 "register_operand")
++		       (match_dup 4)))]
++  ""
++  {
++    operands[3] = gen_reg_rtx (SImode);
++    operands[4] = gen_reg_rtx (<MODE>mode);
++  });
++
+ ;; <x>vrotri.{b/h/w/d}
+ 
+ (define_insn "rotr<mode>3"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-rotr.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-rotr.c
+new file mode 100644
+index 000000000..84cc53cec
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-rotr.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2" } */
++/* { dg-final { scan-assembler "rotr\\.w" } } */
++
++unsigned
++t (unsigned a, unsigned b)
++{
++  return a << b | a >> (32 - b);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-b.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-b.c
+new file mode 100644
+index 000000000..14298bf9e
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-b.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler-times "vrotr\\.b" 2 } } */
++/* { dg-final { scan-assembler-times "vneg\\.b" 1 } } */
++
++#define TYPE char
++#include "rotl-with-vrotr-w.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-d.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-d.c
+new file mode 100644
+index 000000000..0e971b323
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-d.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler-times "vrotr\\.d" 2 } } */
++/* { dg-final { scan-assembler-times "vneg\\.d" 1 } } */
++
++#define TYPE long long
++#include "rotl-with-vrotr-w.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-h.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-h.c
+new file mode 100644
+index 000000000..93216ebc2
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-h.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler-times "vrotr\\.h" 2 } } */
++/* { dg-final { scan-assembler-times "vneg\\.h" 1 } } */
++
++#define TYPE short
++#include "rotl-with-vrotr-w.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-w.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-w.c
+new file mode 100644
+index 000000000..d05b86f47
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-vrotr-w.c
+@@ -0,0 +1,28 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler-times "vrotr\\.w" 2 } } */
++/* { dg-final { scan-assembler-times "vneg\\.w" 1 } } */
++
++#ifndef VLEN
++#define VLEN 16
++#endif
++
++#ifndef TYPE
++#define TYPE int
++#endif
++
++typedef unsigned TYPE V __attribute__ ((vector_size (VLEN)));
++V a, b, c;
++
++void
++test (int x)
++{
++  b = a << x | a >> ((int)sizeof (TYPE) * __CHAR_BIT__ - x);
++}
++
++void
++test2 (void)
++{
++  for (int i = 0; i < VLEN / sizeof (TYPE); i++)
++    c[i] = a[i] << b[i] | a[i] >> ((int)sizeof (TYPE) * __CHAR_BIT__ - b[i]);
++}
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-b.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-b.c
+new file mode 100644
+index 000000000..2674b1b61
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-b.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler-times "xvrotr\\.b" 2 } } */
++/* { dg-final { scan-assembler-times "xvneg\\.b" 1 } } */
++
++#define VLEN 32
++#include "rotl-with-vrotr-b.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-d.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-d.c
+new file mode 100644
+index 000000000..e94403315
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-d.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler-times "xvrotr\\.d" 2 } } */
++/* { dg-final { scan-assembler-times "xvneg\\.d" 1 } } */
++
++#define VLEN 32
++#include "rotl-with-vrotr-d.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-h.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-h.c
+new file mode 100644
+index 000000000..3d998941f
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-h.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler-times "xvrotr\\.h" 2 } } */
++/* { dg-final { scan-assembler-times "xvneg\\.h" 1 } } */
++
++#define VLEN 32
++#include "rotl-with-vrotr-h.c"
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-w.c b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-w.c
+new file mode 100644
+index 000000000..ca6aa7bae
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/rotl-with-xvrotr-w.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx -fno-vect-cost-model" } */
++/* { dg-final { scan-assembler-times "xvrotr\\.w" 2 } } */
++/* { dg-final { scan-assembler-times "xvneg\\.w" 1 } } */
++
++#define VLEN 32
++#include "rotl-with-vrotr-w.c"
+-- 
+2.45.2
+

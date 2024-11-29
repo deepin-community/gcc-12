@@ -1,0 +1,32 @@
+From dcc2cdead7d760fcbdbc0a5ecfe9020e196b845e Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 10 Jul 2024 12:15:23 +0800
+Subject: [PATCH 299/301] LoongArch: Fix up r15-4130
+
+An earlier version of the patch (lacking the regeneration of some files)
+was pushed.  Fix it up now.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.opt: Regenerate.
+	* config/loongarch/loongarch.opt.urls: Regenerate.
+---
+ src/gcc/config/loongarch/loongarch.opt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 16fed6ec3..f9c7bd446 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -312,7 +312,7 @@ HOST_WIDE_INT la_isa_evolution = 0
+ 
+ mannotate-tablejump
+ Target Mask(ANNOTATE_TABLEJUMP) Save
+-Annotate table jump instruction (jr {reg}) to correlate it with the jump table
++Annotate table jump instruction (jr {reg}) to correlate it with the jump table.
+ 
+ mfrecipe
+ Target Mask(ISA_FRECIPE) Var(la_isa_evolution)
+-- 
+2.45.2
+

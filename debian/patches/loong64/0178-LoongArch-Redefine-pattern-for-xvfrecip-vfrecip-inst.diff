@@ -1,0 +1,135 @@
+From 45b856e7ec3f7ccfaa98b53099705449bca42d15 Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Wed, 6 Dec 2023 15:04:51 +0800
+Subject: [PATCH 178/301] LoongArch: Redefine pattern for xvfrecip/vfrecip
+ instructions.
+
+Redefine pattern for [x]vfrecip instructions use rtx code instead of unspec, and enable
+[x]vfrecip instructions to be generated during auto-vectorization.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (lasx_xvfrecip_<flasxfmt>): Renamed to ..
+	(recip<mode>3): .. this.
+	* config/loongarch/loongarch-builtins.cc (CODE_FOR_lsx_vfrecip_d): Redefine
+	to new pattern name.
+	(CODE_FOR_lsx_vfrecip_s): Ditto.
+	(CODE_FOR_lasx_xvfrecip_d): Ditto.
+	(CODE_FOR_lasx_xvfrecip_s): Ditto.
+	(loongarch_expand_builtin_direct): For the vector recip instructions, construct a
+	temporary parameter const1_vector.
+	* config/loongarch/lsx.md (lsx_vfrecip_<flsxfmt>): Renamed to ..
+	(recip<mode>3): .. this.
+	* config/loongarch/predicates.md (const_vector_1_operand): New predicate.
+---
+ src/gcc/config/loongarch/lasx.md              |  8 ++++----
+ .../config/loongarch/loongarch-builtins.cc    | 20 +++++++++++++++++++
+ src/gcc/config/loongarch/lsx.md               |  8 ++++----
+ src/gcc/config/loongarch/predicates.md        |  4 ++++
+ 4 files changed, 32 insertions(+), 8 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index 3a4a1fe51..ad49a3ffb 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -1626,12 +1626,12 @@
+   [(set_attr "type" "simd_fminmax")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvfrecip_<flasxfmt>"
++(define_insn "recip<mode>3"
+   [(set (match_operand:FLASX 0 "register_operand" "=f")
+-	(unspec:FLASX [(match_operand:FLASX 1 "register_operand" "f")]
+-		      UNSPEC_LASX_XVFRECIP))]
++       (div:FLASX (match_operand:FLASX 1 "const_vector_1_operand" "")
++		  (match_operand:FLASX 2 "register_operand" "f")))]
+   "ISA_HAS_LASX"
+-  "xvfrecip.<flasxfmt>\t%u0,%u1"
++  "xvfrecip.<flasxfmt>\t%u0,%u2"
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+diff --git a/src/gcc/config/loongarch/loongarch-builtins.cc b/src/gcc/config/loongarch/loongarch-builtins.cc
+index 4aae27a5e..85849ed29 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -502,6 +502,8 @@ AVAIL_ALL (lasx_frecipe, ISA_HAS_LASX && TARGET_FRECIPE)
+ #define CODE_FOR_lsx_vssrlrn_wu_d CODE_FOR_lsx_vssrlrn_u_wu_d
+ #define CODE_FOR_lsx_vfrsqrt_d CODE_FOR_rsqrtv2df2
+ #define CODE_FOR_lsx_vfrsqrt_s CODE_FOR_rsqrtv4sf2
++#define CODE_FOR_lsx_vfrecip_d CODE_FOR_recipv2df3
++#define CODE_FOR_lsx_vfrecip_s CODE_FOR_recipv4sf3
+ 
+ /* LoongArch ASX define CODE_FOR_lasx_mxxx */
+ #define CODE_FOR_lasx_xvsadd_b CODE_FOR_ssaddv32qi3
+@@ -780,6 +782,8 @@ AVAIL_ALL (lasx_frecipe, ISA_HAS_LASX && TARGET_FRECIPE)
+ #define CODE_FOR_lasx_xvsat_du CODE_FOR_lasx_xvsat_u_du
+ #define CODE_FOR_lasx_xvfrsqrt_d CODE_FOR_rsqrtv4df2
+ #define CODE_FOR_lasx_xvfrsqrt_s CODE_FOR_rsqrtv8sf2
++#define CODE_FOR_lasx_xvfrecip_d CODE_FOR_recipv4df3
++#define CODE_FOR_lasx_xvfrecip_s CODE_FOR_recipv8sf3
+ 
+ static const struct loongarch_builtin_description loongarch_builtins[] = {
+ #define LARCH_MOVFCSR2GR 0
+@@ -3019,6 +3023,22 @@ loongarch_expand_builtin_direct (enum insn_code icode, rtx target, tree exp,
+   if (has_target_p)
+     create_output_operand (&ops[opno++], target, TYPE_MODE (TREE_TYPE (exp)));
+ 
++  /* For the vector reciprocal instructions, we need to construct a temporary
++     parameter const1_vector.  */
++  switch (icode)
++    {
++    case CODE_FOR_recipv8sf3:
++    case CODE_FOR_recipv4df3:
++    case CODE_FOR_recipv4sf3:
++    case CODE_FOR_recipv2df3:
++      loongarch_prepare_builtin_arg (&ops[2], exp, 0);
++      create_input_operand (&ops[1], CONST1_RTX (ops[0].mode), ops[0].mode);
++      return loongarch_expand_builtin_insn (icode, 3, ops, has_target_p);
++
++    default:
++      break;
++    }
++
+   /* Map the arguments to the other operands.  */
+   gcc_assert (opno + call_expr_nargs (exp)
+ 	      == insn_data[icode].n_generator_args);
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index cb4a448e7..f2774f021 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -1539,12 +1539,12 @@
+   [(set_attr "type" "simd_fminmax")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vfrecip_<flsxfmt>"
++(define_insn "recip<mode>3"
+   [(set (match_operand:FLSX 0 "register_operand" "=f")
+-	(unspec:FLSX [(match_operand:FLSX 1 "register_operand" "f")]
+-		     UNSPEC_LSX_VFRECIP))]
++       (div:FLSX (match_operand:FLSX 1 "const_vector_1_operand" "")
++		 (match_operand:FLSX 2 "register_operand" "f")))]
+   "ISA_HAS_LSX"
+-  "vfrecip.<flsxfmt>\t%w0,%w1"
++  "vfrecip.<flsxfmt>\t%w0,%w2"
+   [(set_attr "type" "simd_fdiv")
+    (set_attr "mode" "<MODE>")])
+ 
+diff --git a/src/gcc/config/loongarch/predicates.md b/src/gcc/config/loongarch/predicates.md
+index 30a0dee9f..572550dbc 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -227,6 +227,10 @@
+   (and (match_code "const_int,const_wide_int,const_double,const_vector")
+        (match_test "op == CONST1_RTX (GET_MODE (op))")))
+ 
++(define_predicate "const_vector_1_operand"
++  (and (match_code "const_vector")
++       (match_test "op == CONST1_RTX (GET_MODE (op))")))
++
+ (define_predicate "reg_or_1_operand"
+   (ior (match_operand 0 "const_1_operand")
+        (match_operand 0 "register_operand")))
+-- 
+2.45.2
+

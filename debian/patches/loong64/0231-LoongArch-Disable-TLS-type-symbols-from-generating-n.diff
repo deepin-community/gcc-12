@@ -1,0 +1,65 @@
+From e2fc247e5a6d33ac8ec4ea077b349abcc317fe2e Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 23 Jan 2024 11:28:09 +0800
+Subject: [PATCH 231/301] LoongArch: Disable TLS type symbols from generating
+ non-zero offsets.
+
+TLS gd ld and ie type symbols will generate corresponding GOT entries,
+so non-zero offsets cannot be generated.
+The address of TLS le type symbol+addend is not implemented in binutils,
+so non-zero offset is not generated here for the time being.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_symbolic_constant_p):
+	For symbols of type tls, non-zero Offset is not generated.
+---
+ src/gcc/config/loongarch/loongarch.cc | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 75c0052b8..1755102e6 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -1921,11 +1921,7 @@ loongarch_symbolic_constant_p (rtx x, enum loongarch_symbol_type *symbol_type)
+       x = UNSPEC_ADDRESS (x);
+     }
+   else if (SYMBOL_REF_P (x) || LABEL_REF_P (x))
+-    {
+-      *symbol_type = loongarch_classify_symbol (x);
+-      if (*symbol_type == SYMBOL_TLS)
+-	return true;
+-    }
++    *symbol_type = loongarch_classify_symbol (x);
+   else
+     return false;
+ 
+@@ -1936,17 +1932,21 @@ loongarch_symbolic_constant_p (rtx x, enum loongarch_symbol_type *symbol_type)
+      relocations.  */
+   switch (*symbol_type)
+     {
+-    case SYMBOL_TLS_IE:
+-    case SYMBOL_TLS_LE:
+-    case SYMBOL_TLSGD:
+-    case SYMBOL_TLSLDM:
+     case SYMBOL_PCREL:
+     case SYMBOL_PCREL64:
+       /* GAS rejects offsets outside the range [-2^31, 2^31-1].  */
+       return sext_hwi (INTVAL (offset), 32) == INTVAL (offset);
+ 
++    /* The following symbol types do not allow non-zero offsets.  */
+     case SYMBOL_GOT_DISP:
++    case SYMBOL_TLS_IE:
++    case SYMBOL_TLSGD:
++    case SYMBOL_TLSLDM:
+     case SYMBOL_TLS:
++    /* From an implementation perspective, tls_le symbols are allowed to
++       have non-zero offsets, but currently binutils has not added support,
++       so the generation of non-zero offsets is prohibited here.  */
++    case SYMBOL_TLS_LE:
+       return false;
+     }
+   gcc_unreachable ();
+-- 
+2.45.2
+

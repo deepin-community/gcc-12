@@ -1,0 +1,67 @@
+From fe8f2140fc1a10b63002e9033515524e482aba22 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 22 May 2024 09:29:43 +0800
+Subject: [PATCH 279/301] LoongArch: Guard REGNO with REG_P in
+ loongarch_expand_conditional_move [PR115169]
+
+gcc/ChangeLog:
+
+	PR target/115169
+	* config/loongarch/loongarch.cc
+	(loongarch_expand_conditional_move): Guard REGNO with REG_P.
+---
+ src/gcc/config/loongarch/loongarch.cc | 17 ++++++++++++-----
+ 1 file changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index c32c45eb4..356a98491 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -5341,6 +5341,7 @@ loongarch_expand_conditional_move (rtx *operands)
+   rtx op1_extend = op1;
+ 
+   /* Record whether operands[2] and operands[3] modes are promoted to word_mode.  */
++  bool promote_op[2] = {false, false};
+   bool promote_p = false;
+   machine_mode mode = GET_MODE (operands[0]);
+ 
+@@ -5348,9 +5349,15 @@ loongarch_expand_conditional_move (rtx *operands)
+     loongarch_emit_float_compare (&code, &op0, &op1);
+   else
+     {
+-      if ((REGNO (op0) == REGNO (operands[2])
+-	   || (REGNO (op1) == REGNO (operands[3]) && (op1 != const0_rtx)))
+-	  && (GET_MODE_SIZE (GET_MODE (op0)) < word_mode))
++      if (GET_MODE_SIZE (GET_MODE (op0)) < word_mode)
++	{
++	  promote_op[0] = (REG_P (op0) && REG_P (operands[2]) &&
++			   REGNO (op0) == REGNO (operands[2]));
++	  promote_op[1] = (REG_P (op1) && REG_P (operands[3]) &&
++			   REGNO (op1) == REGNO (operands[3]));
++	}
++
++      if (promote_op[0] || promote_op[1])
+ 	{
+ 	  mode = word_mode;
+ 	  promote_p = true;
+@@ -5392,7 +5399,7 @@ loongarch_expand_conditional_move (rtx *operands)
+ 
+       if (promote_p)
+ 	{
+-	  if (REGNO (XEXP (operands[1], 0)) == REGNO (operands[2]))
++	  if (promote_op[0])
+ 	    op2 = op0_extend;
+ 	  else
+ 	    {
+@@ -5400,7 +5407,7 @@ loongarch_expand_conditional_move (rtx *operands)
+ 	      op2 = force_reg (mode, op2);
+ 	    }
+ 
+-	  if (REGNO (XEXP (operands[1], 1)) == REGNO (operands[3]))
++	  if (promote_op[1])
+ 	    op3 = op1_extend;
+ 	  else
+ 	    {
+-- 
+2.45.2
+

@@ -1,0 +1,44 @@
+From b5020e9792a1163c4acc60e225ceba4453b3f87f Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 9 Dec 2023 15:27:28 +0800
+Subject: [PATCH 187/301] LoongArch: Include rtl.h for COSTS_N_INSNS instead of
+ hard coding our own
+
+With loongarch-def.cc switched from C to C++, we can include rtl.h for
+COSTS_N_INSNS, instead of hard coding our own.
+
+THis is a non-functional change for now, but it will make the code more
+future-proof in case COSTS_N_INSNS in rtl.h would be changed.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-def.cc (rtl.h): Include.
+	(COSTS_N_INSNS): Remove the macro definition.
+---
+ src/gcc/config/loongarch/loongarch-def.cc | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch-def.cc b/src/gcc/config/loongarch/loongarch-def.cc
+index c41804a18..6217b1926 100644
+--- a/src/gcc/config/loongarch/loongarch-def.cc
++++ b/src/gcc/config/loongarch/loongarch-def.cc
+@@ -22,6 +22,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "system.h"
+ #include "coretypes.h"
+ #include "tm.h"
++#include "rtl.h"
+ 
+ #include "loongarch-def.h"
+ #include "loongarch-str.h"
+@@ -89,8 +90,6 @@ array_tune<loongarch_align> loongarch_cpu_align =
+     .set (CPU_LA464, la464_align ())
+     .set (CPU_LA664, la464_align ());
+ 
+-#define COSTS_N_INSNS(N) ((N) * 4)
+-
+ /* Default RTX cost initializer.  */
+ loongarch_rtx_cost_data::loongarch_rtx_cost_data ()
+   : fp_add (COSTS_N_INSNS (1)),
+-- 
+2.45.2
+

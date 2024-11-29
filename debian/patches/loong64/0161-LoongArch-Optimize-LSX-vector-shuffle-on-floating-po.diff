@@ -1,0 +1,148 @@
+From de9549d4f6d625f36917ab63beabbc4c4822cd85 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 19 Nov 2023 06:12:22 +0800
+Subject: [PATCH 161/301] LoongArch: Optimize LSX vector shuffle on
+ floating-point vector
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The vec_perm expander was wrongly defined.  GCC internal says:
+
+Operand 3 is the “selector”.  It is an integral mode vector of the same
+width and number of elements as mode M.
+
+But we made operand 3 in the same mode as the shuffled vectors, so it
+would be a FP mode vector if the shuffled vectors are FP mode.
+
+With this mistake, the generic code manages to work around and it ends
+up creating some very nasty code for a simple __builtin_shuffle (a, b,
+c) where a and b are V4SF, c is V4SI:
+
+    la.local    $r12,.LANCHOR0
+    la.local    $r13,.LANCHOR1
+    vld $vr1,$r12,48
+    vslli.w $vr1,$vr1,2
+    vld $vr2,$r12,16
+    vld $vr0,$r13,0
+    vld $vr3,$r13,16
+    vshuf.b $vr0,$vr1,$vr1,$vr0
+    vld $vr1,$r12,32
+    vadd.b  $vr0,$vr0,$vr3
+    vandi.b $vr0,$vr0,31
+    vshuf.b $vr0,$vr1,$vr2,$vr0
+    vst $vr0,$r12,0
+    jr  $r1
+
+This is obviously stupid.  Fix the expander definition and adjust
+loongarch_expand_vec_perm to handle it correctly.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lsx.md (vec_perm<mode:LSX>): Make the
+	selector VIMODE.
+	* config/loongarch/loongarch.cc (loongarch_expand_vec_perm):
+	Use the mode of the selector (instead of the shuffled vector)
+	for truncating it.  Operate on subregs in the selector mode if
+	the shuffled vector has a different mode (i. e. it's a
+	floating-point vector).
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vect-shuf-fp.c: New test.
+---
+ src/gcc/config/loongarch/loongarch.cc          | 18 ++++++++++--------
+ src/gcc/config/loongarch/lsx.md                |  2 +-
+ .../gcc.target/loongarch/vect-shuf-fp.c        | 16 ++++++++++++++++
+ 3 files changed, 27 insertions(+), 9 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-shuf-fp.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index e86e83826..320c1ffea 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -8601,8 +8601,9 @@ void
+ loongarch_expand_vec_perm (rtx target, rtx op0, rtx op1, rtx sel)
+ {
+   machine_mode vmode = GET_MODE (target);
++  machine_mode vimode = GET_MODE (sel);
+   auto nelt = GET_MODE_NUNITS (vmode);
+-  auto round_reg = gen_reg_rtx (vmode);
++  auto round_reg = gen_reg_rtx (vimode);
+   rtx round_data[MAX_VECT_LEN];
+ 
+   for (int i = 0; i < nelt; i += 1)
+@@ -8610,9 +8611,16 @@ loongarch_expand_vec_perm (rtx target, rtx op0, rtx op1, rtx sel)
+       round_data[i] = GEN_INT (0x1f);
+     }
+ 
+-  rtx round_data_rtx = gen_rtx_CONST_VECTOR (vmode, gen_rtvec_v (nelt, round_data));
++  rtx round_data_rtx = gen_rtx_CONST_VECTOR (vimode, gen_rtvec_v (nelt, round_data));
+   emit_move_insn (round_reg, round_data_rtx);
+ 
++  if (vmode != vimode)
++    {
++      target = lowpart_subreg (vimode, target, vmode);
++      op0 = lowpart_subreg (vimode, op0, vmode);
++      op1 = lowpart_subreg (vimode, op1, vmode);
++    }
++
+   switch (vmode)
+     {
+     case E_V16QImode:
+@@ -8620,17 +8628,11 @@ loongarch_expand_vec_perm (rtx target, rtx op0, rtx op1, rtx sel)
+       emit_insn (gen_lsx_vshuf_b (target, op1, op0, sel));
+       break;
+     case E_V2DFmode:
+-      emit_insn (gen_andv2di3 (sel, sel, round_reg));
+-      emit_insn (gen_lsx_vshuf_d_f (target, sel, op1, op0));
+-      break;
+     case E_V2DImode:
+       emit_insn (gen_andv2di3 (sel, sel, round_reg));
+       emit_insn (gen_lsx_vshuf_d (target, sel, op1, op0));
+       break;
+     case E_V4SFmode:
+-      emit_insn (gen_andv4si3 (sel, sel, round_reg));
+-      emit_insn (gen_lsx_vshuf_w_f (target, sel, op1, op0));
+-      break;
+     case E_V4SImode:
+       emit_insn (gen_andv4si3 (sel, sel, round_reg));
+       emit_insn (gen_lsx_vshuf_w (target, sel, op1, op0));
+diff --git a/src/gcc/config/loongarch/lsx.md b/src/gcc/config/loongarch/lsx.md
+index 8ea41c85b..5e8d8d74b 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -837,7 +837,7 @@
+  [(match_operand:LSX 0 "register_operand")
+   (match_operand:LSX 1 "register_operand")
+   (match_operand:LSX 2 "register_operand")
+-  (match_operand:LSX 3 "register_operand")]
++  (match_operand:<VIMODE> 3 "register_operand")]
+   "ISA_HAS_LSX"
+ {
+   loongarch_expand_vec_perm (operands[0], operands[1],
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-shuf-fp.c b/src/gcc/testsuite/gcc.target/loongarch/vect-shuf-fp.c
+new file mode 100644
+index 000000000..7acc2113a
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-shuf-fp.c
+@@ -0,0 +1,16 @@
++/* { dg-do compile } */
++/* { dg-options "-mlasx -O3" } */
++/* { dg-final { scan-assembler "vshuf\.w" } } */
++
++#define V __attribute__ ((vector_size (16)))
++
++int a V;
++float b V;
++float c V;
++float d V;
++
++void
++test (void)
++{
++  d = __builtin_shuffle (b, c, a);
++}
+-- 
+2.45.2
+

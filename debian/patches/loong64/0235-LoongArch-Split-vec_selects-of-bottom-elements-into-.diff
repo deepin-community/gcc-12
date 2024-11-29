@@ -1,0 +1,84 @@
+From faed509a851445771a9a007f99d1d5a7add0db3c Mon Sep 17 00:00:00 2001
+From: Jiahao Xu <xujiahao@loongson.cn>
+Date: Tue, 16 Jan 2024 10:23:20 +0800
+Subject: [PATCH 235/301] LoongArch: Split vec_selects of bottom elements into
+ simple move
+
+For below pattern, can be treated as a simple move because floating point
+and vector share a common register on loongarch64.
+
+(set (reg/v:SF 32 $f0 [orig:93 res ] [93])
+      (vec_select:SF (reg:V8SF 32 $f0 [115])
+          (parallel [
+                  (const_int 0 [0])
+              ])))
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (vec_extract<mode>_0):
+	New define_insn_and_split patten.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vect-extract.c: New test.
+---
+ src/gcc/config/loongarch/lasx.md              | 15 ++++++++++++++
+ .../gcc.target/loongarch/vect-extract.c       | 20 +++++++++++++++++++
+ 2 files changed, 35 insertions(+)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/vect-extract.c
+
+diff --git a/src/gcc/config/loongarch/lasx.md b/src/gcc/config/loongarch/lasx.md
+index a5128c30c..946811e1a 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -746,6 +746,21 @@
+   DONE;
+ })
+ 
++(define_insn_and_split "vec_extract<mode>_0"
++  [(set (match_operand:<UNITMODE> 0 "register_operand" "=f")
++        (vec_select:<UNITMODE>
++          (match_operand:FLASX 1 "register_operand" "f")
++          (parallel [(const_int 0)])))]
++  "ISA_HAS_LSX"
++  "#"
++  "&& reload_completed"
++  [(set (match_dup 0) (match_dup 1))]
++{
++  operands[1] = gen_rtx_REG (<UNITMODE>mode, REGNO (operands[1]));
++}
++  [(set_attr "move_type" "fmove")
++   (set_attr "mode" "<UNITMODE>")])
++
+ (define_expand "vec_perm<mode>"
+  [(match_operand:LASX 0 "register_operand")
+   (match_operand:LASX 1 "register_operand")
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/vect-extract.c b/src/gcc/testsuite/gcc.target/loongarch/vect-extract.c
+new file mode 100644
+index 000000000..ce126e3a4
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-extract.c
+@@ -0,0 +1,20 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -ffast-math -mlasx -fno-vect-cost-model -fno-unroll-loops" } */
++/* { dg-final { scan-assembler-not "xvpickve.w" } } */
++/* { dg-final { scan-assembler-not "xvpickve.d" } } */
++
++float
++sum_float (float *a, int n) {
++  float res = 0.0;
++  for (int i = 0; i < n; i++)
++    res += a[i];
++  return res;
++}
++
++double
++sum_double (double *a, int n) {
++  double res = 0.0;
++  for (int i = 0; i < n; i++)
++    res += a[i];
++  return res;
++}
+-- 
+2.45.2
+

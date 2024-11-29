@@ -1,0 +1,70 @@
+From 4fbf0b6061ff9e8692cd0b727d43e518f138636c Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Fri, 28 Jun 2024 15:09:48 +0800
+Subject: [PATCH 285/301] LoongArch: Define loongarch_insn_cost and set the
+ cost of movcf2gr and movgr2cf.
+
+The following two FAIL items have been fixed:
+
+FAIL: gcc.target/loongarch/movcf2gr-via-fr.c scan-assembler movcf2fr\\t\\\\\$f[0-9]+,\\\\\$fcc
+FAIL: gcc.target/loongarch/movcf2gr-via-fr.c scan-assembler movfr2gr\\\\.s\\t\\\\\$r4
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_insn_cost):
+	New function.
+	(TARGET_INSN_COST): New macro.
+---
+ src/gcc/config/loongarch/loongarch.cc | 29 +++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index bb3769f74..686a31ca0 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -4369,6 +4369,33 @@ loongarch_address_cost (rtx addr, machine_mode mode,
+   return loongarch_address_insns (addr, mode, false);
+ }
+ 
++/* Implement TARGET_INSN_COST.  */
++
++static int
++loongarch_insn_cost (rtx_insn *insn, bool speed)
++{
++  rtx x = PATTERN (insn);
++  int cost = pattern_cost (x, speed);
++
++  /* On LA464, prevent movcf2fr and movfr2gr from merging into movcf2gr.  */
++  if (GET_CODE (x) == SET
++      && GET_MODE (XEXP (x, 0)) == FCCmode)
++    {
++      rtx dest, src;
++      dest = XEXP (x, 0);
++      src = XEXP (x, 1);
++
++      if (REG_P (dest) && REG_P (src))
++	{
++	  if (GP_REG_P (REGNO (dest)) && FCC_REG_P (REGNO (src)))
++	    cost = loongarch_cost->movcf2gr;
++	  else if (FCC_REG_P (REGNO (dest)) && GP_REG_P (REGNO (src)))
++	    cost = loongarch_cost->movgr2cf;
++	}
++    }
++  return cost;
++}
++
+ /* Return one word of double-word value OP, taking into account the fixed
+    endianness of certain registers.  HIGH_P is true to select the high part,
+    false to select the low part.  */
+@@ -11087,6 +11114,8 @@ loongarch_asm_code_end (void)
+ #define TARGET_RTX_COSTS loongarch_rtx_costs
+ #undef TARGET_ADDRESS_COST
+ #define TARGET_ADDRESS_COST loongarch_address_cost
++#undef TARGET_INSN_COST
++#define TARGET_INSN_COST loongarch_insn_cost
+ #undef TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST
+ #define TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST \
+   loongarch_builtin_vectorization_cost
+-- 
+2.45.2
+

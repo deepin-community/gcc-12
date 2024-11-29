@@ -1,0 +1,34 @@
+From 4c9ac3a54bde7efe18185823ff1e6969661003a6 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Mon, 30 Oct 2023 19:39:27 +0800
+Subject: [PATCH 142/301] LoongArch: Define HAVE_AS_TLS to 0 if it's undefined
+ [PR112299]
+
+Now loongarch.md uses HAVE_AS_TLS, we need this to fix the failure
+building a cross compiler if the cross assembler is not installed yet.
+
+gcc/ChangeLog:
+
+	PR target/112299
+	* config/loongarch/loongarch-opts.h (HAVE_AS_TLS): Define to 0
+	if not defined yet.
+---
+ src/gcc/config/loongarch/loongarch-opts.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/gcc/config/loongarch/loongarch-opts.h b/src/gcc/config/loongarch/loongarch-opts.h
+index f2b59abe6..c4975af00 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.h
++++ b/src/gcc/config/loongarch/loongarch-opts.h
+@@ -103,4 +103,8 @@ loongarch_update_gcc_opt_status (struct loongarch_target *target,
+ #define HAVE_AS_MRELAX_OPTION 0
+ #endif
+ 
++#ifndef HAVE_AS_TLS
++#define HAVE_AS_TLS 0
++#endif
++
+ #endif /* LOONGARCH_OPTS_H */
+-- 
+2.45.2
+

@@ -1,0 +1,123 @@
+From 8cb8cdcd3aa7ba1e5c5971cba0ce266b8316e357 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Mon, 11 Sep 2023 16:20:29 +0800
+Subject: [PATCH 114/301] LoongArch: Fix bug of '<optab>di3_fake'.
+
+	PR target/111334
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md: Fix bug of '<optab>di3_fake'.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/pr111334.c: New test.
+
+Signed-off-by: Peng Fan <fanpeng@loongson.cn>
+Signed-off-by: ticat_fp <fanpeng@loongson.cn>
+---
+ src/gcc/config/loongarch/loongarch.md         | 20 ++++++----
+ .../testsuite/gcc.target/loongarch/pr111334.c | 39 +++++++++++++++++++
+ 2 files changed, 52 insertions(+), 7 deletions(-)
+ create mode 100644 src/gcc/testsuite/gcc.target/loongarch/pr111334.c
+
+diff --git a/src/gcc/config/loongarch/loongarch.md b/src/gcc/config/loongarch/loongarch.md
+index 6d6ddbf1b..6dd0c092d 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -72,6 +72,9 @@
+   UNSPEC_LUI_H_HI12
+   UNSPEC_TLS_LOW
+ 
++  ;; Fake div.w[u] mod.w[u]
++  UNSPEC_FAKE_ANY_DIV
++
+   UNSPEC_SIBCALL_VALUE_MULTIPLE_INTERNAL_1
+   UNSPEC_CALL_VALUE_MULTIPLE_INTERNAL_1
+ ])
+@@ -901,7 +904,7 @@
+ 		     (match_operand:GPR 2 "register_operand")))]
+   ""
+ {
+- if (GET_MODE (operands[0]) == SImode)
++ if (GET_MODE (operands[0]) == SImode && TARGET_64BIT)
+   {
+     rtx reg1 = gen_reg_rtx (DImode);
+     rtx reg2 = gen_reg_rtx (DImode);
+@@ -921,9 +924,9 @@
+ })
+ 
+ (define_insn "*<optab><mode>3"
+-  [(set (match_operand:GPR 0 "register_operand" "=r,&r,&r")
+-	(any_div:GPR (match_operand:GPR 1 "register_operand" "r,r,0")
+-		     (match_operand:GPR 2 "register_operand" "r,r,r")))]
++  [(set (match_operand:X 0 "register_operand" "=r,&r,&r")
++	(any_div:X (match_operand:X 1 "register_operand" "r,r,0")
++		   (match_operand:X 2 "register_operand" "r,r,r")))]
+   ""
+ {
+   return loongarch_output_division ("<insn>.<d><u>\t%0,%1,%2", operands);
+@@ -939,9 +942,12 @@
+ (define_insn "<optab>di3_fake"
+   [(set (match_operand:DI 0 "register_operand" "=r,&r,&r")
+ 	(sign_extend:DI
+-	  (any_div:SI (match_operand:DI 1 "register_operand" "r,r,0")
+-		      (match_operand:DI 2 "register_operand" "r,r,r"))))]
+-  ""
++	  (unspec:SI
++	   [(subreg:SI
++	     (any_div:DI (match_operand:DI 1 "register_operand" "r,r,0")
++			 (match_operand:DI 2 "register_operand" "r,r,r")) 0)]
++	  UNSPEC_FAKE_ANY_DIV)))]
++  "TARGET_64BIT"
+ {
+   return loongarch_output_division ("<insn>.w<u>\t%0,%1,%2", operands);
+ }
+diff --git a/src/gcc/testsuite/gcc.target/loongarch/pr111334.c b/src/gcc/testsuite/gcc.target/loongarch/pr111334.c
+new file mode 100644
+index 000000000..47366afcb
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr111334.c
+@@ -0,0 +1,39 @@
++/* { dg-do compile } */
++/* { dg-options "-O2" } */
++
++unsigned
++util_next_power_of_two (unsigned x)
++{
++  return (1 << __builtin_clz (x - 1));
++}
++
++extern int create_vec_from_array (void);
++
++struct ac_shader_args {
++    struct {
++	unsigned char offset;
++	unsigned char size;
++    } args[384];
++};
++
++struct isel_context {
++    const struct ac_shader_args* args;
++    int arg_temps[384];
++};
++
++
++void
++add_startpgm (struct isel_context* ctx, unsigned short arg_count)
++{
++
++  for (unsigned i = 0, arg = 0; i < arg_count; i++)
++    {
++      unsigned size = ctx->args->args[i].size;
++      unsigned reg = ctx->args->args[i].offset;
++
++      if (reg % ( 4 < util_next_power_of_two (size)
++		 ? 4 : util_next_power_of_two (size)))
++	  ctx->arg_temps[i] = create_vec_from_array ();
++    }
++}
++
+-- 
+2.45.2
+

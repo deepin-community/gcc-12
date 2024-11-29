@@ -1,0 +1,58 @@
+From acbb40333ac33fd6217c8a7e5b31117d24b6c0c1 Mon Sep 17 00:00:00 2001
+From: Li Wei <liwei@loongson.cn>
+Date: Fri, 17 Nov 2023 10:38:02 +0800
+Subject: [PATCH 149/301] LoongArch: Implement C[LT]Z_DEFINED_VALUE_AT_ZERO
+
+The LoongArch has defined ctz and clz on the backend, but if we want GCC
+do CTZ transformation optimization in forwprop2 pass, GCC need to know
+the value of c[lt]z at zero, which may be beneficial for some test cases
+(like spec2017 deepsjeng_r).
+
+After implementing the macro, we test dynamic instruction count on
+deepsjeng_r:
+- before 1688423249186
+- after  1660311215745 (1.66% reduction)
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.h (CLZ_DEFINED_VALUE_AT_ZERO):
+	Implement.
+	(CTZ_DEFINED_VALUE_AT_ZERO): Same.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.dg/pr90838.c: add clz/ctz test support on LoongArch.
+---
+ src/gcc/config/loongarch/loongarch.h | 5 +++++
+ src/gcc/testsuite/gcc.dg/pr90838.c   | 5 +++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/src/gcc/config/loongarch/loongarch.h b/src/gcc/config/loongarch/loongarch.h
+index 6e8ac293a..19cf6fd33 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -1239,3 +1239,8 @@ struct GTY (()) machine_function
+ 
+ #define TARGET_EXPLICIT_RELOCS \
+   (la_opt_explicit_relocs == EXPLICIT_RELOCS_ALWAYS)
++
++#define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
++  ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE), 2)
++#define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
++  ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE), 2)
+diff --git a/src/gcc/testsuite/gcc.dg/pr90838.c b/src/gcc/testsuite/gcc.dg/pr90838.c
+index 7502b8463..7aa912525 100644
+--- a/src/gcc/testsuite/gcc.dg/pr90838.c
++++ b/src/gcc/testsuite/gcc.dg/pr90838.c
+@@ -82,3 +82,8 @@ int ctz4 (unsigned long x)
+ /* { dg-final { scan-assembler-times "ctz\t" 3 { target { rv32 } } } } */
+ /* { dg-final { scan-assembler-times "andi\t" 1 { target { rv32 } } } } */
+ /* { dg-final { scan-assembler-times "mul\t" 1 { target { rv32 } } } } */
++
++/* { dg-final { scan-tree-dump-times {= \.CTZ} 4 "forwprop2" { target { loongarch64*-*-* } } } } */
++/* { dg-final { scan-assembler-times "ctz.d\t" 1 { target { loongarch64*-*-* } } } } */
++/* { dg-final { scan-assembler-times "ctz.w\t" 3 { target { loongarch64*-*-* } } } } */
++/* { dg-final { scan-assembler-times "andi\t" 4 { target { loongarch64*-*-* } } } } */
+-- 
+2.45.2
+

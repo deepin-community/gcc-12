@@ -1,0 +1,117 @@
+From eebed79b34af380a613f4d24288e5a2bc715dc9d Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Fri, 15 Sep 2023 10:22:49 +0800
+Subject: [PATCH 124/301] LoongArch: Check whether binutils supports the relax
+ function. If supported, explicit relocs are turned off by default.
+
+gcc/ChangeLog:
+
+	* config.in: Regenerate.
+	* config/loongarch/genopts/loongarch.opt.in: Add compilation option
+	mrelax. And set the initial value of explicit-relocs according to the
+	detection status.
+	* config/loongarch/gnu-user.h: When compiling with -mno-relax, pass the
+	--no-relax option to the linker.
+	* config/loongarch/loongarch-driver.h (ASM_SPEC): When compiling with
+	-mno-relax, pass the -mno-relax option to the assembler.
+	* config/loongarch/loongarch-opts.h (HAVE_AS_MRELAX_OPTION): Define macro.
+	* config/loongarch/loongarch.opt: Regenerate.
+	* configure: Regenerate.
+	* configure.ac: Add detection of support for binutils relax function.
+---
+ src/gcc/config.in                                 | 6 ++++++
+ src/gcc/config/loongarch/genopts/loongarch.opt.in | 2 +-
+ src/gcc/config/loongarch/gnu-user.h               | 3 ++-
+ src/gcc/config/loongarch/loongarch-driver.h       | 2 +-
+ src/gcc/config/loongarch/loongarch.opt            | 2 +-
+ src/gcc/configure.ac                              | 4 ++++
+ 6 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/src/gcc/config.in b/src/gcc/config.in
+index 444ccf59b..ecb51da71 100644
+--- a/src/gcc/config.in
++++ b/src/gcc/config.in
+@@ -648,6 +648,12 @@
+ #endif
+ 
+ 
++/* Define if your assembler supports -mrelax option. */
++#ifndef USED_FOR_TARGET
++#undef HAVE_AS_MRELAX_OPTION
++#endif
++
++
+ /* Define if your assembler supports .mspabi_attribute. */
+ #ifndef USED_FOR_TARGET
+ #undef HAVE_AS_MSPABI_ATTRIBUTE
+diff --git a/src/gcc/config/loongarch/genopts/loongarch.opt.in b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+index eca5a39e1..5e0945f22 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -181,7 +181,7 @@ Target Joined RejectNegative UInteger Var(loongarch_max_inline_memcpy_size) Init
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
+ mexplicit-relocs
+-Target Var(TARGET_EXPLICIT_RELOCS) Init(HAVE_AS_EXPLICIT_RELOCS)
++Target Var(TARGET_EXPLICIT_RELOCS) Init(HAVE_AS_EXPLICIT_RELOCS & !HAVE_AS_MRELAX_OPTION)
+ Use %reloc() assembly operators
+ 
+ ; The code model option names for -mcmodel.
+diff --git a/src/gcc/config/loongarch/gnu-user.h b/src/gcc/config/loongarch/gnu-user.h
+index 5aea467f5..5b6a010d5 100644
+--- a/src/gcc/config/loongarch/gnu-user.h
++++ b/src/gcc/config/loongarch/gnu-user.h
+@@ -48,7 +48,8 @@ along with GCC; see the file COPYING3.  If not see
+   "%{!shared: %{static} " \
+   "%{!static: %{!static-pie: %{rdynamic:-export-dynamic} " \
+   "-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}} " \
+-  "%{static-pie: -static -pie --no-dynamic-linker -z text}}"
++  "%{static-pie: -static -pie --no-dynamic-linker -z text}}" \
++  "%{mno-relax: --no-relax}"
+ 
+ /* Similar to standard Linux, but adding -ffast-math support.  */
+ #undef GNU_USER_TARGET_MATHFILE_SPEC
+diff --git a/src/gcc/config/loongarch/loongarch-driver.h b/src/gcc/config/loongarch/loongarch-driver.h
+index e7d083677..59fa3263d 100644
+--- a/src/gcc/config/loongarch/loongarch-driver.h
++++ b/src/gcc/config/loongarch/loongarch-driver.h
+@@ -53,7 +53,7 @@ along with GCC; see the file COPYING3.  If not see
+ 
+ #undef ASM_SPEC
+ #define ASM_SPEC \
+-  "%{mabi=*} %(subtarget_asm_spec)"
++  "%{mabi=*} %{mno-relax} %(subtarget_asm_spec)"
+ 
+ 
+ extern const char*
+diff --git a/src/gcc/config/loongarch/loongarch.opt b/src/gcc/config/loongarch/loongarch.opt
+index 7bd9c3efb..26d381a97 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -188,7 +188,7 @@ Target Joined RejectNegative UInteger Var(loongarch_max_inline_memcpy_size) Init
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
+ mexplicit-relocs
+-Target Var(TARGET_EXPLICIT_RELOCS) Init(HAVE_AS_EXPLICIT_RELOCS)
++Target Var(TARGET_EXPLICIT_RELOCS) Init(HAVE_AS_EXPLICIT_RELOCS & !HAVE_AS_MRELAX_OPTION)
+ Use %reloc() assembly operators
+ 
+ ; The code model option names for -mcmodel.
+diff --git a/src/gcc/configure.ac b/src/gcc/configure.ac
+index 68cfdf397..5cbd5cb41 100644
+--- a/src/gcc/configure.ac
++++ b/src/gcc/configure.ac
+@@ -5345,6 +5345,10 @@ configured with --enable-newlib-nano-formatted-io.])
+        .cfi_endproc],,
+       [AC_DEFINE(HAVE_AS_EH_FRAME_PCREL_ENCODING_SUPPORT, 1,
+    [Define if your assembler supports eh_frame pcrel encoding.])])
++    gcc_GAS_CHECK_FEATURE([-mrelax option], gcc_cv_as_loongarch_relax,
++      [-mrelax], [.text],,
++      [AC_DEFINE(HAVE_AS_MRELAX_OPTION, 1,
++   [Define if your assembler supports -mrelax option.])])
+ x:
+ 	.word 2
+ 	.text
+-- 
+2.45.2
+

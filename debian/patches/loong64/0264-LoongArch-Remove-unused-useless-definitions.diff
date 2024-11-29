@@ -1,0 +1,123 @@
+From 33776dc23e6e675d576b2e96fb446adbca7eb543 Mon Sep 17 00:00:00 2001
+From: Chenghui Pan <panchenghui@loongson.cn>
+Date: Fri, 15 Mar 2024 09:30:25 +0800
+Subject: [PATCH 264/301] LoongArch: Remove unused/useless definitions.
+
+This patch removes some unnecessary definitions of target hook functions
+according to the documentation of GCC.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-protos.h
+	(loongarch_cfun_has_cprestore_slot_p): Delete.
+	(loongarch_adjust_insn_length): Delete.
+	(current_section_name): Delete.
+	(loongarch_split_symbol_type): Delete.
+	* config/loongarch/loongarch.cc
+	(loongarch_case_values_threshold): Delete.
+	(loongarch_spill_class): Delete.
+	(TARGET_OPTAB_SUPPORTED_P): Delete.
+	(TARGET_CASE_VALUES_THRESHOLD): Delete.
+	(TARGET_SPILL_CLASS): Delete.
+---
+ src/gcc/config/loongarch/loongarch-protos.h |  5 ----
+ src/gcc/config/loongarch/loongarch.cc       | 26 ---------------------
+ 2 files changed, 31 deletions(-)
+
+diff --git a/src/gcc/config/loongarch/loongarch-protos.h b/src/gcc/config/loongarch/loongarch-protos.h
+index 87b94e8b0..3dac20279 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -93,7 +93,6 @@ extern void loongarch_split_lsx_copy_d (rtx, rtx, rtx, rtx (*)(rtx, rtx, rtx));
+ extern void loongarch_split_lsx_insert_d (rtx, rtx, rtx, rtx);
+ extern void loongarch_split_lsx_fill_d (rtx, rtx);
+ extern const char *loongarch_output_move (rtx, rtx);
+-extern bool loongarch_cfun_has_cprestore_slot_p (void);
+ #ifdef RTX_CODE
+ extern void loongarch_expand_scc (rtx *);
+ extern bool loongarch_expand_vec_cmp (rtx *);
+@@ -135,7 +134,6 @@ extern int loongarch_class_max_nregs (enum reg_class, machine_mode);
+ extern machine_mode loongarch_hard_regno_caller_save_mode (unsigned int,
+ 							   unsigned int,
+ 							   machine_mode);
+-extern int loongarch_adjust_insn_length (rtx_insn *, int);
+ extern const char *loongarch_output_conditional_branch (rtx_insn *, rtx *,
+ 							const char *,
+ 							const char *);
+@@ -157,7 +155,6 @@ extern bool loongarch_global_symbol_noweak_p (const_rtx);
+ extern bool loongarch_weak_symbol_p (const_rtx);
+ extern bool loongarch_symbol_binds_local_p (const_rtx);
+ 
+-extern const char *current_section_name (void);
+ extern unsigned int current_section_flags (void);
+ extern bool loongarch_use_ins_ext_p (rtx, HOST_WIDE_INT, HOST_WIDE_INT);
+ extern bool loongarch_check_zero_div_p (void);
+@@ -198,8 +195,6 @@ extern bool loongarch_epilogue_uses (unsigned int);
+ extern bool loongarch_load_store_bonding_p (rtx *, machine_mode, bool);
+ extern bool loongarch_split_symbol_type (enum loongarch_symbol_type);
+ 
+-typedef rtx (*mulsidi3_gen_fn) (rtx, rtx, rtx);
+-
+ extern void loongarch_register_frame_header_opt (void);
+ extern void loongarch_expand_vec_cond_expr (machine_mode, machine_mode, rtx *);
+ extern void loongarch_expand_vec_cond_mask_expr (machine_mode, machine_mode,
+diff --git a/src/gcc/config/loongarch/loongarch.cc b/src/gcc/config/loongarch/loongarch.cc
+index 0c6907c84..d225ee791 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -10810,23 +10810,6 @@ loongarch_expand_vec_cmp (rtx operands[])
+   return true;
+ }
+ 
+-/* Implement TARGET_CASE_VALUES_THRESHOLD.  */
+-
+-unsigned int
+-loongarch_case_values_threshold (void)
+-{
+-  return default_case_values_threshold ();
+-}
+-
+-/* Implement TARGET_SPILL_CLASS.  */
+-
+-static reg_class_t
+-loongarch_spill_class (reg_class_t rclass ATTRIBUTE_UNUSED,
+-		       machine_mode mode ATTRIBUTE_UNUSED)
+-{
+-  return NO_REGS;
+-}
+-
+ /* Implement TARGET_PROMOTE_FUNCTION_MODE.  */
+ 
+ /* This function is equivalent to default_promote_function_mode_always_promote
+@@ -11281,9 +11264,6 @@ loongarch_asm_code_end (void)
+ #undef TARGET_FUNCTION_ARG_BOUNDARY
+ #define TARGET_FUNCTION_ARG_BOUNDARY loongarch_function_arg_boundary
+ 
+-#undef TARGET_OPTAB_SUPPORTED_P
+-#define TARGET_OPTAB_SUPPORTED_P loongarch_optab_supported_p
+-
+ #undef TARGET_VECTOR_MODE_SUPPORTED_P
+ #define TARGET_VECTOR_MODE_SUPPORTED_P loongarch_vector_mode_supported_p
+ 
+@@ -11353,18 +11333,12 @@ loongarch_asm_code_end (void)
+ #undef TARGET_SCHED_REASSOCIATION_WIDTH
+ #define TARGET_SCHED_REASSOCIATION_WIDTH loongarch_sched_reassociation_width
+ 
+-#undef TARGET_CASE_VALUES_THRESHOLD
+-#define TARGET_CASE_VALUES_THRESHOLD loongarch_case_values_threshold
+-
+ #undef TARGET_ATOMIC_ASSIGN_EXPAND_FENV
+ #define TARGET_ATOMIC_ASSIGN_EXPAND_FENV loongarch_atomic_assign_expand_fenv
+ 
+ #undef TARGET_CALL_FUSAGE_CONTAINS_NON_CALLEE_CLOBBERS
+ #define TARGET_CALL_FUSAGE_CONTAINS_NON_CALLEE_CLOBBERS true
+ 
+-#undef TARGET_SPILL_CLASS
+-#define TARGET_SPILL_CLASS loongarch_spill_class
+-
+ #undef TARGET_HARD_REGNO_NREGS
+ #define TARGET_HARD_REGNO_NREGS loongarch_hard_regno_nregs
+ #undef TARGET_HARD_REGNO_MODE_OK
+-- 
+2.45.2
+
