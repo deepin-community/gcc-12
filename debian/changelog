@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin9) unstable; urgency=medium
+
+  * move libgcc_s.so.1 to /usr for DEP17
+
+ -- Tianyu Chen <sweetyfish@deepin.org>  Fri, 06 Dec 2024 17:52:43 +0800
+
 gcc-12 (12.3.0-17deepin8) unstable; urgency=medium
 
   * Fix loong64 cross support markers - I erroneously used DEB_TARGET_ARCH to

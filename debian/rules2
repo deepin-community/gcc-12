@@ -965,17 +965,20 @@ else
 endif
 
 # PFL is the installation prefix with DEB_TARGET_GNU_TYPE attached for cross builds
-ifeq ($(DEB_CROSS),yes)
-  PFL		= $(PF)/$(DEB_TARGET_GNU_TYPE)
+PFL		= $(PF)
+# RPF is the base prefix or installation prefix with DEB_TARGET_GNU_TYPE attached for cross builds
+# DEP17: move to /usr in trixie and noble
+ifneq (,$(filter $(distrelease),jessie stretch buster bullseye bookworm precise trusty xenial bionic focal groovy hirsute impish jammy kinetic lunar mantic))
+  RPF           =
 else
-  PFL		= $(PF)
+  RPF           = $(PF)
 endif
 
-# RPF is the base prefix or installation prefix with DEB_TARGET_GNU_TYPE attached for cross builds
 ifeq ($(DEB_CROSS),yes)
+ifneq ($(DEB_STAGE),rtlibs)
+  PFL		= $(PF)/$(DEB_TARGET_GNU_TYPE)
   RPF		= $(PF)/$(DEB_TARGET_GNU_TYPE)
-else
-  RPF		=
+endif
 endif
 
 ifeq ($(with_multiarch_lib),yes)
@@ -1046,8 +1049,6 @@ else
 endif
 
 ifeq ($(DEB_STAGE)-$(DEB_CROSS),rtlibs-yes)
-  PFL		= $(PF)
-  RPF		=
   libdir	= lib/$(DEB_TARGET_MULTIARCH)
   usr_lib	= $(PF)/lib/$(DEB_TARGET_MULTIARCH)
 endif
