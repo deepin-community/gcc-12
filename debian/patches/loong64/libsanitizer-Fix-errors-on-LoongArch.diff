@@ -1,0 +1,327 @@
+diff --git a/libsanitizer/sanitizer_common/sanitizer_common.h b/libsanitizer/sanitizer_common/sanitizer_common.h
+index 5f68e4994..8d7d08360 100644
+--- a/src/libsanitizer/sanitizer_common/sanitizer_common.h
++++ b/src/libsanitizer/sanitizer_common/sanitizer_common.h
+@@ -766,7 +766,7 @@ inline const char *ModuleArchToString(ModuleArch arch) {
+       return "armv7k";
+     case kModuleArchARM64:
+       return "arm64";
+-    case kModuleArchLoongArch64:                                                                                                                                                              
++    case kModuleArchLoongArch64:
+       return "loongarch64";
+     case kModuleArchRISCV64:
+       return "riscv64";
+diff --git a/libsanitizer/sanitizer_common/sanitizer_linux.cpp b/libsanitizer/sanitizer_common/sanitizer_linux.cpp
+index a3c90bca9..1e9eece27 100644
+--- a/src/libsanitizer/sanitizer_common/sanitizer_linux.cpp
++++ b/src/libsanitizer/sanitizer_common/sanitizer_linux.cpp
+@@ -30,7 +30,7 @@
+ #include <asm/param.h>
+ #endif
+ 
+-#if SANITIZER_LINUX && defined(__loongarch__)                                                                                                                                                 
++#if SANITIZER_LINUX && defined(__loongarch__)
+ #  include <sys/sysmacros.h>           
+ #endif
+ 
+@@ -184,7 +184,7 @@ ScopedBlockSignals::~ScopedBlockSignals() { SetSigProcMask(&saved_, nullptr); }
+ #    include "sanitizer_syscall_linux_arm.inc"
+ #  elif SANITIZER_LINUX && defined(__hexagon__)
+ #    include "sanitizer_syscall_linux_hexagon.inc"
+-#  elif SANITIZER_LINUX && SANITIZER_LOONGARCH64                                                                                                                                              
++#  elif SANITIZER_LINUX && SANITIZER_LOONGARCH64
+ #    include "sanitizer_syscall_linux_loongarch64.inc"
+ #  else
+ #    include "sanitizer_syscall_generic.inc"
+@@ -364,7 +364,7 @@ uptr internal_stat(const char *path, void *buf) {
+ #if SANITIZER_FREEBSD
+   return internal_syscall(SYSCALL(fstatat), AT_FDCWD, (uptr)path, (uptr)buf, 0);
+ #elif SANITIZER_USES_CANONICAL_LINUX_SYSCALLS
+-#  if SANITIZER_LINUX && defined(__loongarch__)                                                                                                                                                                
++#  if SANITIZER_LINUX && defined(__loongarch__)
+   struct statx bufx;
+   int res = internal_syscall(SYSCALL(statx), AT_FDCWD, (uptr)path,
+                              AT_NO_AUTOMOUNT, STATX_BASIC_STATS, (uptr)&bufx);
+@@ -397,7 +397,7 @@ uptr internal_lstat(const char *path, void *buf) {
+   return internal_syscall(SYSCALL(fstatat), AT_FDCWD, (uptr)path, (uptr)buf,
+                           AT_SYMLINK_NOFOLLOW);
+ #elif SANITIZER_USES_CANONICAL_LINUX_SYSCALLS
+-#  if SANITIZER_LINUX && defined(__loongarch__)                                                                                                                                                                
++#  if SANITIZER_LINUX && defined(__loongarch__)
+   struct statx bufx;
+   int res = internal_syscall(SYSCALL(statx), AT_FDCWD, (uptr)path,
+                              AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
+@@ -434,7 +434,7 @@ uptr internal_fstat(fd_t fd, void *buf) {
+   int res = internal_syscall(SYSCALL(fstat), fd, &kbuf);
+   kernel_stat_to_stat(&kbuf, (struct stat *)buf);
+   return res;
+-# elif SANITIZER_LINUX && defined(__loongarch__)                                                                                                                                         
++# elif SANITIZER_LINUX && defined(__loongarch__)
+   struct statx bufx;                       
+   int res = internal_syscall(SYSCALL(statx), fd, "", AT_EMPTY_PATH,
+                              STATX_BASIC_STATS, (uptr)&bufx);
+@@ -1317,9 +1317,9 @@ uptr internal_clone(int (*fn)(void *), void *child_stack, int flags, void *arg,
+                     int *parent_tidptr, void *newtls, int *child_tidptr) {
+   if (!fn || !child_stack)
+     return -EINVAL;
+-                  
++
+   CHECK_EQ(0, (uptr)child_stack % 16);
+-                  
++
+   register int res __asm__("$a0");
+   register int __flags __asm__("$a0") = flags;
+   register void *__stack __asm__("$a1") = child_stack;
+@@ -1329,24 +1329,24 @@ uptr internal_clone(int (*fn)(void *), void *child_stack, int flags, void *arg,
+   register int (*__fn)(void *) __asm__("$a5") = fn;
+   register void *__arg __asm__("$a6") = arg;
+   register int nr_clone __asm__("$a7") = __NR_clone;
+-                  
++
+   __asm__ __volatile__(
+       "syscall 0\n"
+-                  
++
+       // if ($a0 != 0)
+       //   return $a0;
+       "bnez $a0, 1f\n"
+-                  
++
+       // In the child, now. Call "fn(arg)".
+       "move $a0, $a6\n"
+       "jirl $ra, $a5, 0\n"
+-                  
++
+       // Call _exit($a0).
+       "addi.d $a7, $zero, %9\n"
+       "syscall 0\n"                                                                                                                                                                           
+-                  
++
+       "1:\n"      
+-                  
++
+       : "=r"(res) 
+       : "0"(__flags), "r"(__stack), "r"(__ptid), "r"(__ctid), "r"(__tls),
+         "r"(__fn), "r"(__arg), "r"(nr_clone), "i"(__NR_exit)
+@@ -1967,7 +1967,7 @@ SignalContext::WriteFlag SignalContext::GetWriteFlag() const {
+   u64 esr;
+   if (!Aarch64GetESR(ucontext, &esr)) return UNKNOWN;
+   return esr & ESR_ELx_WNR ? WRITE : READ;
+-#elif defined(__loongarch__)                                                                                                                                                                  
++#elif defined(__loongarch__)
+   u32 flags = ucontext->uc_mcontext.__flags;
+   if (flags & SC_ADDRERR_RD)
+     return SignalContext::READ;
+@@ -2228,7 +2228,7 @@ static void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp) {
+   *pc = ucontext->uc_mcontext.pc;
+   *bp = ucontext->uc_mcontext.r30;
+   *sp = ucontext->uc_mcontext.r29;
+-#  elif defined(__loongarch__)                                                                                                                                                                
++#  elif defined(__loongarch__)
+   ucontext_t *ucontext = (ucontext_t *)context;
+   *pc = ucontext->uc_mcontext.__pc;
+   *bp = ucontext->uc_mcontext.__gregs[22];
+diff --git a/libsanitizer/sanitizer_common/sanitizer_linux_libcdep.cpp b/libsanitizer/sanitizer_common/sanitizer_linux_libcdep.cpp
+index 0fc1d2d44..474272ec7 100644
+--- a/src/libsanitizer/sanitizer_common/sanitizer_linux_libcdep.cpp
++++ b/src/libsanitizer/sanitizer_common/sanitizer_linux_libcdep.cpp
+@@ -263,7 +263,7 @@ static uptr ThreadDescriptorSizeFallback() {
+ #elif defined(__mips__)
+   // TODO(sagarthakur): add more values as per different glibc versions.
+   val = FIRST_32_SECOND_64(1152, 1776);
+-#elif SANITIZER_LOONGARCH64                                                                                                                                                                   
++#elif SANITIZER_LOONGARCH64
+   val = 1856; // from glibc 2.36
+ #elif SANITIZER_RISCV64
+   int major;
+diff --git a/libsanitizer/sanitizer_common/sanitizer_platform.h b/libsanitizer/sanitizer_common/sanitizer_platform.h
+index ed2d47ddf..ef9d71278 100644
+--- a/src/libsanitizer/sanitizer_common/sanitizer_platform.h
++++ b/src/libsanitizer/sanitizer_common/sanitizer_platform.h
+@@ -225,9 +225,9 @@
+ #define SANITIZER_RISCV64 0
+ #endif
+ 
+-#if defined(__loongarch_lp64)                                                                                                                                                                 
++#if defined(__loongarch_lp64)
+ #  define SANITIZER_LOONGARCH64 1
+-#else              
++#else
+ #  define SANITIZER_LOONGARCH64 0
+ #endif
+ 
+diff --git a/libsanitizer/sanitizer_common/sanitizer_platform_interceptors.h b/libsanitizer/sanitizer_common/sanitizer_platform_interceptors.h
+index 14610f2df..426745fb3 100644
+--- a/src/libsanitizer/sanitizer_common/sanitizer_platform_interceptors.h
++++ b/src/libsanitizer/sanitizer_common/sanitizer_platform_interceptors.h
+@@ -271,7 +271,7 @@
+ #if SI_LINUX_NOT_ANDROID &&                                                \
+     (defined(__i386) || defined(__x86_64) || defined(__mips64) ||          \
+      defined(__powerpc64__) || defined(__aarch64__) || defined(__arm__) || \
+-     defined(__s390__) || SANITIZER_RISCV64)
++     defined(__s390__) || SANITIZER_RISCV64 || defined(__loongarch__))
+ #define SANITIZER_INTERCEPT_PTRACE 1
+ #else
+ #define SANITIZER_INTERCEPT_PTRACE 0
+diff --git a/libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.cpp b/libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.cpp
+index f5d775839..89d935a1d 100644
+--- a/src/libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.cpp
++++ b/src/libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.cpp
+@@ -248,7 +248,7 @@ namespace __sanitizer {
+         defined(__powerpc__) || defined(__s390__) || defined(__sparc__) || \
+         defined(__hexagon__)
+ #      define SIZEOF_STRUCT_USTAT 20
+-#    elif defined(__loongarch__)                                                                                                                                                              
++#    elif defined(__loongarch__)
+   // Not used. The minimum Glibc version available for LoongArch is 2.36
+   // so ustat() wrapper is already gone.
+ #      define SIZEOF_STRUCT_USTAT 0
+diff --git a/libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.h b/libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.h
+index f50827d9a..2279238e0 100644
+--- a/src/libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.h
++++ b/src/libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.h
+@@ -99,7 +99,7 @@ const unsigned struct_kernel_stat64_sz = 144;
+ const unsigned struct___old_kernel_stat_sz = 0;
+ const unsigned struct_kernel_stat_sz = 64;
+ const unsigned struct_kernel_stat64_sz = 104;
+-#    elif defined(__loongarch__)                                                                                                                                                              
++#    elif defined(__loongarch__)
+ const unsigned struct_kernel_stat_sz = 128; 
+ const unsigned struct_kernel_stat64_sz = 0;
+ #elif SANITIZER_RISCV64
+diff --git a/libsanitizer/sanitizer_common/sanitizer_symbolizer_libcdep.cpp b/libsanitizer/sanitizer_common/sanitizer_symbolizer_libcdep.cpp
+index 1b6c0d5c0..bc24430d8 100644
+--- a/src/libsanitizer/sanitizer_common/sanitizer_symbolizer_libcdep.cpp
++++ b/src/libsanitizer/sanitizer_common/sanitizer_symbolizer_libcdep.cpp
+@@ -261,7 +261,7 @@ class LLVMSymbolizerProcess final : public SymbolizerProcess {
+     const char* const kSymbolizerArch = "--default-arch=i386";
+ #elif SANITIZER_RISCV64
+     const char *const kSymbolizerArch = "--default-arch=riscv64";
+-#elif SANITIZER_LOONGARCH64                                                                                                                                                                   
++#elif SANITIZER_LOONGARCH64
+     const char *const kSymbolizerArch = "--default-arch=loongarch64";
+ #elif defined(__aarch64__)
+     const char* const kSymbolizerArch = "--default-arch=arm64";
+diff --git a/libsanitizer/sanitizer_common_interceptors_vfork_loongarch64.inc.S b/libsanitizer/sanitizer_common_interceptors_vfork_loongarch64.inc.S
+deleted file mode 100644
+index dae72b5ac..000000000
+--- a/src/libsanitizer/sanitizer_common_interceptors_vfork_loongarch64.inc.S
++++ /dev/null
+@@ -1,57 +0,0 @@
+-#if defined(__loongarch64) && defined(__linux__)
+-
+-#include "sanitizer_common/sanitizer_asm.h"
+-
+-ASM_HIDDEN(COMMON_INTERCEPTOR_SPILL_AREA)
+-ASM_HIDDEN(_ZN14__interception10real_vforkE)
+-
+-.text
+-.globl ASM_WRAPPER_NAME(vfork)
+-ASM_TYPE_FUNCTION(ASM_WRAPPER_NAME(vfork))
+-ASM_WRAPPER_NAME(vfork):
+-        // Save ra in the off-stack spill area.
+-        // allocate space on stack
+-        addi.d    $sp, $sp, -16
+-        // store $ra value
+-        st.d      $ra, $sp, 8
+-        bl        COMMON_INTERCEPTOR_SPILL_AREA
+-        // restore previous values from stack
+-        ld.d      $ra, $sp, 8
+-        // adjust stack
+-        addi.d    $sp, $sp, 16
+-        // store $ra by $a0
+-        st.d      $ra, $a0, 0
+-
+-        // Call real vfork. This may return twice. User code that runs between the first and the second return
+-        // may clobber the stack frame of the interceptor; that's why it does not have a frame.
+-        la.local  $a0, _ZN14__interception10real_vforkE
+-        ld.d      $a0, $a0, 0
+-        jirl      $ra, $a0, 0
+-
+-        // adjust stack
+-        addi.d    $sp, $sp, -16
+-        // store $a0 by adjusted stack
+-        st.d      $a0, $sp, 8
+-        // jump to exit label if $a0 is 0
+-        beqz      $a0, .L_exit
+-
+-        // $a0 != 0 => parent process. Clear stack shadow.
+-        // put old $sp to $a0
+-        addi.d    $a0, $sp, 16
+-        bl        %plt(COMMON_INTERCEPTOR_HANDLE_VFORK)
+-
+-.L_exit:
+-        // Restore $ra
+-        bl        COMMON_INTERCEPTOR_SPILL_AREA
+-        ld.d      $ra, $a0, 0
+-        // load value by stack
+-        ld.d      $a0, $sp, 8
+-        // adjust stack
+-        addi.d    $sp, $sp, 16
+-        jr        $ra
+-ASM_SIZE(vfork)
+-
+-.weak vfork
+-.set vfork, ASM_WRAPPER_NAME(vfork)
+-
+-#endif
+diff --git a/libsanitizer/tsan/tsan_platform.h b/libsanitizer/tsan/tsan_platform.h
+index 0ec562dac..6ed65b81f 100644
+--- a/src/libsanitizer/tsan/tsan_platform.h
++++ b/src/libsanitizer/tsan/tsan_platform.h
+@@ -98,42 +98,25 @@ struct Mapping48AddressSpace {
+ 7fff 0000 0000 - 7fff 8000 0000: -
+ 7fff 8000 0000 - 8000 0000 0000: modules and main thread stack
+ */
+-// struct MappingLoongArch64_47 {
+-//   static const uptr kMetaShadowBeg = 0x300000000000ull;
+-//   static const uptr kMetaShadowEnd = 0x340000000000ull;
+-//   static const uptr kShadowBeg     = 0x010000000000ull;
+-//   static const uptr kShadowEnd     = 0x100000000000ull;
+-//   static const uptr kHeapMemBeg    = 0x7ffe00000000ull;
+-//   static const uptr kHeapMemEnd    = 0x7fff00000000ull;
+-//   static const uptr kLoAppMemBeg   = 0x000000004000ull;
+-//   static const uptr kLoAppMemEnd   = 0x008000000000ull;
+-//   static const uptr kMidAppMemBeg  = 0x555500000000ull;
+-//   static const uptr kMidAppMemEnd  = 0x555600000000ull;
+-//   static const uptr kHiAppMemBeg   = 0x7fff80000000ull;
+-//   static const uptr kHiAppMemEnd   = 0x800000000000ull;
+-//   static const uptr kShadowMsk     = 0x780000000000ull;
+-//   static const uptr kShadowXor     = 0x040000000000ull;
+-//   static const uptr kShadowAdd     = 0x000000000000ull;
+-//   static const uptr kVdsoBeg       = 0x7fffffffc000ull;
+-// };
+ struct MappingLoongArch64_47 {
+-  static const uptr kMetaShadowBeg = 0x300000000000ull;
+-  static const uptr kMetaShadowEnd = 0x340000000000ull;
+-  static const uptr kShadowBeg     = 0x010000000000ull;
+-  static const uptr kShadowEnd     = 0x100000000000ull;
+-  static const uptr kHeapMemBeg    = 0x7ffe00000000ull;
+-  static const uptr kHeapMemEnd    = 0x7fff00000000ull;
+   static const uptr kLoAppMemBeg   = 0x000000004000ull;
+   static const uptr kLoAppMemEnd   = 0x008000000000ull;
++  static const uptr kShadowBeg     = 0x010000000000ull;
++  static const uptr kShadowEnd     = 0x200000000000ull;
++  static const uptr kMetaShadowBeg = 0x300000000000ull;
++  static const uptr kMetaShadowEnd = 0x340000000000ull;
+   static const uptr kMidAppMemBeg  = 0x555500000000ull;
+   static const uptr kMidAppMemEnd  = 0x555600000000ull;
+-  static const uptr kHiAppMemBeg   = 0x7fff80000000ull;
+-  static const uptr kHiAppMemEnd   = 0x800000000000ull;
+   static const uptr kTraceMemBeg   = 0x600000000000ull;
+   static const uptr kTraceMemEnd   = 0x620000000000ull;
+-  static const uptr kShadowMsk     = 0x780000000000ull;
+-  static const uptr kShadowXor     = 0x040000000000ull;
+-  static const uptr kShadowAdd     = 0x000000000000ull;
++  static const uptr kHeapMemBeg    = 0x7ffe00000000ull;
++  static const uptr kHeapMemEnd    = 0x7fff00000000ull;
++  static const uptr kHiAppMemBeg   = 0x7fff80000000ull;
++  static const uptr kHiAppMemEnd   = 0x800000000000ull;
++
++  static const uptr kShadowMsk 	   = 0x780000000000ull;
++  static const uptr kShadowXor 	   = 0x040000000000ull;
++  static const uptr kShadowAdd 	   = 0x000000000000ull;
+   static const uptr kVdsoBeg       = 0x7fffffffc000ull;
+ };
+ 
+
