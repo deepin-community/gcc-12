@@ -572,6 +572,7 @@ debian_patches += \
 
 # RISCV backport.
 debian_patches += riscv64-inline-subword-atomic
+debian_patches += riscv64-atomic-fix
 
 series_stamp = $(stampdir)/02-series-stamp
 series: $(series_stamp)

@@ -1,3 +1,20 @@
+gcc-12 (12.3.0-17deepin12) unstable; urgency=medium
+
+  * Backports:
+    - [gcc r14-398] RISC-V: Eliminate SYNC memory models
+    - [gcc r14-399] RISC-V: Enforce Libatomic LR/SC SEQ_CST
+    - [gcc r14-400] RISC-V: Enforce subword atomic LR/SC SEQ_CST
+    - [gcc r14-401] RISC-V: Enforce atomic compare_exchange SEQ_CST
+    - [gcc r14-402] RISC-V: Add AMO release bits
+    - [gcc r14-403] RISC-V: Strengthen atomic stores
+    - [gcc r14-404] RISC-V: Eliminate AMO op fences
+    - [gcc r14-405] RISC-V: Weaken LR/SC pairs
+    - [gcc r14-406] RISC-V: Weaken mem_thread_fence
+    - [gcc r14-407] RISC-V: Weaken atomic loads
+    - [gcc r14-408] RISC-V: Table A.6 conformance tests
+
+ -- Chang Yang <yangchang@deepin.org>  Wed, 12 Mar 2025 14:59:47 +0800
+
 gcc-12 (12.3.0-17deepin11) unstable; urgency=medium
 
   * LoongArch: Fix errors on libsanitizer.
