@@ -1,0 +1,35 @@
+diff --git a/src/gcc/config/i386/x86-tune-costs.h b/src/gcc/config/i386/x86-tune-costs.h
+index f105d57ca..098a45fd8 100644
+From: xzl <xiangzelong@deepin.org>
+From: Haochen Jiang <haochen.jiang@intel.com>
+Date: Wed, 4 Jun 2025 11:23:03 +0800
+Subject: [PATCH 1/1] Adjust generic loop alignment from 16:11:8 to 16 for
+ Intel processors
+
+Previously, we use 16:11:8 in generic tune for Intel processors, which
+lead to cross cache line issue and result in some random performance
+penalty in benchmarks with small loops commit to commit.
+
+After changing to always aligning to 16 bytes, it will somehow solve
+the issue.
+
+gcc/ChangeLog:
+
+	* config/i386/x86-tune-costs.h (generic_cost): Change from
+	16:11:8 to 16.
+--- a/src/gcc/config/i386/x86-tune-costs.h
++++ b/src/gcc/config/i386/x86-tune-costs.h
+@@ -3335,7 +3335,7 @@ struct processor_costs generic_cost = {
+   generic_memset,
+   COSTS_N_INSNS (4),			/* cond_taken_branch_cost.  */
+   COSTS_N_INSNS (2),			/* cond_not_taken_branch_cost.  */
+-  "16:11:8",				/* Loop alignment.  */
++  "16",				/* Loop alignment.  */
+   "16:11:8",				/* Jump alignment.  */
+   "0:0:8",				/* Label alignment.  */
+   "16",					/* Func alignment.  */
+@@ -3466,4 +3466,3 @@ struct processor_costs core_cost = {
+   "0:0:8",				/* Label alignment.  */
+   "16",					/* Func alignment.  */
+ };
+-
