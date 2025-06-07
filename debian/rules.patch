@@ -567,7 +567,8 @@ debian_patches += \
     loong64/0299-LoongArch-Fix-up-r15-4130 \
     loong64/0300-libphobos-Update-build-scripts-for-LoongArch64 \
     loong64/0301-LoongArch-fix-building-errors \
-    loong64/libsanitizer-Fix-errors-on-LoongArch
+    loong64/libsanitizer-Fix-errors-on-LoongArch \
+    loong64/except-Don-t-use-the-cached-value-of-the-gcc_except_
 
 
 # RISCV backport.

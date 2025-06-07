@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin13) unstable; urgency=medium
+
+  * LoongArch: fix gcc_except_table
+
+ -- Peng Fan <fanpeng@loongson.cn>  Sat, 07 Jun 2025 02:41:59 +0000
+
 gcc-12 (12.3.0-17deepin12) unstable; urgency=medium
 
   * Backports:
