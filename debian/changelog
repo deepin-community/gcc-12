@@ -1,8 +1,14 @@
-gcc-12 (12.3.0-17deepin13) unstable; urgency=medium
+gcc-12 (12.3.0-17deepin14) unstable; urgency=medium
 
   * LoongArch: fix gcc_except_table
-
+  
  -- Peng Fan <fanpeng@loongson.cn>  Sat, 07 Jun 2025 02:41:59 +0000
+
+gcc-12 (12.3.0-17deepin13) unstable; urgency=medium
+
+  * Backport: Adjust generic loop alignment from 16:11:8 to 16 for Intel processors
+
+ -- xiangzelong <xiangzelong@deepin.org>  Wed, 04 Jun 2025 13:35:12 +0800
 
 gcc-12 (12.3.0-17deepin12) unstable; urgency=medium
 

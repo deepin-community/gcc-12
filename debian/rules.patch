@@ -71,6 +71,7 @@ debian_patches += \
 	asan-allocator-base \
 	gcc-vhdl \
 	pr114533 \
+  Adjust-generic-loop-alignment-from-16-11-8-to-16-for-Intel\
 
 # with glibc (>= 2.31)
 ifeq (,$(filter $(distrelease),wheezy jessie stretch buster precise xenial bionic))
