@@ -1,0 +1,26 @@
+From 8756f8865a9a1816d4767b4e4e7731837b17b09f Mon Sep 17 00:00:00 2001
+From: biqx <biqx@localhost.localdomain>
+Date: Tue, 24 Sep 2024 14:14:09 +0800
+Subject: [PATCH 10/11] SW_64: treat -mcpu=native default as -mcpu=sw6b.
+
+---
+ src/gcc/config/sw_64/driver-sw_64.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gcc/config/sw_64/driver-sw_64.cc b/src/gcc/config/sw_64/driver-sw_64.cc
+index d244366f9d5..2cc23046440 100644
+--- a/src/gcc/config/sw_64/driver-sw_64.cc
++++ b/src/gcc/config/sw_64/driver-sw_64.cc
+@@ -69,8 +69,8 @@ host_detect_local_cpu (int argc, const char **argv)
+     long amask;
+     const char *const cpu;
+   } cpu_types[] = {
+-    { IMPLVER_SW6_FAMILY, AMASK_BWX|AMASK_FIX|AMASK_CIX|AMASK_SW6A, "sw6a" },
+     { IMPLVER_SW6_FAMILY, AMASK_BWX|AMASK_FIX|AMASK_CIX|AMASK_SW6B, "sw6b" },
++    { IMPLVER_SW6_FAMILY, AMASK_BWX|AMASK_FIX|AMASK_CIX|AMASK_SW6A, "sw6a" },
+     { IMPLVER_SW6_FAMILY, AMASK_BWX|AMASK_FIX|AMASK_CIX|AMASK_SW4D, "sw4d" },
+ #ifndef GUXY20220321_sw8a_TARGET_SET
+     { IMPLVER_SW8_FAMILY, AMASK_BWX|AMASK_FIX|AMASK_CIX|AMASK_SW8A, "sw8a" },
+-- 
+2.35.3
+

@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin15) unstable; urgency=medium
+
+  * feat: add sw64 support.
+
+ -- hudeng <hudeng@deepin.org>  Wed, 11 Jun 2025 07:37:04 +0000
+
 gcc-12 (12.3.0-17deepin14) unstable; urgency=medium
 
   * LoongArch: fix gcc_except_table

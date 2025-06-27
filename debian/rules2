@@ -166,17 +166,17 @@ endif
 ifneq (,$(filter $(build_type), build-cross cross-build-cross))
   CFLAGS	= -g -O2
   LDFLAGS	= -Wl,-z,relro
-  ifeq ($(DEB_TARGET_ARCH),alpha)
+  ifeq ($(DEB_TARGET_ARCH),alpha sw64)
     LDFLAGS += -Wl,--no-relax
   endif
 else
   BOOT_LDFLAGS	= -Wl,-z,relro
-  ifeq ($(DEB_TARGET_ARCH),alpha)
+  ifeq ($(DEB_TARGET_ARCH),alpha sw64)
     BOOT_LDFLAGS += -Wl,--no-relax
   endif
 endif
 LDFLAGS_FOR_TARGET = -Wl,-z,relro
-ifeq ($(DEB_TARGET_ARCH),alpha)
+ifeq ($(DEB_TARGET_ARCH),alpha, sw64)
   LDFLAGS := $(filter-out -Wl$(COMMA)--no-relax, $(LDFLAGS)) -Wl,--no-relax
 endif
 
@@ -593,8 +593,14 @@ ifneq (,$(findstring s390x-linux,$(DEB_TARGET_GNU_TYPE)))
   endif
 endif
 
+ifneq (,$(findstring sw_64-linux,$(DEB_TARGET_GNU_TYPE)))
+  CONFARGS += --with-cpu=sw6b
+  CONFARGS += --disable-multilib
+  CONFARGS += --enable-linker-no-relax
+endif
+
 ifeq ($(DEB_TARGET_ARCH_OS),linux)
-  ifneq (,$(findstring $(DEB_TARGET_ARCH), alpha powerpc ppc64 ppc64el s390 s390x sparc sparc64))
+  ifneq (,$(findstring $(DEB_TARGET_ARCH), alpha powerpc ppc64 ppc64el s390 s390x sparc sparc64 sw64))
     CONFARGS += --with-long-double-128
   endif
 endif
@@ -1907,7 +1913,7 @@ $(stampdir)/05-build-html-nosplit: $(build_stamp)
 	touch $@
 
 # start the script only on architectures known to have slow autobuilders ...
-logwatch_archs := alpha arm m68k mips mipsel mips64el riscv64 sparc
+logwatch_archs := alpha arm m68k mips mipsel mips64el riscv64 sparc sw64
 ifeq ($(DEB_HOST_GNU_CPU), $(findstring $(DEB_HOST_GNU_CPU),$(logwatch_archs)))
   start_logwatch = yes
 endif

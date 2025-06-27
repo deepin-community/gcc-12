@@ -576,6 +576,13 @@ debian_patches += \
 debian_patches += riscv64-inline-subword-atomic
 debian_patches += riscv64-atomic-fix
 
+# sw64 support
+ifeq ($(DEB_TARGET_ARCH), sw64)
+	debian_patches += sw64/0001-feat-add-sw64-support \
+		  sw64/0002-SW_64-treat-mcpu-native-default-as-mcpu-sw6b \
+		  sw64/0003-SW_64-Fix-a-FAIL-in-libgomp-caused-by-the-atomic_exc
+endif
+
 series_stamp = $(stampdir)/02-series-stamp
 series: $(series_stamp)
 $(series_stamp):

@@ -912,7 +912,9 @@ ifeq ($(DEB_STAGE)-$(filter libgnat, $(with_rtlibs)),rtlibs-)
   with_ada := disabled for rtlibs stage
 endif
 #with_ada := disabled for GCC 12
-
+ifeq ($(DEB_TARGET_ARCH), sw64)
+  with_ada := no
+endif
 #ifneq ($(single_package),yes)
 #  with_separate_gnat := yes
 #endif
@@ -1127,6 +1129,10 @@ ifeq ($(with_base_only),yes)
   with_d := no
 endif
 
+ifeq ($(DEB_TARGET_ARCH), sw64)
+  with_d := no
+endif
+
 ifeq ($(with_d)-$(with_separate_gdc),yes-yes)
   ifneq (,$(findstring gdc,$(PKGSOURCE)))
     languages := c c++
@@ -1309,6 +1315,10 @@ endif
 
 with_m2 := $(call envfilt, m2, , , $(with_m2))
 
+ifeq ($(DEB_TARGET_ARCH), sw64)
+  with_m2 := no
+endif
+
 # Build all packages needed for Modula-2 development
 ifeq ($(with_m2),yes)
   ifeq ($(with_dev),yes)
@@ -1316,6 +1326,9 @@ ifeq ($(with_m2),yes)
   endif
   ifeq ($(with_common_libs),yes)
     with_libgm2 := yes
+  endif
+  ifeq ($(DEB_TARGET_ARCH), sw64)
+    with_libgm2 := no
   endif
   enabled_languages += m2
 endif
@@ -1371,7 +1384,7 @@ ifneq (,$(filter $(DEB_TARGET_ARCH),$(gomp_no_archs)))
 endif
 
 # itm --------------------
-itm_archs = alpha amd64 arm64 i386 x32 ppc64 ppc64el s390x sh4 sparc64
+itm_archs = alpha amd64 arm64 i386 x32 ppc64 ppc64el s390x sw64 sh4 sparc64
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(itm_archs)))
   with_itm := yes
 endif
