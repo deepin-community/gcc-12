@@ -1,3 +1,10 @@
+gcc-12 (12.3.0-17deepin16) unstable; urgency=medium
+
+  * feat: add Zicbo[mzp] support for RISC-V which patches backported from
+    latest gcc authored by `ShiYulong <shiyulong@iscas.ac.cn>`.
+
+ -- sisungo <sisungo@icloud.com>  Fri, 19 Sep 2025 19:41:21 +0800
+
 gcc-12 (12.3.0-17deepin15) unstable; urgency=medium
 
   * feat: add sw64 support.

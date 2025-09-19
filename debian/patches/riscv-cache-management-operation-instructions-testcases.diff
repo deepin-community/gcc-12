@@ -1,0 +1,142 @@
+diff --git a/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-1.c b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-1.c
+new file mode 100644
+index 00000000000..e2ba2183511
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-1.c
+@@ -0,0 +1,21 @@
++/* { dg-do compile } */
++/* { dg-options "-march=rv64gc_zicbom -mabi=lp64" } */
++
++int foo1()
++{
++    return __builtin_riscv_zicbom_cbo_clean();
++}
++
++int foo2()
++{
++    return __builtin_riscv_zicbom_cbo_flush();
++}
++
++int foo3()
++{
++    return __builtin_riscv_zicbom_cbo_inval();
++}
++
++/* { dg-final { scan-assembler-times "cbo.clean" 1 } } */
++/* { dg-final { scan-assembler-times "cbo.flush" 1 } } */
++/* { dg-final { scan-assembler-times "cbo.inval" 1 } } */
+diff --git a/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-2.c b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-2.c
+new file mode 100644
+index 00000000000..a605e8b1bdc
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-2.c
+@@ -0,0 +1,21 @@
++/* { dg-do compile } */
++/* { dg-options "-march=rv32gc_zicbom -mabi=ilp32" } */
++
++int foo1()
++{
++    return __builtin_riscv_zicbom_cbo_clean();
++}
++
++int foo2()
++{
++    return __builtin_riscv_zicbom_cbo_flush();
++}
++
++int foo3()
++{
++    return __builtin_riscv_zicbom_cbo_inval();
++}
++
++/* { dg-final { scan-assembler-times "cbo.clean" 1 } } */
++/* { dg-final { scan-assembler-times "cbo.flush" 1 } } */
++/* { dg-final { scan-assembler-times "cbo.inval" 1 } } */
+diff --git a/src/gcc/testsuite/gcc.target/riscv/cmo-zicbop-1.c b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbop-1.c
+new file mode 100644
+index 00000000000..c5d78c1763d
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbop-1.c
+@@ -0,0 +1,23 @@
++/* { dg-do compile target { { rv64-*-*}}} */
++/* { dg-options "-march=rv64gc_zicbop -mabi=lp64" } */
++
++void foo (char *p)
++{
++  __builtin_prefetch (p, 0, 0);
++  __builtin_prefetch (p, 0, 1);
++  __builtin_prefetch (p, 0, 2);
++  __builtin_prefetch (p, 0, 3);
++  __builtin_prefetch (p, 1, 0);
++  __builtin_prefetch (p, 1, 1);
++  __builtin_prefetch (p, 1, 2);
++  __builtin_prefetch (p, 1, 3);
++}
++
++int foo1()
++{
++  return __builtin_riscv_zicbop_cbo_prefetchi(1);
++}
++
++/* { dg-final { scan-assembler-times "prefetch.i" 1 } } */
++/* { dg-final { scan-assembler-times "prefetch.r" 4 } } */
++/* { dg-final { scan-assembler-times "prefetch.w" 4 } } */
+diff --git a/src/gcc/testsuite/gcc.target/riscv/cmo-zicbop-2.c b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbop-2.c
+new file mode 100644
+index 00000000000..6576365b39c
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbop-2.c
+@@ -0,0 +1,23 @@
++/* { dg-do compile target { { rv32-*-*}}} */
++/* { dg-options "-march=rv32gc_zicbop -mabi=ilp32" } */
++
++void foo (char *p)
++{
++  __builtin_prefetch (p, 0, 0);
++  __builtin_prefetch (p, 0, 1);
++  __builtin_prefetch (p, 0, 2);
++  __builtin_prefetch (p, 0, 3);
++  __builtin_prefetch (p, 1, 0);
++  __builtin_prefetch (p, 1, 1);
++  __builtin_prefetch (p, 1, 2);
++  __builtin_prefetch (p, 1, 3);
++}
++
++int foo1()
++{
++  return __builtin_riscv_zicbop_cbo_prefetchi(1);
++}
++
++/* { dg-final { scan-assembler-times "prefetch.i" 1 } } */
++/* { dg-final { scan-assembler-times "prefetch.r" 4 } } */
++/* { dg-final { scan-assembler-times "prefetch.w" 4 } } */ 
+diff --git a/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-1.c b/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-1.c
+new file mode 100644
+index 00000000000..96c1674ef2d
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-1.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-march=rv64gc_zicboz -mabi=lp64" } */
++
++int foo1()
++{
++    return __builtin_riscv_zicboz_cbo_zero();
++}
++
++/* { dg-final { scan-assembler-times "cbo.zero" 1 } } */ 
+diff --git a/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-2.c b/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-2.c
+new file mode 100644
+index 00000000000..9d99839b1e7
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-2.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-march=rv32gc_zicboz -mabi=ilp32" } */
++
++int foo1()
++{
++    return __builtin_riscv_zicboz_cbo_zero();
++}
++
++/* { dg-final { scan-assembler-times "cbo.zero" 1 } } */

@@ -1,0 +1,155 @@
+--- a/src/gcc/config/riscv/predicates.md
++++ b/src/gcc/config/riscv/predicates.md
+@@ -239,3 +239,7 @@
+ (define_predicate "const63_operand"
+   (and (match_code "const_int")
+        (match_test "INTVAL (op) == 63")))
++
++(define_predicate "imm5_operand"
++  (and (match_code "const_int")
++       (match_test "INTVAL (op) < 5")))
+--- a/src/gcc/config/riscv/riscv-builtins.cc
++++ b/src/gcc/config/riscv/riscv-builtins.cc
+@@ -87,6 +87,18 @@ struct riscv_builtin_description {
+ 
+ AVAIL (hard_float, TARGET_HARD_FLOAT)
+ 
++
++AVAIL (clean32, TARGET_ZICBOM && !TARGET_64BIT)
++AVAIL (clean64, TARGET_ZICBOM && TARGET_64BIT)
++AVAIL (flush32, TARGET_ZICBOM && !TARGET_64BIT)
++AVAIL (flush64, TARGET_ZICBOM && TARGET_64BIT)
++AVAIL (inval32, TARGET_ZICBOM && !TARGET_64BIT)
++AVAIL (inval64, TARGET_ZICBOM && TARGET_64BIT)
++AVAIL (zero32,  TARGET_ZICBOZ && !TARGET_64BIT)
++AVAIL (zero64,  TARGET_ZICBOZ && TARGET_64BIT)
++AVAIL (prefetchi32, TARGET_ZICBOP && !TARGET_64BIT)
++AVAIL (prefetchi64, TARGET_ZICBOP && TARGET_64BIT)
++
+ /* Construct a riscv_builtin_description from the given arguments.
+ 
+    INSN is the name of the associated instruction pattern, without the
+@@ -119,6 +131,8 @@ AVAIL (hard_float, TARGET_HARD_FLOAT)
+ /* Argument types.  */
+ #define RISCV_ATYPE_VOID void_type_node
+ #define RISCV_ATYPE_USI unsigned_intSI_type_node
++#define RISCV_ATYPE_SI intSI_type_node
++#define RISCV_ATYPE_DI intDI_type_node
+ 
+ /* RISCV_FTYPE_ATYPESN takes N RISCV_FTYPES-like type codes and lists
+    their associated RISCV_ATYPEs.  */
+@@ -128,6 +142,8 @@ AVAIL (hard_float, TARGET_HARD_FLOAT)
+   RISCV_ATYPE_##A, RISCV_ATYPE_##B
+ 
+ static const struct riscv_builtin_description riscv_builtins[] = {
++  #include "riscv-cmo.def"
++
+   DIRECT_BUILTIN (frflags, RISCV_USI_FTYPE, hard_float),
+   DIRECT_NO_TARGET_BUILTIN (fsflags, RISCV_VOID_FTYPE_USI, hard_float)
+ };
+diff --git a/src/gcc/config/riscv/riscv-cmo.def b/src/gcc/config/riscv/riscv-cmo.def
+new file mode 100644
+index 00000000000..b30ecf96ec1
+--- /dev/null
++++ b/src/gcc/config/riscv/riscv-cmo.def
+@@ -0,0 +1,17 @@
++// zicbom
++RISCV_BUILTIN (clean_si, "zicbom_cbo_clean", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE, clean32),
++RISCV_BUILTIN (clean_di, "zicbom_cbo_clean", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE, clean64),
++
++RISCV_BUILTIN (flush_si, "zicbom_cbo_flush", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE, flush32),
++RISCV_BUILTIN (flush_di, "zicbom_cbo_flush", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE, flush64),
++
++RISCV_BUILTIN (inval_si, "zicbom_cbo_inval", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE, inval32),
++RISCV_BUILTIN (inval_di, "zicbom_cbo_inval", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE, inval64),
++
++// zicboz
++RISCV_BUILTIN (zero_si, "zicboz_cbo_zero", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE, zero32),
++RISCV_BUILTIN (zero_di, "zicboz_cbo_zero", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE, zero64),
++
++// zicbop
++RISCV_BUILTIN (prefetchi_si, "zicbop_cbo_prefetchi", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE_SI, prefetchi32),
++RISCV_BUILTIN (prefetchi_di, "zicbop_cbo_prefetchi", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE_DI, prefetchi64),
+--- a/src/gcc/config/riscv/riscv-ftypes.def
++++ b/src/gcc/config/riscv/riscv-ftypes.def
+@@ -28,3 +28,7 @@ along with GCC; see the file COPYING3.  If not see
+ 
+ DEF_RISCV_FTYPE (0, (USI))
+ DEF_RISCV_FTYPE (1, (VOID, USI))
++DEF_RISCV_FTYPE (0, (SI))
++DEF_RISCV_FTYPE (0, (DI))
++DEF_RISCV_FTYPE (1, (SI, SI))
++DEF_RISCV_FTYPE (1, (DI, DI))
+--- a/src/gcc/config/riscv/riscv.md
++++ b/src/gcc/config/riscv/riscv.md
+@@ -71,6 +71,13 @@
+   ;; Stack Smash Protector
+   UNSPEC_SSP_SET
+   UNSPEC_SSP_TEST
++
++  ;; CMO instructions.
++  UNSPECV_CLEAN
++  UNSPECV_FLUSH
++  UNSPECV_INVAL
++  UNSPECV_ZERO
++  UNSPECV_PREI
+ ])
+ 
+ (define_constants
+@@ -2885,6 +2892,56 @@
+   "<load>\t%3, %1\;<load>\t%0, %2\;xor\t%0, %3, %0\;li\t%3, 0"
+   [(set_attr "length" "12")])
+ 
++(define_insn "riscv_clean_<mode>"
++  [(unspec_volatile:X [(match_operand:X 0 "register_operand" "r")]
++    UNSPECV_CLEAN)]
++  "TARGET_ZICBOM"
++  "cbo.clean\t%a0"
++)
++
++(define_insn "riscv_flush_<mode>"
++  [(unspec_volatile:X [(match_operand:X 0 "register_operand" "r")]
++    UNSPECV_FLUSH)]
++  "TARGET_ZICBOM"
++  "cbo.flush\t%a0"
++)
++
++(define_insn "riscv_inval_<mode>"
++  [(unspec_volatile:X [(match_operand:X 0 "register_operand" "r")]
++    UNSPECV_INVAL)]
++  "TARGET_ZICBOM"
++  "cbo.inval\t%a0"
++)
++
++(define_insn "riscv_zero_<mode>"
++  [(unspec_volatile:X [(match_operand:X 0 "register_operand" "r")]
++    UNSPECV_ZERO)]
++  "TARGET_ZICBOZ"
++  "cbo.zero\t%a0"
++)
++
++(define_insn "prefetch"
++  [(prefetch (match_operand 0 "address_operand" "p")
++             (match_operand 1 "imm5_operand" "i")
++             (match_operand 2 "const_int_operand" "n"))]
++  "TARGET_ZICBOP"
++{
++  switch (INTVAL (operands[1]))
++  {
++    case 0: return "prefetch.r\t%a0";
++    case 1: return "prefetch.w\t%a0";
++    default: gcc_unreachable ();
++  }
++})
++
++(define_insn "riscv_prefetchi_<mode>"
++  [(unspec_volatile:X [(match_operand:X 0 "address_operand" "p")
++              (match_operand:X 1 "imm5_operand" "i")]
++              UNSPECV_PREI)]
++  "TARGET_ZICBOP"
++  "prefetch.i\t%a0"
++)
++
+ (include "bitmanip.md")
+ (include "sync.md")
+ (include "peephole.md")

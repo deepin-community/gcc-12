@@ -1,0 +1,168 @@
+--- a/src/gcc/config/riscv/riscv-builtins.cc
++++ b/src/gcc/config/riscv/riscv-builtins.cc
+@@ -133,6 +133,7 @@ AVAIL (prefetchi64, TARGET_ZICBOP && TARGET_64BIT)
+ #define RISCV_ATYPE_USI unsigned_intSI_type_node
+ #define RISCV_ATYPE_SI intSI_type_node
+ #define RISCV_ATYPE_DI intDI_type_node
++#define RISCV_ATYPE_VOID_PTR ptr_type_node
+ 
+ /* RISCV_FTYPE_ATYPESN takes N RISCV_FTYPES-like type codes and lists
+    their associated RISCV_ATYPEs.  */
+--- a/src/gcc/config/riscv/riscv-cmo.def
++++ b/src/gcc/config/riscv/riscv-cmo.def
+@@ -1,16 +1,16 @@
+ // zicbom
+-RISCV_BUILTIN (clean_si, "zicbom_cbo_clean", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE, clean32),
+-RISCV_BUILTIN (clean_di, "zicbom_cbo_clean", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE, clean64),
++RISCV_BUILTIN (clean_si, "zicbom_cbo_clean", RISCV_BUILTIN_DIRECT_NO_TARGET, RISCV_VOID_FTYPE_VOID_PTR, clean32),
++RISCV_BUILTIN (clean_di, "zicbom_cbo_clean", RISCV_BUILTIN_DIRECT_NO_TARGET, RISCV_VOID_FTYPE_VOID_PTR, clean64),
+ 
+-RISCV_BUILTIN (flush_si, "zicbom_cbo_flush", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE, flush32),
+-RISCV_BUILTIN (flush_di, "zicbom_cbo_flush", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE, flush64),
++RISCV_BUILTIN (flush_si, "zicbom_cbo_flush", RISCV_BUILTIN_DIRECT_NO_TARGET, RISCV_VOID_FTYPE_VOID_PTR, flush32),
++RISCV_BUILTIN (flush_di, "zicbom_cbo_flush", RISCV_BUILTIN_DIRECT_NO_TARGET, RISCV_VOID_FTYPE_VOID_PTR, flush64),
+ 
+-RISCV_BUILTIN (inval_si, "zicbom_cbo_inval", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE, inval32),
+-RISCV_BUILTIN (inval_di, "zicbom_cbo_inval", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE, inval64),
++RISCV_BUILTIN (inval_si, "zicbom_cbo_inval", RISCV_BUILTIN_DIRECT_NO_TARGET, RISCV_VOID_FTYPE_VOID_PTR, inval32),
++RISCV_BUILTIN (inval_di, "zicbom_cbo_inval", RISCV_BUILTIN_DIRECT_NO_TARGET, RISCV_VOID_FTYPE_VOID_PTR, inval64),
+ 
+ // zicboz
+-RISCV_BUILTIN (zero_si, "zicboz_cbo_zero", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE, zero32),
+-RISCV_BUILTIN (zero_di, "zicboz_cbo_zero", RISCV_BUILTIN_DIRECT, RISCV_DI_FTYPE, zero64),
++RISCV_BUILTIN (zero_si, "zicboz_cbo_zero", RISCV_BUILTIN_DIRECT_NO_TARGET, RISCV_VOID_FTYPE_VOID_PTR, zero32),
++RISCV_BUILTIN (zero_di, "zicboz_cbo_zero", RISCV_BUILTIN_DIRECT_NO_TARGET, RISCV_VOID_FTYPE_VOID_PTR, zero64),
+ 
+ // zicbop
+ RISCV_BUILTIN (prefetchi_si, "zicbop_cbo_prefetchi", RISCV_BUILTIN_DIRECT, RISCV_SI_FTYPE_SI, prefetchi32),
+--- a/src/gcc/config/riscv/riscv-ftypes.def
++++ b/src/gcc/config/riscv/riscv-ftypes.def
+@@ -28,7 +28,6 @@ along with GCC; see the file COPYING3.  If not see
+ 
+ DEF_RISCV_FTYPE (0, (USI))
+ DEF_RISCV_FTYPE (1, (VOID, USI))
+-DEF_RISCV_FTYPE (0, (SI))
+-DEF_RISCV_FTYPE (0, (DI))
++DEF_RISCV_FTYPE (1, (VOID, VOID_PTR))
+ DEF_RISCV_FTYPE (1, (SI, SI))
+ DEF_RISCV_FTYPE (1, (DI, DI))
+--- a/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-1.c
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-1.c
+@@ -1,21 +1,29 @@
+ /* { dg-do compile } */
+ /* { dg-options "-march=rv64gc_zicbom -mabi=lp64" } */
+ 
+-int foo1()
++int var;
++
++void foo1()
+ {
+-    return __builtin_riscv_zicbom_cbo_clean();
++    __builtin_riscv_zicbom_cbo_clean(0);
++    __builtin_riscv_zicbom_cbo_clean(&var);
++    __builtin_riscv_zicbom_cbo_clean((void*)0x111);
+ }
+ 
+-int foo2()
++void foo2()
+ {
+-    return __builtin_riscv_zicbom_cbo_flush();
++    __builtin_riscv_zicbom_cbo_flush(0);
++    __builtin_riscv_zicbom_cbo_flush(&var);
++    __builtin_riscv_zicbom_cbo_flush((void*)0x111);
+ }
+ 
+-int foo3()
++void foo3()
+ {
+-    return __builtin_riscv_zicbom_cbo_inval();
++    __builtin_riscv_zicbom_cbo_inval(0);
++    __builtin_riscv_zicbom_cbo_inval(&var);
++    __builtin_riscv_zicbom_cbo_inval((void*)0x111);
+ }
+ 
+-/* { dg-final { scan-assembler-times "cbo.clean" 1 } } */
+-/* { dg-final { scan-assembler-times "cbo.flush" 1 } } */
+-/* { dg-final { scan-assembler-times "cbo.inval" 1 } } */
++/* { dg-final { scan-assembler-times "cbo.clean" 3 } } */
++/* { dg-final { scan-assembler-times "cbo.flush" 3 } } */
++/* { dg-final { scan-assembler-times "cbo.inval" 3 } } */
+--- a/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-2.c
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicbom-2.c
+@@ -1,21 +1,29 @@
+ /* { dg-do compile } */
+ /* { dg-options "-march=rv32gc_zicbom -mabi=ilp32" } */
+ 
+-int foo1()
++int var;
++
++void foo1()
+ {
+-    return __builtin_riscv_zicbom_cbo_clean();
++    __builtin_riscv_zicbom_cbo_clean(0);
++    __builtin_riscv_zicbom_cbo_clean(&var);
++    __builtin_riscv_zicbom_cbo_clean((void*)0x111);
+ }
+ 
+-int foo2()
++void foo2()
+ {
+-    return __builtin_riscv_zicbom_cbo_flush();
++    __builtin_riscv_zicbom_cbo_flush(0);
++    __builtin_riscv_zicbom_cbo_flush(&var);
++    __builtin_riscv_zicbom_cbo_flush((void*)0x111);
+ }
+ 
+-int foo3()
++void foo3()
+ {
+-    return __builtin_riscv_zicbom_cbo_inval();
++    __builtin_riscv_zicbom_cbo_inval(0);
++    __builtin_riscv_zicbom_cbo_inval(&var);
++    __builtin_riscv_zicbom_cbo_inval((void*)0x111);
+ }
+ 
+-/* { dg-final { scan-assembler-times "cbo.clean" 1 } } */
+-/* { dg-final { scan-assembler-times "cbo.flush" 1 } } */
+-/* { dg-final { scan-assembler-times "cbo.inval" 1 } } */
++/* { dg-final { scan-assembler-times "cbo.clean" 3 } } */
++/* { dg-final { scan-assembler-times "cbo.flush" 3 } } */
++/* { dg-final { scan-assembler-times "cbo.inval" 3 } } */
+--- a/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-1.c
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-1.c
+@@ -1,9 +1,13 @@
+ /* { dg-do compile } */
+ /* { dg-options "-march=rv64gc_zicboz -mabi=lp64" } */
+ 
+-int foo1()
++int var;
++
++void foo1()
+ {
+-    return __builtin_riscv_zicboz_cbo_zero();
++    __builtin_riscv_zicboz_cbo_zero(0);
++    __builtin_riscv_zicboz_cbo_zero(&var);
++    __builtin_riscv_zicboz_cbo_zero((void*)0x121);
+ }
+ 
+-/* { dg-final { scan-assembler-times "cbo.zero" 1 } } */ 
++/* { dg-final { scan-assembler-times "cbo.zero" 3 } } */ 
+--- a/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-2.c
++++ b/src/gcc/testsuite/gcc.target/riscv/cmo-zicboz-2.c
+@@ -1,9 +1,13 @@
+ /* { dg-do compile } */
+ /* { dg-options "-march=rv32gc_zicboz -mabi=ilp32" } */
+ 
+-int foo1()
++int var;
++
++void foo1()
+ {
+-    return __builtin_riscv_zicboz_cbo_zero();
++    __builtin_riscv_zicboz_cbo_zero(0);
++    __builtin_riscv_zicboz_cbo_zero(&var);
++    __builtin_riscv_zicboz_cbo_zero((void*)0x121);
+ }
+ 
+-/* { dg-final { scan-assembler-times "cbo.zero" 1 } } */
++/* { dg-final { scan-assembler-times "cbo.zero" 3 } } */ 

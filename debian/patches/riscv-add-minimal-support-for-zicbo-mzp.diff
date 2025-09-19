@@ -1,0 +1,53 @@
+--- a/src/gcc/common/config/riscv/riscv-common.cc
++++ b/src/gcc/common/config/riscv/riscv-common.cc
+@@ -165,6 +165,10 @@ static const struct riscv_ext_version riscv_ext_version_table[] =
+   {"zksh",  ISA_SPEC_CLASS_NONE, 1, 0},
+   {"zkt",   ISA_SPEC_CLASS_NONE, 1, 0},
+ 
++  {"zicboz",ISA_SPEC_CLASS_NONE, 1, 0},
++  {"zicbom",ISA_SPEC_CLASS_NONE, 1, 0},
++  {"zicbop",ISA_SPEC_CLASS_NONE, 1, 0},
++
+   {"zk",    ISA_SPEC_CLASS_NONE, 1, 0},
+   {"zkn",   ISA_SPEC_CLASS_NONE, 1, 0},
+   {"zks",   ISA_SPEC_CLASS_NONE, 1, 0},
+@@ -1110,6 +1114,10 @@ static const riscv_ext_flag_table_t riscv_ext_flag_table[] =
+   {"zksh",   &gcc_options::x_riscv_zk_subext, MASK_ZKSH},
+   {"zkt",    &gcc_options::x_riscv_zk_subext, MASK_ZKT},
+ 
++  {"zicboz", &gcc_options::x_riscv_zicmo_subext, MASK_ZICBOZ},
++  {"zicbom", &gcc_options::x_riscv_zicmo_subext, MASK_ZICBOM},
++  {"zicbop", &gcc_options::x_riscv_zicmo_subext, MASK_ZICBOP},
++
+   {"zve32x",   &gcc_options::x_target_flags, MASK_VECTOR},
+   {"zve32f",   &gcc_options::x_target_flags, MASK_VECTOR},
+   {"zve64x",   &gcc_options::x_target_flags, MASK_VECTOR},
+--- a/src/gcc/config/riscv/riscv-opts.h
++++ b/src/gcc/config/riscv/riscv-opts.h
+@@ -145,6 +145,14 @@ enum stack_protector_guard {
+ #define TARGET_ZVL32768B ((riscv_zvl_flags & MASK_ZVL32768B) != 0)
+ #define TARGET_ZVL65536B ((riscv_zvl_flags & MASK_ZVL65536B) != 0)
+ 
++#define MASK_ZICBOZ   (1 << 0)
++#define MASK_ZICBOM   (1 << 1)
++#define MASK_ZICBOP   (1 << 2)
++
++#define TARGET_ZICBOZ ((riscv_zicmo_subext & MASK_ZICBOZ) != 0)
++#define TARGET_ZICBOM ((riscv_zicmo_subext & MASK_ZICBOM) != 0)
++#define TARGET_ZICBOP ((riscv_zicmo_subext & MASK_ZICBOP) != 0)
++
+ /* Bit of riscv_zvl_flags will set contintuly, N-1 bit will set if N-bit is
+    set, e.g. MASK_ZVL64B has set then MASK_ZVL32B is set, so we can use
+    popcount to caclulate the minimal VLEN.  */
+--- a/src/gcc/config/riscv/riscv.opt
++++ b/src/gcc/config/riscv/riscv.opt
+@@ -209,6 +209,9 @@ int riscv_vector_elen_flags
+ TargetVariable
+ int riscv_zvl_flags
+ 
++TargetVariable
++int riscv_zicmo_subext
++
+ Enum
+ Name(isa_spec_class) Type(enum riscv_isa_spec_class)
+ Supported ISA specs (for use with the -misa-spec= option):

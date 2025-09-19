@@ -575,6 +575,10 @@ debian_patches += \
 # RISCV backport.
 debian_patches += riscv64-inline-subword-atomic
 debian_patches += riscv64-atomic-fix
+debian_patches += riscv-add-minimal-support-for-zicbo-mzp
+debian_patches += riscv-cache-management-operation-instructions
+debian_patches += riscv-cache-management-operation-instructions-testcases
+debian_patches += riscv-fix-a-bug-that-is-the-cmo-builtins
 
 # sw64 support
 ifeq ($(DEB_TARGET_ARCH), sw64)
