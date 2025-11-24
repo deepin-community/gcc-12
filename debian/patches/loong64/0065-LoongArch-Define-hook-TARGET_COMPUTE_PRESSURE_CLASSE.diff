@@ -1,0 +1,54 @@
+From 0ef1c9545d83b7c7985e42cd611fe3de2761d86b Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Wed, 18 Mar 2026 14:38:42 +0800
+Subject: [PATCH 65/89] LoongArch: Define hook
+ TARGET_COMPUTE_PRESSURE_CLASSES[PR120476].
+
+The rtx cost value defined by the target backend affects the
+calculation of register pressure classes in the IRA, thus affecting
+scheduling.  This may cause program performance degradation.
+For example, OpenSSL 3.5.1 SHA512 and SPEC CPU 2017 exchange_r.
+
+This problem can be avoided by defining a set of register pressure
+classes in the target backend instead of using the default IRA to
+automatically calculate them.
+---
+ gcc/config/loongarch/loongarch.cc | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 883db986aae..8f7ad207efc 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -11147,6 +11147,18 @@ loongarch_noce_conversion_profitable_p (rtx_insn *seq, struct noce_if_info *if_i
+   return default_noce_conversion_profitable_p (seq, if_info);
+ }
+ 
++/* Implement TARGET_COMPUTE_PRESSURE_CLASSES.  */
++
++static int
++loongarch_compute_pressure_classes (reg_class *classes)
++{
++  int i = 0;
++  classes[i++] = GENERAL_REGS;
++  classes[i++] = FP_REGS;
++  classes[i++] = FCC_REGS;
++  return i;
++}
++
+ /* Initialize the GCC target structure.  */
+ #undef TARGET_ASM_ALIGNED_HI_OP
+ #define TARGET_ASM_ALIGNED_HI_OP "\t.half\t"
+@@ -11421,6 +11433,9 @@ loongarch_noce_conversion_profitable_p (rtx_insn *seq, struct noce_if_info *if_i
+ #undef TARGET_NOCE_CONVERSION_PROFITABLE_P
+ #define TARGET_NOCE_CONVERSION_PROFITABLE_P loongarch_noce_conversion_profitable_p
+ 
++#undef TARGET_COMPUTE_PRESSURE_CLASSES
++#define TARGET_COMPUTE_PRESSURE_CLASSES loongarch_compute_pressure_classes
++
+ struct gcc_target targetm = TARGET_INITIALIZER;
+ 
+ #include "gt-loongarch.h"
+-- 
+2.33.0
+

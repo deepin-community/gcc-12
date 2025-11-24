@@ -1,0 +1,44 @@
+From 1ac0e9b8e0f6123a82ec282f86955b954d9ef72c Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 1 Mar 2025 11:46:43 +0800
+Subject: [PATCH 69/89] LoongArch: Don't use "+" for atomic_{load, store} "m"
+ constraint
+
+Atomic load does not modify the memory.  Atomic store does not read the
+memory, thus we can use "=" instead.
+
+gcc/ChangeLog:
+
+	* config/loongarch/sync.md (atomic_load<mode>): Remove "+" for
+	the memory operand.
+	(atomic_store<mode>): Use "=" instead of "+" for the memory
+	operand.
+---
+ gcc/config/loongarch/sync.md | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/config/loongarch/sync.md b/gcc/config/loongarch/sync.md
+index 5fdb149ee46..ef1b9118d64 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -102,7 +102,7 @@
+ (define_insn "atomic_load<mode>"
+   [(set (match_operand:QHWD 0 "register_operand" "=r")
+     (unspec_volatile:QHWD
+-      [(match_operand:QHWD 1 "memory_operand" "+m")
++      [(match_operand:QHWD 1 "memory_operand" "m")
+        (match_operand:SI 2 "const_int_operand")]                        ;; model
+       UNSPEC_ATOMIC_LOAD))]
+   ""
+@@ -139,7 +139,7 @@
+ 
+ ;; Implement atomic stores with amoswap.  Fall back to fences for atomic loads.
+ (define_insn "atomic_store<mode>"
+-  [(set (match_operand:QHWD 0 "memory_operand" "+m")
++  [(set (match_operand:QHWD 0 "memory_operand" "=m")
+     (unspec_volatile:QHWD
+       [(match_operand:QHWD 1 "reg_or_0_operand" "rJ")
+        (match_operand:SI 2 "const_int_operand")]      ;; model
+-- 
+2.33.0
+

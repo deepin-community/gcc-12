@@ -1,0 +1,48 @@
+From 1bb767f359d0e61592405aa59799f03bda911bfb Mon Sep 17 00:00:00 2001
+From: Peng Fan <fanpeng@loongson.cn>
+Date: Mon, 3 Nov 2025 01:12:57 +0000
+Subject: [PATCH] LoongArch: Implement NOCE_CONVERSION_PROFITABLE_P to be
+ compatible
+
+---
+ gcc/config/loongarch/loongarch.cc | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 2f19c5d76..fe9ad099e 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -11175,6 +11175,20 @@ loongarch_c_mode_for_suffix (char suffix)
+   return VOIDmode;
+ }
+ 
++static bool
++loongarch_noce_conversion_profitable_p (rtx_insn *seq, struct noce_if_info *if_info)
++{
++    enum rtx_class cls;
++      for (rtx_insn *insn = seq; insn; insn = NEXT_INSN (insn))
++    {
++	cls = GET_RTX_CLASS (GET_CODE (SET_SRC (single_set (insn))));
++      if ( cls == RTX_COMPARE || cls == RTX_COMM_COMPARE)
++    return false;
++    }
++
++  return default_noce_conversion_profitable_p (seq, if_info);
++}
++
+ /* Initialize the GCC target structure.  */
+ #undef TARGET_ASM_ALIGNED_HI_OP
+ #define TARGET_ASM_ALIGNED_HI_OP "\t.half\t"
+@@ -11446,6 +11460,9 @@ loongarch_c_mode_for_suffix (char suffix)
+ #undef TARGET_C_MODE_FOR_SUFFIX
+ #define TARGET_C_MODE_FOR_SUFFIX loongarch_c_mode_for_suffix
+ 
++#undef TARGET_NOCE_CONVERSION_PROFITABLE_P
++#define TARGET_NOCE_CONVERSION_PROFITABLE_P loongarch_noce_conversion_profitable_p
++
+ struct gcc_target targetm = TARGET_INITIALIZER;
+ 
+ #include "gt-loongarch.h"
+-- 
+2.43.0
+

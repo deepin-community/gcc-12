@@ -1,0 +1,193 @@
+From ab8ec5fd02d5dca8b236284b928d95cda257bde8 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 4 Nov 2025 21:03:18 +0800
+Subject: [PATCH 79/89] LoongArch: Switch the default code model to medium
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+It has turned out the normal code model isn't enough for some large
+LoongArch link units in practice.  Quoting WANG Rui's comment [1]:
+
+We’ve actually been considering pushing for a change to the default
+code model for LoongArch compilers (including GCC) for a while now.
+In fact, this was one of the topics discussed in yesterday’s internal
+compiler tool-chain meeting. The reason we haven’t moved forward with
+it yet is that the medium code model generates a R_LARCH_CALL36
+relocation, which had some issues with earlier versions of the linker.
+We need to assess the impact on users before proceeding with the change.
+
+In GCC we have build-time probe for linker call36 support and if the
+linker does not support it, we fall back to pcalau12i + jirl or
+la.{local,global} + jirl for the medium code model.  I also had some
+concern about a potential performance regression caused by the
+conservative nature of the relaxation process, but when I tested this
+patch it turned out the relaxation is powerful enough to eliminate all
+the pcaddu18i instructions in cc1plus and libstdc++.so.
+
+The Loong Arch Linux project has been using -mcmodel=medium in their
+{C,CXX}FLAGS building packages for a while [2] and they've not reported
+any issues with that.
+
+The Linux kernel developers has already anticipated the change and
+explicitly specified -mcmodel=normal for a while [3].
+
+Thus to me it's safe to make GCC 16 the first release with the medium
+code model as the default now.  If someone must keep the normal code
+model as the default for any reason, it's possible to configure GCC
+using --with-cmodel=normal.
+
+[1]: https://discourse.llvm.org/t/rfc-changing-the-default-code-model-for-loongarch/85317/3
+[2]: https://github.com/lcpu-club/loongarch-packages/pull/340
+[3]: https://git.kernel.org/torvalds/c/e67e0eb6a98b
+
+gcc/
+
+	* config.gcc: Support --with-cmodel={medium,normal} and make
+	medium the default for LoongArch, define TARGET_DEFAULT_CMODEL
+	as the selected value.
+	* config/loongarch/loongarch-opts.cc: Use TARGET_DEFAULT_CMODEL
+	instead of hard coding CMODEL_NORMAL.
+	* doc/install.texi: Document that --with-cmodel= is supported
+	for LoongArch.
+	* doc/invoke.texi: Update the document about default code model
+	on LoongArch.
+
+gcc/testsuite/
+
+	* gcc.target/loongarch/vect-frint-no-inexact.c (dg-options): Add
+	-mcmodel=normal.
+	* gcc.target/loongarch/vect-frint-scalar-no-inexact.c: Likewise.
+	* gcc.target/loongarch/vect-frint-scalar.c: Likewise.
+	* gcc.target/loongarch/vect-frint.c: Likewise.
+	* gcc.target/loongarch/vect-ftint-no-inexact.c: Likewise.
+	* gcc.target/loongarch/vect-ftint.c: Likewise.
+---
+ gcc/config.gcc                                 | 18 +++++++++++++++++-
+ gcc/config/loongarch/loongarch-opts.cc         |  2 +-
+ .../loongarch/vect-frint-no-inexact.c          |  2 +-
+ .../loongarch/vect-frint-scalar-no-inexact.c   |  2 +-
+ .../gcc.target/loongarch/vect-frint-scalar.c   |  2 +-
+ .../gcc.target/loongarch/vect-frint.c          |  2 +-
+ .../loongarch/vect-ftint-no-inexact.c          |  2 +-
+ .../gcc.target/loongarch/vect-ftint.c          |  2 +-
+ 8 files changed, 24 insertions(+), 8 deletions(-)
+
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+index 0d5eafa93ea..31f84b37d16 100644
+--- a/src/gcc/config.gcc
++++ b/src/gcc/config.gcc
+@@ -4982,7 +4982,7 @@ case "${target}" in
+ 		;;
+ 
+ 	loongarch*-*)
+-		supported_defaults="abi arch tune fpu simd multilib-default strict-align-lib tls"
++		supported_defaults="abi arch tune fpu simd multilib-default strict-align-lib tls cmodel"
+ 
+ 		# Local variables
+ 		unset \
+@@ -5403,6 +5403,22 @@ case "${target}" in
+ 		# Remove the excessive appending comma.
+ 		loongarch_multilib_list_c=${loongarch_multilib_list_c%,}
+ 		loongarch_multilib_list_make=${loongarch_multilib_list_make%,}
++
++		# Handle --with-cmodel.
++		# Make sure --with-cmodel is valid.  If it was not specified,
++		# use medium as the default value.
++		case "${with_cmodel}" in
++		"" | medium)
++			tm_defines="${tm_defines} TARGET_DEFAULT_CMODEL=CMODEL_MEDIUM"
++			;;
++		normal)
++			tm_defines="${tm_defines} TARGET_DEFAULT_CMODEL=CMODEL_NORMAL"
++			;;
++		*)
++			echo "invalid option for --with-cmodel: '${with_cmodel}', available values are 'medium' and 'normal'" 1>&2
++			exit 1
++			;;
++		esac
+ 		;;
+ 
+ 	nds32*-*-*)
+diff --git a/gcc/config/loongarch/loongarch-opts.cc b/gcc/config/loongarch/loongarch-opts.cc
+index ef877ae167a..80a5eb87a43 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -540,7 +540,7 @@ fallback:
+ 
+ 
+   /* 5.  Target code model */
+-  t.cmodel = constrained.cmodel ? target->cmodel : CMODEL_NORMAL;
++  t.cmodel = constrained.cmodel ? target->cmodel : TARGET_DEFAULT_CMODEL;
+ 
+   switch (t.cmodel)
+     {
+diff --git a/gcc/testsuite/gcc.target/loongarch/vect-frint-no-inexact.c b/gcc/testsuite/gcc.target/loongarch/vect-frint-no-inexact.c
+index 7bbaf1fba5a..e20eaea205a 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vect-frint-no-inexact.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-frint-no-inexact.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -fno-fp-int-builtin-inexact -mlasx" } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -fno-fp-int-builtin-inexact -mlasx -mcmodel=normal" } */
+ 
+ #include "vect-frint.c"
+ 
+diff --git a/gcc/testsuite/gcc.target/loongarch/vect-frint-scalar-no-inexact.c b/gcc/testsuite/gcc.target/loongarch/vect-frint-scalar-no-inexact.c
+index 002e3b92df7..d5f0933537d 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vect-frint-scalar-no-inexact.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-frint-scalar-no-inexact.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -mlsx -fno-fp-int-builtin-inexact" } */
++/* { dg-options "-O2 -mlsx -fno-fp-int-builtin-inexact -mcmodel=normal" } */
+ 
+ #include "vect-frint-scalar.c"
+ 
+diff --git a/gcc/testsuite/gcc.target/loongarch/vect-frint-scalar.c b/gcc/testsuite/gcc.target/loongarch/vect-frint-scalar.c
+index dbcb9065ad4..171ba98f00b 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vect-frint-scalar.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-frint-scalar.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -mlsx -ffp-int-builtin-inexact" } */
++/* { dg-options "-O2 -mlsx -ffp-int-builtin-inexact -mcmodel=normal" } */
+ 
+ #define test(func, suffix) \
+ __typeof__ (1.##suffix) \
+diff --git a/gcc/testsuite/gcc.target/loongarch/vect-frint.c b/gcc/testsuite/gcc.target/loongarch/vect-frint.c
+index 6bf211e7e98..bda041bdf91 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vect-frint.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-frint.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -ffp-int-builtin-inexact -mlasx" } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -ffp-int-builtin-inexact -mlasx -mcmodel=normal" } */
+ 
+ float out_x[8];
+ double out_y[4];
+diff --git a/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c b/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
+index 61918beef5c..3fa97531d59 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-ftint-no-inexact.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -fno-fp-int-builtin-inexact -mlasx" } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -fno-fp-int-builtin-inexact -mlasx -mcmodel=normal" } */
+ 
+ #include "vect-ftint.c"
+ 
+diff --git a/gcc/testsuite/gcc.target/loongarch/vect-ftint.c b/gcc/testsuite/gcc.target/loongarch/vect-ftint.c
+index c4962ed1774..96da3cd7b57 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vect-ftint.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-ftint.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -ffp-int-builtin-inexact -mlasx" } */
++/* { dg-options "-O2 -mabi=lp64d -mdouble-float -fno-math-errno -ffp-int-builtin-inexact -mlasx -mcmodel=normal" } */
+ 
+ int out_x[8];
+ long out_y[4];
+-- 
+2.33.0
+

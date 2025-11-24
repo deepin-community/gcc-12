@@ -1,0 +1,47 @@
+From fc2f3bcb449f61895f5f59a9ba615fb7f7e9fb09 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Sat, 2 Nov 2024 15:30:40 +0800
+Subject: [PATCH 05/59] LoongArch: Fix clerical errors in lasx_xvreplgr2vr_*
+ and lsx_vreplgr2vr_*.
+
+[x]vldi.{b/h/w/d} is not implemented in LoongArch.
+Use the macro [x]vrepli.{b/h/w/d} to replace.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md: Fixed.
+	* config/loongarch/lsx.md: Fixed.
+---
+ gcc/config/loongarch/lasx.md | 2 +-
+ gcc/config/loongarch/lsx.md  | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/config/loongarch/lasx.md b/gcc/config/loongarch/lasx.md
+index be2f6ca8e..c0795a04b 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -1402,7 +1402,7 @@
+   "ISA_HAS_LASX"
+ {
+   if (which_alternative == 1)
+-    return "xvldi.b\t%u0,0" ;
++    return "xvrepli.b\t%u0,0";
+ 
+   return "xvreplgr2vr.<lasxfmt>\t%u0,%z1";
+ }
+diff --git a/gcc/config/loongarch/lsx.md b/gcc/config/loongarch/lsx.md
+index 5cb5bc61f..e6307d447 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -1275,7 +1275,7 @@
+   "ISA_HAS_LSX"
+ {
+   if (which_alternative == 1)
+-    return "vldi.<lsxfmt>\t%w0,0";
++    return "vrepli.b\t%w0,0";
+ 
+   return "vreplgr2vr.<lsxfmt>\t%w0,%z1";
+ }
+-- 
+2.47.3
+

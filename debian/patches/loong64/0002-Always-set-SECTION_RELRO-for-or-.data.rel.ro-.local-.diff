@@ -1,0 +1,89 @@
+From ab436c2a9c5dd5c55b9c4d5a6f19bd82ed8d9716 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 11 Oct 2024 02:44:27 +0800
+Subject: [PATCH 02/59] Always set SECTION_RELRO for or .data.rel.ro{,.local}
+ [PR116887]
+
+At least two ports (hppa and loongarch) need to set SECTION_RELRO for
+.data.rel.ro{,.local} in section_type_flags (PR52999 and PR116887), and
+I cannot see a reason not to just set it in the generic code.
+
+With this applied we can also remove the hppa-specific
+pa_section_type_flags in a future patch.
+
+gcc/ChangeLog:
+
+	PR target/116887
+	* varasm.cc (default_section_type_flags): Always set
+	SECTION_RELRO if name is .data.rel.ro{,.local}.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/116887
+	* gcc.dg/pr116887.c: New test.
+---
+ gcc/testsuite/gcc.dg/pr116887.c | 23 +++++++++++++++++++++++
+ gcc/varasm.cc                   | 10 ++++------
+ 2 files changed, 27 insertions(+), 6 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.dg/pr116887.c
+
+diff --git a/gcc/testsuite/gcc.dg/pr116887.c b/gcc/testsuite/gcc.dg/pr116887.c
+new file mode 100644
+index 000000000..b7255e09a
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.dg/pr116887.c
+@@ -0,0 +1,23 @@
++/* { dg-do compile } */
++/* { dg-options "-fpic" } */
++
++struct link_map
++{
++  struct link_map *l_next;
++};
++struct rtld_global
++{
++  struct link_map *_ns_loaded;
++  char buf[4096];
++  struct link_map _dl_rtld_map;
++};
++extern struct rtld_global _rtld_global;
++static int _dlfo_main __attribute__ ((section (".data.rel.ro"), used));
++void
++_dlfo_process_initial (int ns)
++{
++  for (struct link_map *l = _rtld_global._ns_loaded; l != ((void *)0);
++       l = l->l_next)
++    if (l == &_rtld_global._dl_rtld_map)
++      asm ("");
++}
+diff --git a/gcc/varasm.cc b/gcc/varasm.cc
+index a4b1cc686..19e2194a9 100644
+--- a/src/gcc/varasm.cc
++++ b/src/gcc/varasm.cc
+@@ -6720,6 +6720,9 @@ default_section_type_flags (tree decl, const char *name, int reloc)
+ 
+   if (decl && TREE_CODE (decl) == FUNCTION_DECL)
+     flags = SECTION_CODE;
++  else if (strcmp (name, ".data.rel.ro") == 0
++	   || strcmp (name, ".data.rel.ro.local") == 0)
++    flags = SECTION_WRITE | SECTION_RELRO;
+   else if (decl)
+     {
+       enum section_category category
+@@ -6733,12 +6736,7 @@ default_section_type_flags (tree decl, const char *name, int reloc)
+ 	flags = SECTION_WRITE;
+     }
+   else
+-    {
+-      flags = SECTION_WRITE;
+-      if (strcmp (name, ".data.rel.ro") == 0
+-	  || strcmp (name, ".data.rel.ro.local") == 0)
+-	flags |= SECTION_RELRO;
+-    }
++    flags = SECTION_WRITE;
+ 
+   if (decl && DECL_P (decl) && DECL_COMDAT_GROUP (decl))
+     flags |= SECTION_LINKONCE;
+-- 
+2.47.3
+

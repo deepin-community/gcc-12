@@ -1,0 +1,33 @@
+From 023494d35fd6565d3aa26bf41fb751f1a1012f27 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 1 Mar 2025 11:46:49 +0800
+Subject: [PATCH 75/89] LoongArch: Don't expand atomic_fetch_sub_{hi, qi} to
+ LL-SC loop if -mlam-bh
+
+With -mlam-bh, we should negate the addend first, and use an amadd
+instruction.  Disabling the expander makes the compiler do it correctly.
+
+gcc/ChangeLog:
+
+	* config/loongarch/sync.md (atomic_fetch_sub<SHORT:mode>):
+	Disable if ISA_HAS_LAM_BH.
+---
+ gcc/config/loongarch/sync.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gcc/config/loongarch/sync.md b/gcc/config/loongarch/sync.md
+index 14bf480f011..ad43c58d016 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -661,7 +661,7 @@
+ 			(match_operand:SHORT 2 "reg_or_0_operand" "rJ"))
+ 	   (match_operand:SI 3 "const_int_operand")] ;; model
+ 	 UNSPEC_SYNC_OLD_OP))]
+-  ""
++  "!ISA_HAS_LAM_BH"
+ {
+   union loongarch_gen_fn_ptrs generator;
+   generator.fn_7 = gen_atomic_cas_value_sub_7_si;
+-- 
+2.33.0
+

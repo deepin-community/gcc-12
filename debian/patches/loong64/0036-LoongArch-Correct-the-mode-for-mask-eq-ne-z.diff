@@ -1,0 +1,58 @@
+From d1a0b391912c7d1b23ff5511c02650ba51caddc8 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 19 Jan 2025 21:26:59 +0800
+Subject: [PATCH 36/59] LoongArch: Correct the mode for mask{eq,ne}z
+
+For mask{eq,ne}z, rk is always compared with 0 in the full width, thus
+the mode for rk should be X.
+
+I found the issue reviewing a patch fixing a similar issue for RISC-V
+XTheadCondMov [1], but interestingly I cannot find a test case really
+blowing up on LoongArch.  But as the issue is obvious enough let's fix
+it anyway so it won't blow up in the future.
+
+[1]: https://gcc.gnu.org/pipermail/gcc-patches/2025-January/674004.html
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md
+	(*sel<code><GPR:mode>_using_<GPR2:mode>): Rename to ...
+	(*sel<code><GPR:mode>_using_<X:mode>): ... here.
+	(GPR2): Remove as nothing uses it now.
+---
+ gcc/config/loongarch/loongarch.md | 10 +++-------
+ 1 file changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index 858aefb38..c86909ec7 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -375,10 +375,6 @@
+ ;; from the same template.
+ (define_mode_iterator GPR [SI (DI "TARGET_64BIT")])
+ 
+-;; A copy of GPR that can be used when a pattern has two independent
+-;; modes.
+-(define_mode_iterator GPR2 [SI (DI "TARGET_64BIT")])
+-
+ ;; This mode iterator allows 16-bit and 32-bit GPR patterns and 32-bit 64-bit
+ ;; FPR patterns to be generated from the same template.
+ (define_mode_iterator JOIN_MODE [HI
+@@ -2516,11 +2512,11 @@
+ 
+ ;; Conditional move instructions.
+ 
+-(define_insn "*sel<code><GPR:mode>_using_<GPR2:mode>"
++(define_insn "*sel<code><GPR:mode>_using_<X:mode>"
+   [(set (match_operand:GPR 0 "register_operand" "=r,r")
+ 	(if_then_else:GPR
+-	 (equality_op:GPR2 (match_operand:GPR2 1 "register_operand" "r,r")
+-			   (const_int 0))
++	 (equality_op:X (match_operand:X 1 "register_operand" "r,r")
++			(const_int 0))
+ 	 (match_operand:GPR 2 "reg_or_0_operand" "r,J")
+ 	 (match_operand:GPR 3 "reg_or_0_operand" "J,r")))]
+   "register_operand (operands[2], <GPR:MODE>mode)
+-- 
+2.47.3
+

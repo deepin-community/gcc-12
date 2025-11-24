@@ -1,0 +1,76 @@
+From e29f2ae6fddb6a8e5a95df8acace8dbdf903a97a Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 14 Oct 2025 16:20:04 +0800
+Subject: [PATCH 81/89] LoongArch: Fix ICE for illegal strings in the target
+ attribute.
+
+Modify the two situations:
+
+1. __attribute__ ((target ("arch")))
+ICE will be reported before modification, and there will be an error
+prompt after modification.
+
+2. __attribute__ ((target ("arch=12345")))
+Fixed the issue where the attribute string was not printed completely
+in the previous error message.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-target-attr.cc
+	(loongarch_process_one_target_attr): Fix ICE.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/attr-check-error-message.c: Add tests.
+---
+ gcc/config/loongarch/loongarch-target-attr.cc          | 10 ++++++++--
+ .../gcc.target/loongarch/attr-check-error-message.c    |  8 ++++++++
+ 2 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/config/loongarch/loongarch-target-attr.cc b/gcc/config/loongarch/loongarch-target-attr.cc
+index cb537446dff..922aa0483b5 100644
+--- a/src/gcc/config/loongarch/loongarch-target-attr.cc
++++ b/src/gcc/config/loongarch/loongarch-target-attr.cc
+@@ -203,7 +203,13 @@ loongarch_process_one_target_attr (char *arg_str, location_t loc)
+ 	  /* Use the option setting machinery to set an option to an enum.  */
+ 	  case loongarch_attr_enum:
+ 	    {
+-	      gcc_assert (arg);
++	      if (!arg)
++		{
++		  error_at (loc, "the value of pragma or attribute "
++			    "%<target(\"%s\")%> not be empty", str_to_check);
++		  return false;
++		}
++
+ 	      bool valid;
+ 	      int value;
+ 	      struct cl_decoded_option decoded;
+@@ -244,7 +250,7 @@ loongarch_process_one_target_attr (char *arg_str, location_t loc)
+      were malformed we will have returned false already.  */
+   if (!found)
+     error_at (loc, "attribute %<target%> argument %qs is unknown",
+-	      str_to_check);
++	      arg_str);
+ 
+   return found;
+ }
+diff --git a/gcc/testsuite/gcc.target/loongarch/attr-check-error-message.c b/gcc/testsuite/gcc.target/loongarch/attr-check-error-message.c
+index 82dcd172555..6420f332110 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/attr-check-error-message.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/attr-check-error-message.c
+@@ -28,3 +28,11 @@ test6 (void)	/* { dg-error "attribute \\\'target\\\' argument not a string" } */
+ __attribute__ ((target ("lsx,"))) void
+ test7 (void)	/* { dg-error "malformed \\\'target\\\(\\\"lsx,\\\"\\\)\\\' pragma or attribute" } */
+ {}
++
++__attribute__ ((target ("arch"))) void
++test8 (void)	/* { dg-error "the value of pragma or attribute \\\'target\\\(\\\"arch\\\"\\\)\\\' not be empty" } */
++{}
++
++__attribute__ ((target ("lsx;priority=1"))) void
++test9 (void)	/* { dg-error "attribute \\\'target\\\' argument \\\'lsx;priority=1\\\' is unknown" } */
++{}
+-- 
+2.33.0
+

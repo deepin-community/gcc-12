@@ -1,0 +1,57 @@
+From 5b120eec684f98f6fd690431fdbd1d484ae472ae Mon Sep 17 00:00:00 2001
+From: Xing Li <lixing@loongson.cn>
+Date: Wed, 16 Apr 2025 10:29:57 +0800
+Subject: [PATCH 57/59] LoongArch: Change {dg-do-what-default} save and restore
+ logical.
+
+The set of {dg-do-what-default} to 'run' may lead some test hang
+during make check.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vector/loongarch-vector.exp: Change
+	{dg-do-what-default} save and restore logical.
+---
+ .../gcc.target/loongarch/vector/loongarch-vector.exp        | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/testsuite/gcc.target/loongarch/vector/loongarch-vector.exp b/gcc/testsuite/gcc.target/loongarch/vector/loongarch-vector.exp
+index d53bee52a..b43fd7af7 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector/loongarch-vector.exp
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector/loongarch-vector.exp
+@@ -35,7 +35,7 @@ dg-init
+ 
+ # If the target hardware supports LSX, the default action is "run", otherwise
+ # just "compile".
+-global dg-do-what-default
++set saved-dg-do-what-default ${dg-do-what-default}
+ if {[check_effective_target_loongarch_sx_hw]} then {
+   set dg-do-what-default run
+ } else {
+@@ -45,6 +45,7 @@ if {[check_effective_target_loongarch_sx_hw]} then {
+ #Main loop.
+ dg-runtest [lsort [glob -nocomplain $srcdir/$subdir/lsx/*.\[cS\]]] \
+ 	" -mlsx" $DEFAULT_CFLAGS
++set dg-do-what-default ${saved-dg-do-what-default}
+ 
+ dg-finish
+ 
+@@ -52,7 +53,7 @@ dg-init
+ # If the target hardware supports LASX, the default action is "run", otherwise
+ # just "compile".
+ 
+-global dg-do-what-default
++set saved-dg-do-what-default ${dg-do-what-default}
+ if {[check_effective_target_loongarch_asx_hw]} then {
+   set dg-do-what-default run
+ } else {
+@@ -61,5 +62,6 @@ if {[check_effective_target_loongarch_asx_hw]} then {
+ 
+ dg-runtest [lsort [glob -nocomplain $srcdir/$subdir/lasx/*.\[cS\]]] \
+ 	" -mlasx" $DEFAULT_CFLAGS
++set dg-do-what-default ${saved-dg-do-what-default}
+ # All done.
+ dg-finish
+-- 
+2.47.3
+

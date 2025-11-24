@@ -1,0 +1,152 @@
+From ca8eb688a5d676c744aa6e864cdf16df9c9e00a7 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 26 Oct 2025 13:20:20 +0800
+Subject: [PATCH 77/89] LoongArch: Make the code generation of the trap pattern
+ configurable
+
+In some applications (notably the Linux kernel), "break 0" is used as a
+trap that a handler may be able to recover.  But in GCC the "trap"
+pattern is meant to make the program rightfully die instead.
+
+As [1] describes, sometimes it's vital to distinguish between the two
+cases.  The kernel developers prefer "break 1" here, but in the
+user-space it's better to trigger a SIGILL instead of SIGTRAP as the
+latter is more likely used as a application-defined trap.
+
+To support both cases, make the code generation configurable with a new
+option.
+
+[1]:https://lore.kernel.org/20250923061722.24457-1-yangtiezhu@loongson.cn
+
+gcc/
+
+	* config/loongarch/genopts/loongarch.opt.in (-mbreak-code=):
+	New.
+	* config/loongarch/loongarch.opt: Regenerate.
+	* config/loongarch/loongarch.md (trap): Separate to a
+	define_insn and a define_expand which takes la_break_code.
+	* doc/invoke.texi (-mbreak-code=): Document.
+	* config/loongarch/loongarch.opt.urls: Regenerate.
+
+gcc/testsuite
+
+	* gcc.target/loongarch/trap-default.c: New test.
+	* gcc.target/loongarch/trap-1.c: New test.
+---
+ gcc/config/loongarch/genopts/loongarch.opt.in     |  4 ++++
+ gcc/config/loongarch/loongarch.md                 | 14 +++++++++++---
+ gcc/config/loongarch/loongarch.opt                |  4 ++++
+ gcc/config/loongarch/loongarch.opt.urls           |  3 +++
+ gcc/testsuite/gcc.target/loongarch/trap-1.c       |  9 +++++++++
+ gcc/testsuite/gcc.target/loongarch/trap-default.c |  9 +++++++++
+ 6 files changed, 40 insertions(+), 3 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/trap-1.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/trap-default.c
+
+diff --git a/gcc/config/loongarch/genopts/loongarch.opt.in b/gcc/config/loongarch/genopts/loongarch.opt.in
+index 4ffd969e350..9739279a549 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -205,6 +205,10 @@ mmax-inline-memcpy-size=
+ Target Joined RejectNegative UInteger Var(la_max_inline_memcpy_size) Init(1024) Save
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
++mbreak-code=
++Target Joined UInteger Var(la_break_code) Init(-1) Save
++-mbreak-code=CODE	Use 'break CODE' for traps supposed to be unrecoverable, or an 'amswap.w' instruction leading to INE if CODE is out of range.
++
+ Enum
+ Name(explicit_relocs) Type(int)
+ The code model option names for -mexplicit-relocs:
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index 155390fb2d7..fd59ec9225e 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -689,14 +689,22 @@
+ ;;  ....................
+ ;;
+ 
+-(define_insn "trap"
+-  [(trap_if (const_int 1) (const_int 0))]
++(define_insn "*trap"
++  [(trap_if (const_int 1) (match_operand 0 "const_int_operand"))]
+   ""
+ {
+-  return "break\t0";
++  return (const_uimm15_operand (operands[0], VOIDmode)
++	  ? "break\t%0"
++	  : "amswap.w\t$r0,$r1,$r0");
+ }
+   [(set_attr "type" "trap")])
+ 
++(define_expand "trap"
++  [(trap_if (const_int 1) (match_dup 0))]
++  ""
++{
++  operands[0] = GEN_INT (la_break_code);
++})
+ 
+ 
+ ;;
+diff --git a/gcc/config/loongarch/loongarch.opt b/gcc/config/loongarch/loongarch.opt
+index 52469757fc6..55af42c9e77 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -213,6 +213,10 @@ mmax-inline-memcpy-size=
+ Target Joined RejectNegative UInteger Var(la_max_inline_memcpy_size) Init(1024) Save
+ -mmax-inline-memcpy-size=SIZE	Set the max size of memcpy to inline, default is 1024.
+ 
++mbreak-code=
++Target Joined UInteger Var(la_break_code) Init(-1) Save
++-mbreak-code=CODE	Use 'break CODE' for traps supposed to be unrecoverable, or an 'amswap.w' instruction leading to INE if CODE is out of range.
++
+ Enum
+ Name(explicit_relocs) Type(int)
+ The code model option names for -mexplicit-relocs:
+diff --git a/gcc/config/loongarch/loongarch.opt.urls b/gcc/config/loongarch/loongarch.opt.urls
+index 5f644f6c315..7f02d1174ff 100644
+--- a/src/gcc/config/loongarch/loongarch.opt.urls
++++ b/src/gcc/config/loongarch/loongarch.opt.urls
+@@ -48,6 +48,9 @@ UrlSuffix(gcc/LoongArch-Options.html#index-mstrict-align-1)
+ mmax-inline-memcpy-size=
+ UrlSuffix(gcc/LoongArch-Options.html#index-mmax-inline-memcpy-size)
+ 
++mbreak-code=
++UrlSuffix(gcc/LoongArch-Options.html#index-mbreak-code)
++
+ mexplicit-relocs=
+ UrlSuffix(gcc/LoongArch-Options.html#index-mexplicit-relocs-1)
+ 
+diff --git a/gcc/testsuite/gcc.target/loongarch/trap-1.c b/gcc/testsuite/gcc.target/loongarch/trap-1.c
+new file mode 100644
+index 00000000000..8936f60cce2
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/trap-1.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -w -fisolate-erroneous-paths-dereference -mbreak-code=1" } */
++/* { dg-final { scan-assembler "break\\t1" } } */
++
++int
++bug (void)
++{
++  return *(int *)0;
++}
+diff --git a/gcc/testsuite/gcc.target/loongarch/trap-default.c b/gcc/testsuite/gcc.target/loongarch/trap-default.c
+new file mode 100644
+index 00000000000..32948d4c822
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/trap-default.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -w -fisolate-erroneous-paths-dereference" } */
++/* { dg-final { scan-assembler "amswap\\.w\\t\\\$r0,\\\$r1,\\\$r0" } } */
++
++int
++bug (void)
++{
++  return *(int *)0;
++}
+-- 
+2.33.0
+

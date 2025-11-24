@@ -1,0 +1,45 @@
+From dfd56cc7c7f90a86cfd4a89f4884e1e2740157ec Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Wed, 12 Feb 2025 14:29:58 +0800
+Subject: [PATCH 42/59] LoongArch: Fix the issue of function jump out of range
+ caused by crtbeginS.o [PR118844].
+
+Due to the presence of R_LARCH_B26 in
+/usr/lib/gcc/loongarch64-linux-gnu/14/crtbeginS.o, its addressing
+range is [PC-128MiB, PC+128MiB-4]. This means that when the code
+segment size exceeds 128MB, linking with lld will definitely fail
+(ld will not fail because the order of the two is different).
+
+The linking order:
+  lld: crtbeginS.o + .text + .plt
+  ld : .plt + crtbeginS.o + .text
+
+To solve this issue, add '-mcmodel=extreme' when compiling crtbeginS.o.
+
+	PR target/118844
+
+libgcc/ChangeLog:
+
+	* config/loongarch/t-crtstuff: Add '-mcmodel=extreme'
+	to CRTSTUFF_T_CFLAGS_S.
+---
+ libgcc/config/loongarch/t-crtstuff | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/libgcc/config/loongarch/t-crtstuff b/libgcc/config/loongarch/t-crtstuff
+index b8c36eb66..2a2489b7e 100644
+--- a/src/libgcc/config/loongarch/t-crtstuff
++++ b/src/libgcc/config/loongarch/t-crtstuff
+@@ -3,3 +3,9 @@
+ # to .eh_frame data from crtbeginT.o instead of the user-defined object
+ # during static linking.
+ CRTSTUFF_T_CFLAGS += -fno-omit-frame-pointer -fno-asynchronous-unwind-tables
++
++# As shown in the test case PR118844, when using lld for linking,
++# it fails due to B26 in crtbeginS.o causing the link to exceed the range.
++# Therefore, the issue was resolved by adding the compilation option
++# "-mcmodel=extreme" when compiling crtbeginS.o.
++CRTSTUFF_T_CFLAGS_S += -mcmodel=extreme
+-- 
+2.47.3
+

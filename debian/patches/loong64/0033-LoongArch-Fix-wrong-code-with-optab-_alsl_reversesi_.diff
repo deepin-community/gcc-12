@@ -1,0 +1,89 @@
+From a47dcb3a254932e7ad329e21caa4ca9961e5ef6b Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 21 Jan 2025 23:01:38 +0800
+Subject: [PATCH 33/59] LoongArch: Fix wrong code with
+ <optab>_alsl_reversesi_extended
+
+The second source register of this insn cannot be the same as the
+destination register.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.md
+	(<optab>_alsl_reversesi_extended): Add '&' to the destination
+	register constraint and append '0' to the first source register
+	constraint to indicate the destination register cannot be same
+	as the second source register, and change the split condition to
+	reload_completed so that the insn will be split only after RA in
+	order to obtain allocated registers that satisfy the above
+	constraints.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/bitwise-shift-reassoc-clobber.c: New
+	test.
+---
+ gcc/config/loongarch/loongarch.md             |  6 +++---
+ .../loongarch/bitwise-shift-reassoc-clobber.c | 21 +++++++++++++++++++
+ 2 files changed, 24 insertions(+), 3 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/bitwise-shift-reassoc-clobber.c
+
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index 5d5771999..6fd3dda56 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -3170,13 +3170,13 @@
+ ;; add.w => alsl.w, so implement slli.d + and + add.w => and + alsl.w on
+ ;; our own.
+ (define_insn_and_split "<optab>_alsl_reversesi_extended"
+-  [(set (match_operand:DI 0 "register_operand" "=r")
++  [(set (match_operand:DI 0 "register_operand" "=&r")
+ 	(sign_extend:DI
+ 	  (plus:SI
+ 	    (subreg:SI
+ 	      (any_bitwise:DI
+ 		(ashift:DI
+-		  (match_operand:DI 1 "register_operand" "r")
++		  (match_operand:DI 1 "register_operand" "r0")
+ 		  (match_operand:SI 2 "const_immalsl_operand" ""))
+ 		(match_operand:DI 3 "const_int_operand" "i"))
+ 	      0)
+@@ -3185,7 +3185,7 @@
+    && loongarch_reassoc_shift_bitwise (<is_and>, operands[2], operands[3],
+ 				       SImode)"
+   "#"
+-  "&& true"
++  "&& reload_completed"
+   [; r0 = r1 [&|^] r3 is emitted in PREPARATION-STATEMENTS because we
+    ; need to handle a special case, see below.
+    (set (match_dup 0)
+diff --git a/gcc/testsuite/gcc.target/loongarch/bitwise-shift-reassoc-clobber.c b/gcc/testsuite/gcc.target/loongarch/bitwise-shift-reassoc-clobber.c
+new file mode 100644
+index 000000000..9985a18ea
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/bitwise-shift-reassoc-clobber.c
+@@ -0,0 +1,21 @@
++/* { dg-do run } */
++/* { dg-options "-O2" } */
++
++register long x asm ("s0");
++
++#define TEST(x) (int)(((x & 0x114) << 3) + x)
++
++[[gnu::noipa]] void
++test (void)
++{
++  x = TEST (x);
++}
++
++int
++main (void)
++{
++  x = 0xffff;
++  test ();
++  if (x != TEST (0xffff))
++    __builtin_trap ();
++}
+-- 
+2.47.3
+

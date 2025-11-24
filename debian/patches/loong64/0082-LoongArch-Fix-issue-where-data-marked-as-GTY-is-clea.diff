@@ -1,0 +1,51 @@
+From 01a2da7c927d541d73c3f2014a7cf10ab4ca7c88 Mon Sep 17 00:00:00 2001
+From: zhaozhou <zhaozhou@loongson.cn>
+Date: Mon, 10 Nov 2025 15:38:26 +0800
+Subject: [PATCH 82/89] LoongArch: Fix issue where data marked as GTY is
+ cleaned up by ggc.
+
+As for GGC(GCC Garbage Collection), it's use gengtype tool to scan all
+source files contain the GTY mark, and generate gt-*.h files. GGC
+traversal these file to find gt_root node and marks these objects that
+directly or indirectly reference this node as active, then clean up
+unmarked object's memory.
+
+For the loongarch-builtins.cc file, it is necessary to add
+target_gtfiles in config.gcc to generate gt-loongarch-builtins.h, and
+include this header file in the .cc file, prevented the data marked
+with GTY in this `.cc` file cleaned up by ggc.
+
+gcc/ChangeLog:
+
+	* config.gcc: Add target_gtfiles.
+	* config/loongarch/loongarch-builtins.cc: Add header file.
+---
+ gcc/config.gcc                             | 1 +
+ gcc/config/loongarch/loongarch-builtins.cc | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+index 31f84b37d16..ec22d4b3e78 100644
+--- a/src/gcc/config.gcc
++++ b/src/gcc/config.gcc
+@@ -460,6 +460,7 @@ loongarch*-*-*)
+ 	extra_headers="larchintrin.h lsxintrin.h lasxintrin.h"
+ 	extra_objs="loongarch-c.o loongarch-builtins.o loongarch-cpu.o loongarch-opts.o loongarch-def.o loongarch-evolution.o loongarch-target-attr.o"
+ 	extra_gcc_objs="loongarch-driver.o loongarch-cpu.o loongarch-opts.o loongarch-def.o"
++	target_gtfiles="\$(srcdir)/config/loongarch/loongarch-builtins.cc"
+ 	extra_options="${extra_options} g.opt fused-madd.opt"
+ 	;;
+ nds32*)
+diff --git a/gcc/config/loongarch/loongarch-builtins.cc b/gcc/config/loongarch/loongarch-builtins.cc
+index 8492a5bda95..5d06a4d88c2 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -3106,3 +3106,5 @@ loongarch_build_builtin_va_list (void)
+ {
+   return ptr_type_node;
+ }
++
++#include "gt-loongarch-builtins.h"
+-- 
+2.33.0
+

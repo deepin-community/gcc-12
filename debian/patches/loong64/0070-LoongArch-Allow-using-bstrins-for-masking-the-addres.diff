@@ -1,0 +1,45 @@
+From 800a3913d2b0c75e498aa1fd2a277695cdd90bd6 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 1 Mar 2025 11:46:44 +0800
+Subject: [PATCH 70/89] LoongArch: Allow using bstrins for masking the address
+ in atomic_test_and_set
+
+We can use bstrins for masking the address here.  As people are already
+working on LA32R (which lacks bstrins instructions), for future-proofing
+we check whether (const_int -4) is an and_operand and force it into an
+register if not.
+
+gcc/ChangeLog:
+
+	* config/loongarch/sync.md (atomic_test_and_set): Use bstrins
+	for masking the address if possible.
+---
+ gcc/config/loongarch/sync.md | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/gcc/config/loongarch/sync.md b/gcc/config/loongarch/sync.md
+index ef1b9118d64..affab1f6fcf 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -356,12 +356,13 @@
+   rtx mem = operands[1];
+   rtx model = operands[2];
+   rtx addr = force_reg (Pmode, XEXP (mem, 0));
+-  rtx tmp_reg = gen_reg_rtx (Pmode);
+-  rtx zero_reg = gen_rtx_REG (Pmode, 0);
+-
++  rtx mask = gen_int_mode (-4, Pmode);
+   rtx aligned_addr = gen_reg_rtx (Pmode);
+-  emit_move_insn (tmp_reg, gen_rtx_PLUS (Pmode, zero_reg, GEN_INT (-4)));
+-  emit_move_insn (aligned_addr, gen_rtx_AND (Pmode, addr, tmp_reg));
++
++  if (!and_operand (mask, Pmode))
++    mask = force_reg (Pmode, mask);
++
++  emit_move_insn (aligned_addr, gen_rtx_AND (Pmode, addr, mask));
+ 
+   rtx aligned_mem = change_address (mem, SImode, aligned_addr);
+   set_mem_alias_set (aligned_mem, 0);
+-- 
+2.33.0
+

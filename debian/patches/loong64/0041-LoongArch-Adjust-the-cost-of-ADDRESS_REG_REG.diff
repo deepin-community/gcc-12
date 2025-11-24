@@ -1,0 +1,180 @@
+From 398d22395ec1803189bf3dfccac3b2045c749b0f Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 10 Dec 2024 20:59:22 +0800
+Subject: [PATCH 41/59] LoongArch: Adjust the cost of ADDRESS_REG_REG.
+
+After changing this cost from 1 to 3, the performance of spec2006
+401 473 416 465 482 can be improved by about 2% on LA664.
+
+Add option '-maddr-reg-reg-cost='.
+
+gcc/ChangeLog:
+
+	* config/loongarch/genopts/loongarch.opt.in: Add
+	option '-maddr-reg-reg-cost='.
+	* config/loongarch/loongarch-def.cc
+	(loongarch_rtx_cost_data::loongarch_rtx_cost_data): Initialize
+	addr_reg_reg_cost to 3.
+	* config/loongarch/loongarch-opts.cc
+	(loongarch_target_option_override): If '-maddr-reg-reg-cost='
+	is not used, set it to the initial value.
+	* config/loongarch/loongarch-tune.h
+	(struct loongarch_rtx_cost_data): Add the member
+	addr_reg_reg_cost and its assignment function to the structure
+	loongarch_rtx_cost_data.
+	* config/loongarch/loongarch.cc (loongarch_address_insns):
+	Use la_addr_reg_reg_cost to set the cost of ADDRESS_REG_REG.
+	* config/loongarch/loongarch.opt: Regenerate.
+	* config/loongarch/loongarch.opt.urls: Regenerate.
+	* doc/invoke.texi: Add description of '-maddr-reg-reg-cost='.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/const-double-zero-stx.c: Add
+	'-maddr-reg-reg-cost=1'.
+	* gcc.target/loongarch/stack-check-alloca-1.c: Likewise.
+---
+ gcc/config/loongarch/genopts/loongarch.opt.in              | 4 ++++
+ gcc/config/loongarch/loongarch-def.cc                      | 1 +
+ gcc/config/loongarch/loongarch-opts.cc                     | 3 +++
+ gcc/config/loongarch/loongarch-tune.h                      | 7 +++++++
+ gcc/config/loongarch/loongarch.cc                          | 2 +-
+ gcc/config/loongarch/loongarch.opt                         | 4 ++++
+ gcc/config/loongarch/loongarch.opt.urls                    | 3 +++
+ gcc/testsuite/gcc.target/loongarch/const-double-zero-stx.c | 2 +-
+ gcc/testsuite/gcc.target/loongarch/stack-check-alloca-1.c  | 2 +-
+ 9 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/gcc/config/loongarch/genopts/loongarch.opt.in b/gcc/config/loongarch/genopts/loongarch.opt.in
+index 20795f6bd..4ffd969e3 100644
+--- a/src/gcc/config/loongarch/genopts/loongarch.opt.in
++++ b/src/gcc/config/loongarch/genopts/loongarch.opt.in
+@@ -177,6 +177,10 @@ mbranch-cost=
+ Target RejectNegative Joined UInteger Var(la_branch_cost) Save
+ -mbranch-cost=COST	Set the cost of branches to roughly COST instructions.
+ 
++maddr-reg-reg-cost=
++Target RejectNegative Joined UInteger Var(la_addr_reg_reg_cost) Save
++-maddr-reg-reg-cost=COST  Set the cost of ADDRESS_REG_REG to the value calculated by COST.
++
+ mcheck-zero-division
+ Target Mask(CHECK_ZERO_DIV) Save
+ Trap on integer divide by zero.
+diff --git a/gcc/config/loongarch/loongarch-def.cc b/gcc/config/loongarch/loongarch-def.cc
+index c3f9fc6de..7f9fb6a37 100644
+--- a/src/gcc/config/loongarch/loongarch-def.cc
++++ b/src/gcc/config/loongarch/loongarch-def.cc
+@@ -136,6 +136,7 @@ loongarch_rtx_cost_data::loongarch_rtx_cost_data ()
+     movcf2gr (COSTS_N_INSNS (7)),
+     movgr2cf (COSTS_N_INSNS (15)),
+     branch_cost (6),
++    addr_reg_reg_cost (3),
+     memory_latency (4) {}
+ 
+ /* The following properties cannot be looked up directly using "cpucfg".
+diff --git a/gcc/config/loongarch/loongarch-opts.cc b/gcc/config/loongarch/loongarch-opts.cc
+index 1d08bb6a1..0d9eb58b7 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -1010,6 +1010,9 @@ loongarch_target_option_override (struct loongarch_target *target,
+   if (!opts_set->x_la_branch_cost)
+     opts->x_la_branch_cost = loongarch_cost->branch_cost;
+ 
++  if (!opts_set->x_la_addr_reg_reg_cost)
++    opts->x_la_addr_reg_reg_cost = loongarch_cost->addr_reg_reg_cost;
++
+   /* other stuff */
+   if (ABI_LP64_P (target->abi.base))
+     opts->x_flag_pcc_struct_return = 0;
+diff --git a/gcc/config/loongarch/loongarch-tune.h b/gcc/config/loongarch/loongarch-tune.h
+index d286eee0b..b9434305e 100644
+--- a/src/gcc/config/loongarch/loongarch-tune.h
++++ b/src/gcc/config/loongarch/loongarch-tune.h
+@@ -38,6 +38,7 @@ struct loongarch_rtx_cost_data
+   unsigned short movcf2gr;
+   unsigned short movgr2cf;
+   unsigned short branch_cost;
++  unsigned short addr_reg_reg_cost;
+   unsigned short memory_latency;
+ 
+   /* Default RTX cost initializer, implemented in loongarch-def.cc.  */
+@@ -115,6 +116,12 @@ struct loongarch_rtx_cost_data
+     return *this;
+   }
+ 
++  loongarch_rtx_cost_data addr_reg_reg_cost_ (unsigned short _addr_reg_reg_cost)
++  {
++    addr_reg_reg_cost = _addr_reg_reg_cost;
++    return *this;
++  }
++
+   loongarch_rtx_cost_data memory_latency_ (unsigned short _memory_latency)
+   {
+     memory_latency = _memory_latency;
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 16ffa340e..4322794e8 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -2373,7 +2373,7 @@ loongarch_address_insns (rtx x, machine_mode mode, bool might_split_p)
+ 	return factor;
+ 
+       case ADDRESS_REG_REG:
+-	return factor;
++	return factor * la_addr_reg_reg_cost;
+ 
+       case ADDRESS_CONST_INT:
+ 	return lsx_p ? 0 : factor;
+diff --git a/gcc/config/loongarch/loongarch.opt b/gcc/config/loongarch/loongarch.opt
+index f9c7bd446..52469757f 100644
+--- a/src/gcc/config/loongarch/loongarch.opt
++++ b/src/gcc/config/loongarch/loongarch.opt
+@@ -185,6 +185,10 @@ mbranch-cost=
+ Target RejectNegative Joined UInteger Var(la_branch_cost) Save
+ -mbranch-cost=COST	Set the cost of branches to roughly COST instructions.
+ 
++maddr-reg-reg-cost=
++Target RejectNegative Joined UInteger Var(la_addr_reg_reg_cost) Save
++-maddr-reg-reg-cost=COST  Set the cost of ADDRESS_REG_REG to the value calculated by COST.
++
+ mcheck-zero-division
+ Target Mask(CHECK_ZERO_DIV) Save
+ Trap on integer divide by zero.
+diff --git a/gcc/config/loongarch/loongarch.opt.urls b/gcc/config/loongarch/loongarch.opt.urls
+index 571c504e6..5f644f6c3 100644
+--- a/src/gcc/config/loongarch/loongarch.opt.urls
++++ b/src/gcc/config/loongarch/loongarch.opt.urls
+@@ -27,6 +27,9 @@ UrlSuffix(gcc/LoongArch-Options.html#index-mabi-2)
+ mbranch-cost=
+ UrlSuffix(gcc/LoongArch-Options.html#index-mbranch-cost-2)
+ 
++maddr-reg-reg-cost=
++UrlSuffix(gcc/LoongArch-Options.html#index-maddr-reg-reg-cost)
++
+ mcheck-zero-division
+ UrlSuffix(gcc/LoongArch-Options.html#index-mcheck-zero-division)
+ 
+diff --git a/gcc/testsuite/gcc.target/loongarch/const-double-zero-stx.c b/gcc/testsuite/gcc.target/loongarch/const-double-zero-stx.c
+index 8fb04be8f..fd1bb49ff 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/const-double-zero-stx.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/const-double-zero-stx.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2" } */
++/* { dg-options "-O2 -maddr-reg-reg-cost=1" } */
+ /* { dg-final { scan-assembler-times {stx\..\t\$r0} 2 } } */
+ 
+ extern float arr_f[];
+diff --git a/gcc/testsuite/gcc.target/loongarch/stack-check-alloca-1.c b/gcc/testsuite/gcc.target/loongarch/stack-check-alloca-1.c
+index 6ee589c4b..6168461b2 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/stack-check-alloca-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/stack-check-alloca-1.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -fstack-clash-protection --param stack-clash-protection-guard-size=16" } */
++/* { dg-options "-O2 -fstack-clash-protection --param stack-clash-protection-guard-size=16 -maddr-reg-reg-cost=1" } */
+ /* { dg-require-effective-target supports_stack_clash_protection } */
+ /* { dg-require-effective-target alloca } */
+ /* { dg-skip-if "" { *-*-* } { "-fstack-check" } { "" } } */
+-- 
+2.47.3
+

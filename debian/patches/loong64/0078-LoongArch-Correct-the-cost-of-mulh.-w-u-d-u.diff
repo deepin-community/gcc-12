@@ -1,0 +1,78 @@
+From 7d443f4ce1e459b1ef72079dbda045353c527b0b Mon Sep 17 00:00:00 2001
+From: Guo Jie <guojie@loongson.cn>
+Date: Sat, 1 Nov 2025 15:33:06 +0800
+Subject: [PATCH 78/89] LoongArch: Correct the cost of mulh.{w[u]/d[u]}
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_rtx_costs):
+	Correct the cost of mulh.{w[u]|d[u]}.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/mulh_wu.c: New test.
+---
+ gcc/config/loongarch/loongarch.cc            | 27 +++++++++++++++++++-
+ gcc/testsuite/gcc.target/loongarch/mulh_wu.c | 10 ++++++++
+ 2 files changed, 36 insertions(+), 1 deletion(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/mulh_wu.c
+
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 4690c2a2d96..aae2e4138ba 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -3901,9 +3901,34 @@ loongarch_rtx_costs (rtx x, machine_mode mode, int outer_code,
+ 				      speed);
+       return true;
+ 
++    case LSHIFTRT:
++      /* Correct the cost of mulh.{w[u]/d[u]}.  */
++      if (outer_code == TRUNCATE && CONST_INT_P (XEXP (x, 1))
++	  && INTVAL (XEXP (x, 1)) == (GET_MODE_BITSIZE (mode) / 2)
++	  && GET_CODE (XEXP (x, 0)) == MULT
++	  && ((GET_CODE (XEXP (XEXP (x, 0), 0)) == ZERO_EXTEND
++	       && GET_CODE (XEXP (XEXP (x, 0), 1)) == ZERO_EXTEND)
++	      || (GET_CODE (XEXP (XEXP (x, 0), 0)) == SIGN_EXTEND
++		  && GET_CODE (XEXP (XEXP (x, 0), 1)) == SIGN_EXTEND))
++	  && GET_CODE (XEXP (XEXP (XEXP (x, 0), 0), 0)) == REG
++	  && GET_CODE (XEXP (XEXP (XEXP (x, 0), 1), 0)) == REG)
++	{
++	  if (GET_MODE (XEXP (XEXP (XEXP (x, 0), 0), 0)) == SImode
++	      && GET_MODE (XEXP (XEXP (XEXP (x, 0), 1), 0)) == SImode)
++	    {
++	      *total = loongarch_cost->int_mult_si;
++	      return true;
++	    }
++	  if (GET_MODE (XEXP (XEXP (XEXP (x, 0), 0), 0)) == DImode
++	      && GET_MODE (XEXP (XEXP (XEXP (x, 0), 1), 0)) == DImode)
++	    {
++	      *total = loongarch_cost->int_mult_di;
++	      return true;
++	    }
++	}
++      /* Fall through.  */
+     case ASHIFT:
+     case ASHIFTRT:
+-    case LSHIFTRT:
+     case ROTATE:
+     case ROTATERT:
+       if (CONSTANT_P (XEXP (x, 1)))
+diff --git a/gcc/testsuite/gcc.target/loongarch/mulh_wu.c b/gcc/testsuite/gcc.target/loongarch/mulh_wu.c
+new file mode 100644
+index 00000000000..53fc518313c
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/mulh_wu.c
+@@ -0,0 +1,10 @@
++/* { dg-do compile { target { loongarch64*-*-* } } } */
++/* { dg-options "-O3 -mabi=lp64d" } */
++/* { dg-final { scan-assembler "\tmulh.wu" } } */
++/* { dg-final { scan-assembler-not "\tlu32i.d" } } */
++
++unsigned int
++test (unsigned int *a)
++{
++  return *a / 60;
++}
+-- 
+2.33.0
+

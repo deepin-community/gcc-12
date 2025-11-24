@@ -1,0 +1,222 @@
+From af5db3526083ec272d92f63f2dc715bde29c583d Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 24 Jan 2025 08:33:39 +0800
+Subject: [PATCH 45/59] LoongArch: Allow moving TImode vectors
+
+We have some vector instructions for operations on 128-bit integer, i.e.
+TImode, vectors.  Previously they had been modeled with unspecs, but
+it's more natural to just model them with TImode vector RTL expressions.
+
+For the preparation, allow moving V1TImode and V2TImode vectors in LSX
+and LASX registers so we won't get a reload failure when we start to
+save TImode vectors in these registers.
+
+This implicitly depends on the vrepli optimization: without it we'd try
+"vrepli.q" which does not really exist and trigger an ICE.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lsx.md (mov<LSX:mode>): Remove.
+	(movmisalign<LSX:mode>): Remove.
+	(mov<LSX:mode>_lsx): Remove.
+	* config/loongarch/lasx.md (mov<LASX:mode>): Remove.
+	(movmisalign<LASX:mode>): Remove.
+	(mov<LASX:mode>_lasx): Remove.
+	* config/loongarch/loongarch-modes.def (V1TI): Add.
+	(V2TI): Mention in the comment.
+	* config/loongarch/loongarch.md (mode): Add V1TI and V2TI.
+	* config/loongarch/simd.md (ALLVEC_TI): New mode iterator.
+	(mov<ALLVEC_TI:mode): New define_expand.
+	(movmisalign<ALLVEC_TI:mode>): Likewise.
+	(mov<ALLVEC_TI:mode>_simd): New define_insn_and_split.
+---
+ gcc/config/loongarch/lasx.md             | 40 ----------------------
+ gcc/config/loongarch/loongarch-modes.def |  3 +-
+ gcc/config/loongarch/loongarch.md        |  2 +-
+ gcc/config/loongarch/lsx.md              | 36 --------------------
+ gcc/config/loongarch/simd.md             | 42 ++++++++++++++++++++++++
+ 5 files changed, 45 insertions(+), 78 deletions(-)
+
+diff --git a/gcc/config/loongarch/lasx.md b/gcc/config/loongarch/lasx.md
+index 640134acc..6b1a6d604 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -699,46 +699,6 @@
+   DONE;
+ })
+ 
+-(define_expand "mov<mode>"
+-  [(set (match_operand:LASX 0)
+-	(match_operand:LASX 1))]
+-  "ISA_HAS_LASX"
+-{
+-  if (loongarch_legitimize_move (<MODE>mode, operands[0], operands[1]))
+-    DONE;
+-})
+-
+-
+-(define_expand "movmisalign<mode>"
+-  [(set (match_operand:LASX 0)
+-	(match_operand:LASX 1))]
+-  "ISA_HAS_LASX"
+-{
+-  if (loongarch_legitimize_move (<MODE>mode, operands[0], operands[1]))
+-    DONE;
+-})
+-
+-;; 256-bit LASX modes can only exist in LASX registers or memory.
+-(define_insn "mov<mode>_lasx"
+-  [(set (match_operand:LASX 0 "nonimmediate_operand" "=f,f,R,*r,*f")
+-	(match_operand:LASX 1 "move_operand" "fYGYI,R,f,*f,*r"))]
+-  "ISA_HAS_LASX"
+-  { return loongarch_output_move (operands); }
+-  [(set_attr "type" "simd_move,simd_load,simd_store,simd_copy,simd_insert")
+-   (set_attr "mode" "<MODE>")
+-   (set_attr "length" "8,4,4,4,4")])
+-
+-
+-(define_split
+-  [(set (match_operand:LASX 0 "nonimmediate_operand")
+-	(match_operand:LASX 1 "move_operand"))]
+-  "reload_completed && ISA_HAS_LASX
+-   && loongarch_split_move_p (operands[0], operands[1])"
+-  [(const_int 0)]
+-{
+-  loongarch_split_move (operands[0], operands[1]);
+-  DONE;
+-})
+ 
+ ;; LASX
+ (define_insn "add<mode>3"
+diff --git a/gcc/config/loongarch/loongarch-modes.def b/gcc/config/loongarch/loongarch-modes.def
+index ac9ea3142..fa556bc97 100644
+--- a/src/gcc/config/loongarch/loongarch-modes.def
++++ b/src/gcc/config/loongarch/loongarch-modes.def
+@@ -32,9 +32,10 @@ VECTOR_MODES (FLOAT, 8);      /*       V4HF V2SF */
+ /* For LARCH LSX 128 bits.  */
+ VECTOR_MODES (INT, 16);	      /* V16QI V8HI V4SI V2DI */
+ VECTOR_MODES (FLOAT, 16);     /*	    V4SF V2DF */
++VECTOR_MODE (INT, TI, 1);     /*		 V1TI */
+ 
+ /* For LARCH LASX 256 bits.  */
+-VECTOR_MODES (INT, 32);	      /* V32QI V16HI V8SI V4DI */
++VECTOR_MODES (INT, 32);	      /* V32QI V16HI V8SI V4DI V2TI */
+ VECTOR_MODES (FLOAT, 32);     /*	     V8SF V4DF */
+ 
+ /* Double-sized vector modes for vec_concat.  */
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index bf476251c..cd2336f11 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -188,7 +188,7 @@
+ 
+ ;; Main data type used by the insn
+ (define_attr "mode" "unknown,none,QI,HI,SI,DI,TI,SF,DF,TF,FCC,
+-  V2DI,V4SI,V8HI,V16QI,V2DF,V4SF,V4DI,V8SI,V16HI,V32QI,V4DF,V8SF"
++  V1TI,V2DI,V4SI,V8HI,V16QI,V2DF,V4SF,V2TI,V4DI,V8SI,V16HI,V32QI,V4DF,V8SF"
+   (const_string "unknown"))
+ 
+ ;; True if the main data type is twice the size of a word.
+diff --git a/gcc/config/loongarch/lsx.md b/gcc/config/loongarch/lsx.md
+index cf6d05900..bce3149d4 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -575,42 +575,6 @@
+   [(set_attr "type" "simd_sld")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_expand "mov<mode>"
+-  [(set (match_operand:LSX 0)
+-	(match_operand:LSX 1))]
+-  "ISA_HAS_LSX"
+-{
+-  if (loongarch_legitimize_move (<MODE>mode, operands[0], operands[1]))
+-    DONE;
+-})
+-
+-(define_expand "movmisalign<mode>"
+-  [(set (match_operand:LSX 0)
+-	(match_operand:LSX 1))]
+-  "ISA_HAS_LSX"
+-{
+-  if (loongarch_legitimize_move (<MODE>mode, operands[0], operands[1]))
+-    DONE;
+-})
+-
+-(define_insn "mov<mode>_lsx"
+-  [(set (match_operand:LSX 0 "nonimmediate_operand" "=f,f,R,*r,*f,*r")
+-	(match_operand:LSX 1 "move_operand" "fYGYI,R,f,*f,*r,*r"))]
+-  "ISA_HAS_LSX"
+-{ return loongarch_output_move (operands); }
+-  [(set_attr "type" "simd_move,simd_load,simd_store,simd_copy,simd_insert,simd_copy")
+-   (set_attr "mode" "<MODE>")])
+-
+-(define_split
+-  [(set (match_operand:LSX 0 "nonimmediate_operand")
+-	(match_operand:LSX 1 "move_operand"))]
+-  "reload_completed && ISA_HAS_LSX
+-   && loongarch_split_move_p (operands[0], operands[1])"
+-  [(const_int 0)]
+-{
+-  loongarch_split_move (operands[0], operands[1]);
+-  DONE;
+-})
+ 
+ ;; Integer operations
+ (define_insn "add<mode>3"
+diff --git a/gcc/config/loongarch/simd.md b/gcc/config/loongarch/simd.md
+index d7f1e6ea2..ceb751e74 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -133,6 +133,48 @@
+ ;; instruction here so we can avoid duplicating logics.
+ ;; =======================================================================
+ 
++
++;; Move
++
++;; Some immediate values in V1TI or V2TI may be stored in LSX or LASX
++;; registers, thus we need to allow moving them for reload.
++(define_mode_iterator ALLVEC_TI [ALLVEC
++				 (V1TI "ISA_HAS_LSX")
++				 (V2TI "ISA_HAS_LASX")])
++
++(define_expand "mov<mode>"
++  [(set (match_operand:ALLVEC_TI 0)
++	(match_operand:ALLVEC_TI 1))]
++  ""
++{
++  if (loongarch_legitimize_move (<MODE>mode, operands[0], operands[1]))
++    DONE;
++})
++
++(define_expand "movmisalign<mode>"
++  [(set (match_operand:ALLVEC_TI 0)
++	(match_operand:ALLVEC_TI 1))]
++  ""
++{
++  if (loongarch_legitimize_move (<MODE>mode, operands[0], operands[1]))
++    DONE;
++})
++
++(define_insn_and_split "mov<mode>_simd"
++  [(set (match_operand:ALLVEC_TI 0 "nonimmediate_operand" "=f,f,R,*r,*f,*r")
++	(match_operand:ALLVEC_TI 1 "move_operand" "fYGYI,R,f,*f,*r,*r"))]
++  ""
++{ return loongarch_output_move (operands); }
++  "reload_completed && loongarch_split_move_p (operands[0], operands[1])"
++  [(const_int 0)]
++{
++  loongarch_split_move (operands[0], operands[1]);
++  DONE;
++}
++  [(set_attr "type" "simd_move,simd_load,simd_store,simd_copy,simd_insert,simd_copy")
++   (set_attr "mode" "<MODE>")])
++
++
+ ;;
+ ;; FP vector rounding instructions
+ ;;
+-- 
+2.47.3
+

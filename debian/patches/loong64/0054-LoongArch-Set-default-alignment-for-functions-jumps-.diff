@@ -1,0 +1,91 @@
+From 4b04d8ed3d17f52862798b7883225ddffb4a446e Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Thu, 27 Mar 2025 11:27:40 +0800
+Subject: [PATCH 54/59] LoongArch: Set default alignment for functions jumps
+ loops and labels.
+
+Based on r15-7624, a set of align combinations with better performance
+was tested through spec2006.
+
+LA464: -falign-loops=8 -falign-functions=32 -falign-jumps=32 -falign-labels=8
+LA664: -falign-loops=16 -falign-functions=16 -falign-jumps=32 -falign-labels=8
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-def.cc
+	(la464_align): Add settings for labels.
+	(la664_align): Likewise.
+	* config/loongarch/loongarch-opts.cc
+	(loongarch_target_option_override): Likewise.
+	* config/loongarch/loongarch-tune.h
+	(struct loongarch_align): Implement the function `label_`.
+---
+ gcc/config/loongarch/loongarch-def.cc  | 4 ++--
+ gcc/config/loongarch/loongarch-opts.cc | 3 +++
+ gcc/config/loongarch/loongarch-tune.h  | 9 ++++++++-
+ 3 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/gcc/config/loongarch/loongarch-def.cc b/gcc/config/loongarch/loongarch-def.cc
+index 7f9fb6a37..ba2ce8404 100644
+--- a/src/gcc/config/loongarch/loongarch-def.cc
++++ b/src/gcc/config/loongarch/loongarch-def.cc
+@@ -107,12 +107,12 @@ array_tune<loongarch_cache> loongarch_cpu_cache =
+ 
+ static inline loongarch_align la464_align ()
+ {
+-  return loongarch_align ().function_ ("32").loop_ ("16").jump_ ("16");
++  return loongarch_align ().function_ ("32").loop_ ("8").jump_ ("32").label_ ("8");
+ }
+ 
+ static inline loongarch_align la664_align ()
+ {
+-  return loongarch_align ().function_ ("8").loop_ ("8").jump_ ("32");
++  return loongarch_align ().function_ ("16").loop_ ("16").jump_ ("32").label_ ("8");
+ }
+ 
+ array_tune<loongarch_align> loongarch_cpu_align =
+diff --git a/gcc/config/loongarch/loongarch-opts.cc b/gcc/config/loongarch/loongarch-opts.cc
+index 0d9eb58b7..ef877ae16 100644
+--- a/src/gcc/config/loongarch/loongarch-opts.cc
++++ b/src/gcc/config/loongarch/loongarch-opts.cc
+@@ -965,6 +965,9 @@ loongarch_target_option_override (struct loongarch_target *target,
+ 
+       if (opts->x_flag_align_jumps && !opts->x_str_align_jumps)
+ 	opts->x_str_align_jumps = loongarch_cpu_align[target->cpu_tune].jump;
++
++      if (opts->x_flag_align_labels && !opts->x_str_align_labels)
++	opts->x_str_align_labels = loongarch_cpu_align[target->cpu_tune].label;
+     }
+ 
+   /* Set up parameters to be used in prefetching algorithm.  */
+diff --git a/gcc/config/loongarch/loongarch-tune.h b/gcc/config/loongarch/loongarch-tune.h
+index b9434305e..2fff0564a 100644
+--- a/src/gcc/config/loongarch/loongarch-tune.h
++++ b/src/gcc/config/loongarch/loongarch-tune.h
+@@ -177,8 +177,9 @@ struct loongarch_align {
+   const char *function;	/* default value for -falign-functions */
+   const char *loop;	/* default value for -falign-loops */
+   const char *jump;	/* default value for -falign-jumps */
++  const char *label;	/* default value for -falign-labels */
+ 
+-  loongarch_align () : function (nullptr), loop (nullptr), jump (nullptr) {}
++  loongarch_align () : function (nullptr), loop (nullptr), jump (nullptr), label (nullptr) {}
+ 
+   loongarch_align function_ (const char *_function)
+   {
+@@ -197,6 +198,12 @@ struct loongarch_align {
+     jump = _jump;
+     return *this;
+   }
++
++  loongarch_align label_ (const char *_label)
++  {
++    label = _label;
++    return *this;
++  }
+ };
+ 
+ #endif /* LOONGARCH_TUNE_H */
+-- 
+2.47.3
+

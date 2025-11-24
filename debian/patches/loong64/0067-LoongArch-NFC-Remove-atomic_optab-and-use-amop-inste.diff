@@ -1,0 +1,51 @@
+From f0ba5dcedebdf83eb9e0f74dc14211e3b1b55951 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 1 Mar 2025 11:46:41 +0800
+Subject: [PATCH 67/89] LoongArch: (NFC) Remove atomic_optab and use amop
+ instead
+
+They are the same.
+
+gcc/ChangeLog:
+
+	* config/loongarch/sync.md (atomic_optab): Remove.
+	(atomic_<atomic_optab><mode>): Change atomic_optab to amop.
+	(atomic_fetch_<atomic_optab><mode>): Likewise.
+---
+ gcc/config/loongarch/sync.md | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/gcc/config/loongarch/sync.md b/gcc/config/loongarch/sync.md
+index 2e008c4874e..92962ba6429 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -35,8 +35,6 @@
+ ])
+ 
+ (define_code_iterator any_atomic [plus ior xor and])
+-(define_code_attr atomic_optab
+-  [(plus "add") (ior "or") (xor "xor") (and "and")])
+ 
+ ;; This attribute gives the format suffix for atomic memory operations.
+ (define_mode_attr amo [(QI "b") (HI "h") (SI "w") (DI "d")])
+@@ -175,7 +173,7 @@
+ }
+   [(set (attr "length") (const_int 12))])
+ 
+-(define_insn "atomic_<atomic_optab><mode>"
++(define_insn "atomic_<amop><mode>"
+   [(set (match_operand:GPR 0 "memory_operand" "+ZB")
+ 	(unspec_volatile:GPR
+ 	  [(any_atomic:GPR (match_dup 0)
+@@ -197,7 +195,7 @@
+   "amadd%A2.<amo>\t$zero,%z1,%0"
+   [(set (attr "length") (const_int 4))])
+ 
+-(define_insn "atomic_fetch_<atomic_optab><mode>"
++(define_insn "atomic_fetch_<amop><mode>"
+   [(set (match_operand:GPR 0 "register_operand" "=&r")
+ 	(match_operand:GPR 1 "memory_operand" "+ZB"))
+    (set (match_dup 1)
+-- 
+2.33.0
+
