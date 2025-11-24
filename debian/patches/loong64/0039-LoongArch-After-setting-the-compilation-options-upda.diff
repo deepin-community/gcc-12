@@ -1,0 +1,218 @@
+From c536985255b1152a3ffeb2f7587151029b34722d Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 11 Feb 2025 20:36:17 +0800
+Subject: [PATCH 39/59] LoongArch: After setting the compilation options,
+ update the predefined macros.
+
+	PR target/118828
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-c.cc (loongarch_pragma_target_parse):
+	Update the predefined macros.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/pr118828.c: New test.
+	* gcc.target/loongarch/pr118828-2.c: New test.
+	* gcc.target/loongarch/pr118828-3.c: New test.
+	* gcc.target/loongarch/pr118828-4.c: New test.
+---
+ gcc/config/loongarch/loongarch-c.cc           | 14 ++++++++
+ .../gcc.target/loongarch/pr118828-2.c         | 30 ++++++++++++++++
+ .../gcc.target/loongarch/pr118828-3.c         | 32 +++++++++++++++++
+ .../gcc.target/loongarch/pr118828-4.c         | 32 +++++++++++++++++
+ gcc/testsuite/gcc.target/loongarch/pr118828.c | 34 +++++++++++++++++++
+ 5 files changed, 142 insertions(+)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pr118828-2.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pr118828-3.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pr118828-4.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pr118828.c
+
+diff --git a/gcc/config/loongarch/loongarch-c.cc b/gcc/config/loongarch/loongarch-c.cc
+index 2d42d000d..f8b5d072e 100644
+--- a/src/gcc/config/loongarch/loongarch-c.cc
++++ b/src/gcc/config/loongarch/loongarch-c.cc
+@@ -27,6 +27,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "tm.h"
+ #include "c-family/c-common.h"
+ #include "cpplib.h"
++#include "c-family/c-pragma.h"
+ #include "tm_p.h"
+ 
+ #define preprocessing_asm_p() (cpp_get_options (pfile)->lang == CLK_ASM)
+@@ -219,6 +220,19 @@ loongarch_pragma_target_parse (tree args, tree pop_target)
+ 
+   loongarch_reset_previous_fndecl ();
+ 
++  /* For the definitions, ensure all newly defined macros are considered
++     as used for -Wunused-macros.  There is no point warning about the
++     compiler predefined macros.  */
++  cpp_options *cpp_opts = cpp_get_options (parse_in);
++  unsigned char saved_warn_unused_macros = cpp_opts->warn_unused_macros;
++  cpp_opts->warn_unused_macros = 0;
++
++  cpp_force_token_locations (parse_in, BUILTINS_LOCATION);
++  loongarch_update_cpp_builtins (parse_in);
++  cpp_stop_forcing_token_locations (parse_in);
++
++  cpp_opts->warn_unused_macros = saved_warn_unused_macros;
++
+   /* If we're popping or reseting make sure to update the globals so that
+      the optab availability predicates get recomputed.  */
+   if (pop_target)
+diff --git a/gcc/testsuite/gcc.target/loongarch/pr118828-2.c b/gcc/testsuite/gcc.target/loongarch/pr118828-2.c
+new file mode 100644
+index 000000000..3d32fcc15
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr118828-2.c
+@@ -0,0 +1,30 @@
++/* { dg-do preprocess } */
++/* { dg-options "-mno-lsx" } */
++
++#ifdef __loongarch_sx
++#error LSX should not be available here
++#endif
++
++#ifdef __loongarch_simd_width
++#error simd width shuold not be available here
++#endif
++
++#pragma GCC push_options
++#pragma GCC target("lsx")
++#ifndef __loongarch_sx
++#error LSX should be available here
++#endif
++#ifndef __loongarch_simd_width
++#error simd width should be available here
++#elif __loongarch_simd_width != 128
++#error simd width should be 128
++#endif
++#pragma GCC pop_options
++
++#ifdef __loongarch_sx
++#error LSX should become unavailable again
++#endif
++
++#ifdef __loongarch_simd_width
++#error simd width shuold become unavailable again
++#endif
+diff --git a/gcc/testsuite/gcc.target/loongarch/pr118828-3.c b/gcc/testsuite/gcc.target/loongarch/pr118828-3.c
+new file mode 100644
+index 000000000..31ab8e59a
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr118828-3.c
+@@ -0,0 +1,32 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64" } */
++/* { dg-final { scan-assembler "t1: loongarch64" } } */
++/* { dg-final { scan-assembler "t2: la64v1.1" } } */
++/* { dg-final { scan-assembler "t3: loongarch64" } } */
++
++#ifndef __loongarch_arch
++#error __loongarch_arch should be available here
++#endif
++
++void
++t1 (void)
++{
++  asm volatile ("# t1: " __loongarch_arch);
++}
++
++#pragma GCC push_options
++#pragma GCC target("arch=la64v1.1")
++
++void
++t2 (void)
++{
++  asm volatile ("# t2: " __loongarch_arch);
++}
++
++#pragma GCC pop_options
++
++void
++t3 (void)
++{
++  asm volatile ("# t3: " __loongarch_arch);
++}
+diff --git a/gcc/testsuite/gcc.target/loongarch/pr118828-4.c b/gcc/testsuite/gcc.target/loongarch/pr118828-4.c
+new file mode 100644
+index 000000000..77587ee56
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr118828-4.c
+@@ -0,0 +1,32 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mtune=la464" } */
++/* { dg-final { scan-assembler "t1: la464" } } */
++/* { dg-final { scan-assembler "t2: la664" } } */
++/* { dg-final { scan-assembler "t3: la464" } } */
++
++#ifndef __loongarch_tune
++#error __loongarch_tune should be available here
++#endif
++
++void
++t1 (void)
++{
++  asm volatile ("# t1: " __loongarch_tune);
++}
++
++#pragma GCC push_options
++#pragma GCC target("tune=la664")
++
++void
++t2 (void)
++{
++  asm volatile ("# t2: " __loongarch_tune);
++}
++
++#pragma GCC pop_options
++
++void
++t3 (void)
++{
++  asm volatile ("# t3: " __loongarch_tune);
++}
+diff --git a/gcc/testsuite/gcc.target/loongarch/pr118828.c b/gcc/testsuite/gcc.target/loongarch/pr118828.c
+new file mode 100644
+index 000000000..abdda24c7
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr118828.c
+@@ -0,0 +1,34 @@
++/* { dg-do preprocess } */
++/* { dg-options "-mno-lasx" } */
++
++#ifdef __loongarch_asx
++#error LASX should not be available here
++#endif
++
++#ifdef __loongarch_simd_width
++#if __loongarch_simd_width == 256
++#error simd width shuold not be 256
++#endif
++#endif
++
++#pragma GCC push_options
++#pragma GCC target("lasx")
++#ifndef __loongarch_asx
++#error LASX should be available here
++#endif
++#ifndef __loongarch_simd_width
++#error simd width should be available here
++#elif __loongarch_simd_width != 256
++#error simd width should be 256
++#endif
++#pragma GCC pop_options
++
++#ifdef __loongarch_asx
++#error LASX should become unavailable again
++#endif
++
++#ifdef __loongarch_simd_width
++#if __loongarch_simd_width == 256
++#error simd width shuold not be 256 again
++#endif
++#endif
+-- 
+2.47.3
+

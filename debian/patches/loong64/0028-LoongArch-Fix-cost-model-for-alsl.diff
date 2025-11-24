@@ -1,0 +1,97 @@
+From 3eb0d34f9aca3a085a87484599f7900123c6928a Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 6 Sep 2024 00:34:55 +0800
+Subject: [PATCH 28/59] LoongArch: Fix cost model for alsl
+
+Our cost model for alsl was wrong: it matches (a + b * imm) where imm is
+1, 2, 3, or 4 (should be 2, 4, 8, or 16), and it does not match
+(a + (b << imm)) at all.  For the test case:
+
+    a += c << 3;
+    b += c << 3;
+
+it caused the compiler to perform a CSE and make one slli and two add,
+but we just want two alsl.
+
+Also add a "code == PLUS" check to prevent matching a - (b << imm) as we
+don't have any "slsl" instruction.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_rtx_costs): Fix the
+	cost for (a + b * imm) and (a + (b << imm)) which can be
+	implemented with a single alsl instruction.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/alsl-cost.c: New test.
+---
+ gcc/config/loongarch/loongarch.cc             | 27 +++++++++++++++----
+ .../gcc.target/loongarch/alsl-cost.c          | 14 ++++++++++
+ 2 files changed, 36 insertions(+), 5 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/alsl-cost.c
+
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index da9620d46..b9b9bbab8 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -3919,14 +3919,31 @@ loongarch_rtx_costs (rtx x, machine_mode mode, int outer_code,
+ 
+       /* If it's an add + mult (which is equivalent to shift left) and
+ 	 it's immediate operand satisfies const_immalsl_operand predicate.  */
+-      if ((mode == SImode || (TARGET_64BIT && mode == DImode))
+-	  && GET_CODE (XEXP (x, 0)) == MULT)
++      if (code == PLUS
++	  && (mode == SImode || (TARGET_64BIT && mode == DImode)))
+ 	{
+-	  rtx op2 = XEXP (XEXP (x, 0), 1);
+-	  if (const_immalsl_operand (op2, mode))
++	  HOST_WIDE_INT shamt = -1;
++	  rtx lhs = XEXP (x, 0);
++	  rtx_code code_lhs = GET_CODE (lhs);
++
++	  switch (code_lhs)
++	    {
++	    case ASHIFT:
++	      if (CONST_INT_P (XEXP (lhs, 1)))
++		shamt = INTVAL (XEXP (lhs, 1));
++	      break;
++	    case MULT:
++	      if (CONST_INT_P (XEXP (lhs, 1)))
++		shamt = exact_log2 (INTVAL (XEXP (lhs, 1)));
++	      break;
++	    default:
++	      break;
++	    }
++
++	  if (IN_RANGE (shamt, 1, 4))
+ 	    {
+ 	      *total = (COSTS_N_INSNS (1)
+-			+ set_src_cost (XEXP (XEXP (x, 0), 0), mode, speed)
++			+ set_src_cost (XEXP (lhs, 0), mode, speed)
+ 			+ set_src_cost (XEXP (x, 1), mode, speed));
+ 	      return true;
+ 	    }
+diff --git a/gcc/testsuite/gcc.target/loongarch/alsl-cost.c b/gcc/testsuite/gcc.target/loongarch/alsl-cost.c
+new file mode 100644
+index 000000000..a18227901
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/alsl-cost.c
+@@ -0,0 +1,14 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mtune=loongarch64" } */
++/* { dg-final { scan-assembler-times "alsl\\\.\[wd\]" 2 } } */
++
++struct P
++{
++  long a, b;
++};
++
++struct P
++t (struct P x, long n)
++{
++  return (struct P){.a = x.a + n * 8, .b = x.b + n * 8};
++}
+-- 
+2.47.3
+

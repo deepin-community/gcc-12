@@ -1,0 +1,35 @@
+From 2f87fec306ccd4c2224183d220c2c767d37c69fa Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 22 Jan 2025 17:16:29 +0800
+Subject: [PATCH 34/59] LoongArch: Fix invalid subregs in xorsign [PR118501]
+
+The test case added in r15-7073 now triggers an ICE, indicating we need
+the same fix as AArch64.
+
+gcc/ChangeLog:
+
+	PR target/118501
+	* config/loongarch/loongarch.md (@xorsign<mode>3): Use
+	force_lowpart_subreg.
+---
+ gcc/config/loongarch/loongarch.md | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index 6fd3dda56..858aefb38 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -1356,8 +1356,8 @@
+   machine_mode lsx_mode
+     = <MODE>mode == SFmode ? V4SFmode : V2DFmode;
+   rtx tmp = gen_reg_rtx (lsx_mode);
+-  rtx op1 = lowpart_subreg (lsx_mode, operands[1], <MODE>mode);
+-  rtx op2 = lowpart_subreg (lsx_mode, operands[2], <MODE>mode);
++  rtx op1 = force_lowpart_subreg (lsx_mode, operands[1], <MODE>mode);
++  rtx op2 = force_lowpart_subreg (lsx_mode, operands[2], <MODE>mode);
+   emit_insn (gen_xorsign3 (lsx_mode, tmp, op1, op2));
+   emit_move_insn (operands[0],
+           lowpart_subreg (<MODE>mode, tmp, lsx_mode));
+-- 
+2.47.3
+

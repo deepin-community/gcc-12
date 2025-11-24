@@ -1,0 +1,220 @@
+From 05ae624a9f8700ed04ab88105771783a3d7f3633 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 5 Sep 2024 17:53:41 +0800
+Subject: [PATCH 29/59] LoongArch: Simplify using bstr{ins,pick} instructions
+ for and
+
+For bstrins, we can merge it into and<mode>3 instead of having a
+separate define_insn.
+
+For bstrpick, we can use the constraints to ensure the first source
+register and the destination register are the same hardware register,
+instead of emitting a move manually.
+
+This will simplify the next commit where we'll reassociate bitwise
+and left shift for better code generation.
+
+gcc/ChangeLog:
+
+	* config/loongarch/constraints.md (Yy): New define_constriant.
+	* config/loongarch/loongarch.cc (loongarch_print_operand):
+	For "%M", output the index of bits to be used with
+	bstrins/bstrpick.
+	* config/loongarch/predicates.md (ins_zero_bitmask_operand):
+	Exclude low_bitmask_operand as for low_bitmask_operand it's
+	always better to use bstrpick instead of bstrins.
+	(and_operand): New define_predicate.
+	* config/loongarch/loongarch.md (any_or): New
+	define_code_iterator.
+	(bitwise_operand): New define_code_attr.
+	(*<optab:any_or><mode:GPR>3): New define_insn.
+	(*and<mode:GPR>3): New define_insn.
+	(<optab:any_bitwise><mode:X>3): New define_expand.
+	(and<mode>3_extended): Remove, replaced by the 3rd alternative
+	of *and<mode:GPR>3.
+	(bstrins_<mode>_for_mask): Remove, replaced by the 4th
+	alternative of *and<mode:GPR>3.
+	(*<optab:any_bitwise>si3_internal): Remove, already covered by
+	the *<optab:any_or><mode:GPR>3 and *and<mode:GPR>3 templates.
+---
+ gcc/config/loongarch/constraints.md |  4 ++
+ gcc/config/loongarch/loongarch.cc   | 12 +++++
+ gcc/config/loongarch/loongarch.md   | 77 +++++++++++------------------
+ gcc/config/loongarch/predicates.md  |  8 ++-
+ 4 files changed, 53 insertions(+), 48 deletions(-)
+
+diff --git a/gcc/config/loongarch/constraints.md b/gcc/config/loongarch/constraints.md
+index 40ac8d7f2..7a090be1e 100644
+--- a/src/gcc/config/loongarch/constraints.md
++++ b/src/gcc/config/loongarch/constraints.md
+@@ -292,6 +292,10 @@
+    "@internal"
+    (match_operand 0 "low_bitmask_operand"))
+ 
++(define_constraint "Yy"
++   "@internal"
++   (match_operand 0 "ins_zero_bitmask_operand"))
++
+ (define_constraint "YI"
+   "@internal
+    A replicated vector const in which the replicated value is in the range
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index b9b9bbab8..5eec36148 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -6132,6 +6132,8 @@ loongarch_print_operand_reloc (FILE *file, rtx op, bool hi64_part,
+    'i'	Print i if the operand is not a register.
+    'L'  Print the low-part relocation associated with OP.
+    'm'	Print one less than CONST_INT OP in decimal.
++   'M'	Print the indices of the lowest enabled bit and the highest
++	enabled bit in a mask (for bstr* instructions).
+    'N'	Print the inverse of the integer branch condition for comparison OP.
+    'Q'  Print R_LARCH_RELAX for TLS IE.
+    'r'  Print address 12-31bit relocation associated with OP.
+@@ -6258,6 +6260,16 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+ 	output_operand_lossage ("invalid use of '%%%c'", letter);
+       break;
+ 
++    case 'M':
++      if (CONST_INT_P (op))
++	{
++	  HOST_WIDE_INT mask = INTVAL (op);
++	  fprintf (file, "%d,%d", floor_log2 (mask), ctz_hwi (mask));
++	}
++      else
++	output_operand_lossage ("invalid use of '%%%c'", letter);
++      break;
++
+     case 'N':
+       loongarch_print_int_branch_condition (file, reverse_condition (code),
+ 					    letter);
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index 3b1e5e1cf..c875d9134 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -488,7 +488,11 @@
+ ;; This code iterator allows the three bitwise instructions to be generated
+ ;; from the same template.
+ (define_code_iterator any_bitwise [and ior xor])
++(define_code_iterator any_or [ior xor])
+ (define_code_iterator neg_bitwise [and ior])
++(define_code_attr bitwise_operand [(and "and_operand")
++				   (ior "uns_arith_operand")
++				   (xor "uns_arith_operand")])
+ 
+ ;; This code iterator allows unsigned and signed division to be generated
+ ;; from the same template.
+@@ -1546,23 +1550,37 @@
+ ;;  ....................
+ ;;
+ 
+-(define_insn "<optab><mode>3"
+-  [(set (match_operand:X 0 "register_operand" "=r,r")
+-	(any_bitwise:X (match_operand:X 1 "register_operand" "%r,r")
+-		       (match_operand:X 2 "uns_arith_operand" "r,K")))]
++(define_insn "*<optab><mode>3"
++  [(set (match_operand:GPR 0 "register_operand" "=r,r")
++	(any_or:GPR (match_operand:GPR 1 "register_operand" "%r,r")
++		    (match_operand:GPR 2 "uns_arith_operand" "r,K")))]
+   ""
+   "<insn>%i2\t%0,%1,%2"
+   [(set_attr "type" "logical")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "*<optab>si3_internal"
+-  [(set (match_operand:SI 0 "register_operand" "=r,r")
+-	(any_bitwise:SI (match_operand:SI 1 "register_operand" "%r,r")
+-			(match_operand:SI 2 "uns_arith_operand"    " r,K")))]
+-  "TARGET_64BIT"
+-  "<insn>%i2\t%0,%1,%2"
+-  [(set_attr "type" "logical")
+-   (set_attr "mode" "SI")])
++(define_insn "*and<mode>3"
++  [(set (match_operand:GPR 0 "register_operand" "=r,r,r,r")
++	(and:GPR (match_operand:GPR 1 "register_operand" "%r,r,r,0")
++		 (match_operand:GPR 2 "and_operand" "r,K,Yx,Yy")))]
++  ""
++  "@
++   and\t%0,%1,%2
++   andi\t%0,%1,%2
++   * operands[2] = GEN_INT (INTVAL (operands[2]) \
++			    & GET_MODE_MASK (<MODE>mode)); \
++     return \"bstrpick.<d>\t%0,%1,%M2\";
++   * operands[2] = GEN_INT (~INTVAL (operands[2]) \
++			    & GET_MODE_MASK (<MODE>mode)); \
++     return \"bstrins.<d>\t%0,%.,%M2\";"
++  [(set_attr "move_type" "logical,logical,pick_ins,pick_ins")
++   (set_attr "mode" "<MODE>")])
++
++(define_expand "<optab><mode>3"
++  [(set (match_operand:X 0 "register_operand")
++	(any_bitwise:X (match_operand:X 1 "register_operand")
++		       (match_operand:X 2 "<bitwise_operand>")))]
++  "")
+ 
+ (define_insn "one_cmpl<mode>2"
+   [(set (match_operand:X 0 "register_operand" "=r")
+@@ -1580,41 +1598,6 @@
+   [(set_attr "type" "logical")
+    (set_attr "mode" "SI")])
+ 
+-(define_insn "and<mode>3_extended"
+-  [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(and:GPR (match_operand:GPR 1 "nonimmediate_operand" "r")
+-		 (match_operand:GPR 2 "low_bitmask_operand" "Yx")))]
+-  ""
+-{
+-  int len;
+-
+-  len = low_bitmask_len (<MODE>mode, INTVAL (operands[2]));
+-  operands[2] = GEN_INT (len-1);
+-  return "bstrpick.<d>\t%0,%1,%2,0";
+-}
+-  [(set_attr "move_type" "pick_ins")
+-   (set_attr "mode" "<MODE>")])
+-
+-(define_insn_and_split "*bstrins_<mode>_for_mask"
+-  [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(and:GPR (match_operand:GPR 1 "register_operand" "r")
+-		 (match_operand:GPR 2 "ins_zero_bitmask_operand" "i")))]
+-  ""
+-  "#"
+-  ""
+-  [(set (match_dup 0) (match_dup 1))
+-   (set (zero_extract:GPR (match_dup 0) (match_dup 2) (match_dup 3))
+-	(const_int 0))]
+-  {
+-    unsigned HOST_WIDE_INT mask = ~UINTVAL (operands[2]);
+-    int lo = ffs_hwi (mask) - 1;
+-    int len = low_bitmask_len (<MODE>mode, mask >> lo);
+-
+-    len = MIN (len, GET_MODE_BITSIZE (<MODE>mode) - lo);
+-    operands[2] = GEN_INT (len);
+-    operands[3] = GEN_INT (lo);
+-  })
+-
+ (define_insn_and_split "*bstrins_<mode>_for_ior_mask"
+   [(set (match_operand:GPR 0 "register_operand" "=r")
+ 	(ior:GPR (and:GPR (match_operand:GPR 1 "register_operand" "r")
+diff --git a/gcc/config/loongarch/predicates.md b/gcc/config/loongarch/predicates.md
+index 28f8a0fba..8d9f92e22 100644
+--- a/src/gcc/config/loongarch/predicates.md
++++ b/src/gcc/config/loongarch/predicates.md
+@@ -405,7 +405,13 @@
+        (match_test "low_bitmask_len (mode, \
+ 				     ~UINTVAL (op) | (~UINTVAL(op) - 1)) \
+ 		    > 0")
+-       (not (match_operand 0 "const_uns_arith_operand"))))
++       (not (match_operand 0 "const_uns_arith_operand"))
++       (not (match_operand 0 "low_bitmask_operand"))))
++
++(define_predicate "and_operand"
++  (ior (match_operand 0 "uns_arith_operand")
++       (match_operand 0 "low_bitmask_operand")
++       (match_operand 0 "ins_zero_bitmask_operand")))
+ 
+ (define_predicate "const_call_insn_operand"
+   (match_code "const,symbol_ref,label_ref")
+-- 
+2.47.3
+

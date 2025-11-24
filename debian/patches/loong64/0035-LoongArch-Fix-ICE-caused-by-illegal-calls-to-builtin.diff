@@ -1,0 +1,67 @@
+From b1b4a1fe231de86b6ac29c184c1cc0c361be0ea9 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Wed, 22 Jan 2025 17:57:21 +0800
+Subject: [PATCH 35/59] LoongArch: Fix ICE caused by illegal calls to builtin
+ functions [PR118561].
+
+	PR target/118561
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-builtins.cc
+	(loongarch_expand_builtin_lsx_test_branch):
+	NULL_RTX will not be returned when an error is detected.
+	(loongarch_expand_builtin): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/pr118561.c: New test.
+---
+ gcc/config/loongarch/loongarch-builtins.cc    | 7 +++++--
+ gcc/testsuite/gcc.target/loongarch/pr118561.c | 9 +++++++++
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pr118561.c
+
+diff --git a/gcc/config/loongarch/loongarch-builtins.cc b/gcc/config/loongarch/loongarch-builtins.cc
+index b3ec7f33d..8492a5bda 100644
+--- a/src/gcc/config/loongarch/loongarch-builtins.cc
++++ b/src/gcc/config/loongarch/loongarch-builtins.cc
+@@ -2991,7 +2991,10 @@ loongarch_expand_builtin_lsx_test_branch (enum insn_code icode, tree exp)
+     ops[1].value = force_reg (ops[1].mode, ops[1].value);
+ 
+   if ((cbranch = maybe_gen_insn (icode, 3, ops)) == NULL_RTX)
+-    error ("failed to expand built-in function");
++    {
++      error ("failed to expand built-in function");
++      return const0_rtx;
++    }
+ 
+   cmp_result = gen_reg_rtx (SImode);
+ 
+@@ -3031,7 +3034,7 @@ loongarch_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
+     {
+       error_at (EXPR_LOCATION (exp),
+ 		"built-in function %qD is not enabled", fndecl);
+-      return target;
++      return target ? target : const0_rtx;
+     }
+ 
+   switch (d->builtin_type)
+diff --git a/gcc/testsuite/gcc.target/loongarch/pr118561.c b/gcc/testsuite/gcc.target/loongarch/pr118561.c
+new file mode 100644
+index 000000000..81a776ead
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr118561.c
+@@ -0,0 +1,9 @@
++/* PR target/118561: ICE with -mfpu=none */
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mfpu=none" } */
++
++int
++test (void)
++{
++  return __builtin_loongarch_movfcsr2gr (0); /* { dg-error "built-in function '__builtin_loongarch_movfcsr2gr' is not enabled" } */
++}
+-- 
+2.47.3
+

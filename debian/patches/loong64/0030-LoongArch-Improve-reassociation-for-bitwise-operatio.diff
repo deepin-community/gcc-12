@@ -1,0 +1,396 @@
+From 9a16482a76f1b9034fc23b6f09353d661996ab66 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Tue, 14 Jan 2025 17:26:04 +0800
+Subject: [PATCH 30/59] LoongArch: Improve reassociation for bitwise operation
+ and left shift [PR 115921]
+
+For things like
+
+        (x | 0x101) << 11
+
+It's obvious to write:
+
+        ori     $r4,$r4,257
+        slli.d  $r4,$r4,11
+
+But we are actually generating something insane:
+
+        lu12i.w $r12,524288>>12             # 0x80000
+        ori     $r12,$r12,2048
+        slli.d  $r4,$r4,11
+        or      $r4,$r4,$r12
+        jr      $r1
+
+It's because the target-independent canonicalization was written before
+we have all the RISC targets where loading an immediate may need
+multiple instructions.  So for these targets we need to handle this in
+the target code.
+
+We do the reassociation on our own (i.e. reverting the
+target-independent reassociation) if "(reg [&|^] mask) << shamt" does
+not need to load mask into an register, and either:
+- (mask << shamt) needs to be loaded into an register, or
+- shamt is a const_immalsl_operand, so the outer shift may be further
+  combined with an add.
+
+gcc/ChangeLog:
+
+	PR target/115921
+	* config/loongarch/loongarch-protos.h
+	(loongarch_reassoc_shift_bitwise): New function prototype.
+	* config/loongarch/loongarch.cc
+	(loongarch_reassoc_shift_bitwise): Implement.
+	* config/loongarch/loongarch.md
+	(*alslsi3_extend_subreg): New define_insn_and_split.
+	(<any_bitwise:optab>_shift_reverse<X:mode>): New
+	define_insn_and_split.
+	(<any_bitwise:optab>_alsl_reversesi_extended): New
+	define_insn_and_split.
+	(zero_extend_ashift): Remove as it's just a special case of
+	and_shift_reversedi, and it does not make too much sense to
+	write "alsl.d rd,rs,r0,shamt" instead of "slli.d rd,rs,shamt".
+	(bstrpick_alsl_paired): Remove as it is already done by
+	splitting and_shift_reversedi into and + ashift first, then
+	late combining the ashift and a further add.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/115921
+	* gcc.target/loongarch/bstrpick_alsl_paired.c (scan-rtl-dump):
+	Scan for and_shift_reversedi instead of the removed
+	bstrpick_alsl_paired.
+	* gcc.target/loongarch/bitwise-shift-reassoc.c: New test.
+---
+ gcc/config/loongarch/loongarch-protos.h       |   2 +
+ gcc/config/loongarch/loongarch.cc             |  35 +++++
+ gcc/config/loongarch/loongarch.md             | 135 +++++++++++++-----
+ .../loongarch/bitwise-shift-reassoc.c         |  98 +++++++++++++
+ 4 files changed, 238 insertions(+), 32 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/bitwise-shift-reassoc.c
+
+diff --git a/gcc/config/loongarch/loongarch-protos.h b/gcc/config/loongarch/loongarch-protos.h
+index 12831eb93..cb2da4bbf 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -85,6 +85,8 @@ extern bool loongarch_split_move_p (rtx, rtx);
+ extern void loongarch_split_move (rtx, rtx);
+ extern bool loongarch_addu16i_imm12_operand_p (HOST_WIDE_INT, machine_mode);
+ extern void loongarch_split_plus_constant (rtx *, machine_mode);
++extern rtx loongarch_reassoc_shift_bitwise (bool is_and, rtx shamt,
++					    rtx mask, machine_mode mode);
+ extern void loongarch_split_vector_move (rtx, rtx);
+ extern const char *loongarch_output_move (rtx *);
+ #ifdef RTX_CODE
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 5eec36148..8b9f96f73 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -4520,6 +4520,41 @@ loongarch_split_plus_constant (rtx *op, machine_mode mode)
+   op[2] = gen_int_mode (v, mode);
+ }
+ 
++/* Test if reassociate (a << shamt) [&|^] mask to
++   (a [&|^] (mask >> shamt)) << shamt is possible and beneficial.
++   If true, return (mask >> shamt).  Return NULL_RTX otherwise.  */
++
++rtx
++loongarch_reassoc_shift_bitwise (bool is_and, rtx shamt, rtx mask,
++				 machine_mode mode)
++{
++  gcc_checking_assert (CONST_INT_P (shamt));
++  gcc_checking_assert (CONST_INT_P (mask));
++  gcc_checking_assert (mode == SImode || mode == DImode);
++
++  if (ctz_hwi (INTVAL (mask)) < INTVAL (shamt))
++    return NULL_RTX;
++
++  rtx new_mask = simplify_const_binary_operation (LSHIFTRT, mode, mask,
++						  shamt);
++  if (const_uns_arith_operand (new_mask, mode))
++    return new_mask;
++
++  if (!is_and)
++    return NULL_RTX;
++
++  if (low_bitmask_operand (new_mask, mode))
++    return new_mask;
++
++  /* Do an arithmetic shift for checking ins_zero_bitmask_operand:
++     ashiftrt (0xffffffff00000000, 2) is 0xffffffff60000000 which is an
++     ins_zero_bitmask_operand, but lshiftrt will produce
++     0x3fffffff60000000.  */
++  new_mask = simplify_const_binary_operation (ASHIFTRT, mode, mask,
++					      shamt);
++  return ins_zero_bitmask_operand (new_mask, mode) ? new_mask : NULL_RTX;
++}
++
+ /* Implement TARGET_CONSTANT_ALIGNMENT.  */
+ 
+ static HOST_WIDE_INT
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index c875d9134..5d5771999 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -493,6 +493,7 @@
+ (define_code_attr bitwise_operand [(and "and_operand")
+ 				   (ior "uns_arith_operand")
+ 				   (xor "uns_arith_operand")])
++(define_code_attr is_and [(and "true") (ior "false") (xor "false")])
+ 
+ ;; This code iterator allows unsigned and signed division to be generated
+ ;; from the same template.
+@@ -3093,38 +3094,6 @@
+       }
+   });
+ 
+-;; The following templates were added to generate "bstrpick.d + alsl.d"
+-;; instruction pairs.
+-;; It is required that the values of const_immalsl_operand and
+-;; immediate_operand must have the following correspondence:
+-;;
+-;; (immediate_operand >> const_immalsl_operand) == 0xffffffff
+-
+-(define_insn "zero_extend_ashift"
+-  [(set (match_operand:DI 0 "register_operand" "=r")
+-	(and:DI (ashift:DI (match_operand:DI 1 "register_operand" "r")
+-			   (match_operand 2 "const_immalsl_operand" ""))
+-		(match_operand 3 "immediate_operand" "")))]
+-  "TARGET_64BIT
+-   && ((INTVAL (operands[3]) >> INTVAL (operands[2])) == 0xffffffff)"
+-  "bstrpick.d\t%0,%1,31,0\n\talsl.d\t%0,%0,$r0,%2"
+-  [(set_attr "type" "arith")
+-   (set_attr "mode" "DI")
+-   (set_attr "insn_count" "2")])
+-
+-(define_insn "bstrpick_alsl_paired"
+-  [(set (match_operand:DI 0 "register_operand" "=&r")
+-	(plus:DI (match_operand:DI 1 "register_operand" "r")
+-		 (and:DI (ashift:DI (match_operand:DI 2 "register_operand" "r")
+-				    (match_operand 3 "const_immalsl_operand" ""))
+-			 (match_operand 4 "immediate_operand" ""))))]
+-  "TARGET_64BIT
+-   && ((INTVAL (operands[4]) >> INTVAL (operands[3])) == 0xffffffff)"
+-  "bstrpick.d\t%0,%2,31,0\n\talsl.d\t%0,%0,%1,%3"
+-  [(set_attr "type" "arith")
+-   (set_attr "mode" "DI")
+-   (set_attr "insn_count" "2")])
+-
+ (define_insn "alsl<mode>3"
+   [(set (match_operand:GPR 0 "register_operand" "=r")
+ 	(plus:GPR (ashift:GPR (match_operand:GPR 1 "register_operand" "r")
+@@ -3147,6 +3116,108 @@
+   [(set_attr "type" "arith")
+    (set_attr "mode" "SI")])
+ 
++(define_insn "*alslsi3_extend_subreg"
++  [(set (match_operand:DI 0 "register_operand" "=r")
++	(any_extend:DI
++	  (plus:SI
++	    (subreg:SI
++	      (ashift:DI (match_operand:DI 1 "register_operand" "r")
++			 (match_operand 2 "const_immalsl_operand" ""))
++	      0)
++	    (subreg:SI (match_operand:DI 3 "register_operand" "r") 0))))]
++  "TARGET_64BIT"
++  "alsl.w<u>\t%0,%1,%3,%2"
++  [(set_attr "type" "arith")
++   (set_attr "mode" "SI")])
++
++;; The generic code prefers "(reg << shamt) [&|^] (mask << shamt)"
++;; instead of "(reg [&|^] mask) << shamt" but we want the latter if
++;; we don't need to load mask into an register, and either:
++;; - (mask << shamt) needs to be loaded into an register, or
++;; - shamt is a const_immalsl_operand, so the outer shift may be further
++;;   combined with an add.
++(define_insn_and_split "<optab>_shift_reverse<X:mode>"
++  [(set (match_operand:X 0 "register_operand" "=r")
++	(any_bitwise:X
++	  (ashift:X (match_operand:X  1 "register_operand"  "r")
++		    (match_operand:SI 2 "const_int_operand" "i"))
++	  (match_operand:X 3 "const_int_operand" "i")))]
++  "(const_immalsl_operand (operands[2], SImode)
++    || !<bitwise_operand> (operands[3], <MODE>mode))
++   && loongarch_reassoc_shift_bitwise (<is_and>, operands[2], operands[3],
++				       <MODE>mode)"
++  "#"
++  "&& true"
++  [(set (match_dup 0) (any_bitwise:X (match_dup 1) (match_dup 3)))
++   (set (match_dup 0) (ashift:X (match_dup 0) (match_dup 2)))]
++  {
++    operands[3] = loongarch_reassoc_shift_bitwise (<is_and>,
++						   operands[2],
++						   operands[3],
++						   <MODE>mode);
++
++    if (ins_zero_bitmask_operand (operands[3], <MODE>mode))
++      {
++	gcc_checking_assert (<is_and>);
++	emit_move_insn (operands[0], operands[1]);
++	operands[1] = operands[0];
++      }
++  })
++
++;; The late_combine2 pass can handle slli.d + add.d => alsl.d, so we
++;; already have slli.d + any_bitwise + add.d => any_bitwise + slli.d +
++;; add.d => any_bitwise + alsl.d.  But late_combine2 cannot handle slli.d +
++;; add.w => alsl.w, so implement slli.d + and + add.w => and + alsl.w on
++;; our own.
++(define_insn_and_split "<optab>_alsl_reversesi_extended"
++  [(set (match_operand:DI 0 "register_operand" "=r")
++	(sign_extend:DI
++	  (plus:SI
++	    (subreg:SI
++	      (any_bitwise:DI
++		(ashift:DI
++		  (match_operand:DI 1 "register_operand" "r")
++		  (match_operand:SI 2 "const_immalsl_operand" ""))
++		(match_operand:DI 3 "const_int_operand" "i"))
++	      0)
++	    (match_operand:SI 4 "register_operand" "r"))))]
++  "TARGET_64BIT
++   && loongarch_reassoc_shift_bitwise (<is_and>, operands[2], operands[3],
++				       SImode)"
++  "#"
++  "&& true"
++  [; r0 = r1 [&|^] r3 is emitted in PREPARATION-STATEMENTS because we
++   ; need to handle a special case, see below.
++   (set (match_dup 0)
++	(sign_extend:DI
++	  (plus:SI (ashift:SI (subreg:SI (match_dup 0) 0) (match_dup 2))
++		   (match_dup 4))))]
++  {
++    operands[3] = loongarch_reassoc_shift_bitwise (<is_and>,
++						   operands[2],
++						   operands[3],
++						   SImode);
++
++    if (ins_zero_bitmask_operand (operands[3], SImode))
++      {
++	gcc_checking_assert (<is_and>);
++	emit_move_insn (operands[0], operands[1]);
++	operands[1] = operands[0];
++      }
++
++    if (operands[3] != CONSTM1_RTX (SImode))
++      emit_insn (gen_<optab>di3 (operands[0], operands[1], operands[3]));
++    else
++      {
++	/* Hmm would we really reach here?  If we reach here we'd have
++	   a miss-optimization in the generic code (as it should have
++	   optimized this to alslsi3_extend_subreg).  But let's be safe
++	   than sorry.  */
++	gcc_checking_assert (<is_and>);
++	emit_move_insn (operands[0], operands[1]);
++      }
++  })
++
+ 
+ 
+ ;; Reverse the order of bytes of operand 1 and store the result in operand 0.
+diff --git a/gcc/testsuite/gcc.target/loongarch/bitwise-shift-reassoc.c b/gcc/testsuite/gcc.target/loongarch/bitwise-shift-reassoc.c
+new file mode 100644
+index 000000000..3f1977556
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/bitwise-shift-reassoc.c
+@@ -0,0 +1,98 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d" } */
++/* { dg-final { check-function-bodies "**" "" } } */
++
++/*
++**t0:
++**	ori	(\$r[0-9]+),\$r4,257
++**	slli.d	\$r4,\1,11
++**	jr	\$r1
++*/
++long
++t0 (long x)
++{
++  return (x | 0x101) << 11;
++}
++
++/*
++**t1:
++**	xori	(\$r[0-9]+),\$r4,257
++**	alsl.d	\$r4,\1,\$r5,3
++**	jr	\$r1
++*/
++long
++t1 (long x, long y)
++{
++  return ((x ^ 0x101) << 3) + y;
++}
++
++/*
++**t2:
++**	bstrins.d	(\$r[0-9]+),\$r0,15,4
++**	alsl.d	\$r4,\1,\$r5,2
++**	jr	\$r1
++*/
++long
++t2 (long x, long y)
++{
++  return ((x & ~0xfff0) << 2) + y;
++}
++
++/*
++**t3:
++**	ori	(\$r[0-9]+),\$r4,3855
++**	alsl.w	\$r4,\1,\$r5,1
++**	jr	\$r1
++*/
++long
++t3 (long x, long y)
++{
++  return (int)(((x | 0xf0f) << 1) + y);
++}
++
++/*
++**t4:
++**	bstrpick.d	(\$r[0-9]+),\$r4,31,0
++**	slli.d	\$r4,\1,1
++**	jr	\$r1
++*/
++unsigned long
++t4 (unsigned long x)
++{
++  return x << 32 >> 31;
++}
++
++/*
++**t5:
++**	bstrpick.d	(\$r[0-9]+),\$r4,31,0
++**	alsl.d	\$r4,\1,\$r5,2
++**	jr	\$r1
++*/
++unsigned long
++t5 (unsigned long x, unsigned long y)
++{
++  return (x << 32 >> 30) + y;
++}
++
++/*
++**t6:
++**	alsl.w	\$r4,\$r4,\$r5,2
++**	jr	\$r1
++*/
++unsigned int
++t6 (unsigned long x, unsigned long y)
++{
++  return (x << 32 >> 30) + y;
++}
++
++/*
++**t7:
++**	bstrins.d	\$r4,\$r0,47,0
++**	alsl.d	\$r4,\$r4,\$r5,2
++**	jr	\$r1
++*/
++unsigned long
++t7 (unsigned long x, unsigned long y)
++{
++  return ((x & 0xffff000000000000) << 2) + y;
++}
+-- 
+2.47.3
+

@@ -1,0 +1,86 @@
+From 047e368c633c1c7cf1bf6cf2036b8f79f5a7cbce Mon Sep 17 00:00:00 2001
+From: Deng Jianbo <dengjianbo@loongson.cn>
+Date: Tue, 31 Dec 2024 19:33:23 +0800
+Subject: [PATCH 24/59] LoongArch: Optimize initializing fp resgister to zero
+
+In LoongArch, currently uses instruction movgr2fr.{d|w} to move zero
+from fixed-point register to floating-pointer regsiter for initializing
+fp register to zero. When LSX or LASX is enabled, we can use instruction
+vxor.v which has lower latency than instruction movgr2fr.{d|w} to set fp
+register to zero directly.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_output_move):
+	Optimize instructions for initializing fp regsiter to zero.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/mov-zero-1.c: New test.
+	* gcc.target/loongarch/mov-zero-2.c: New test.
+---
+ gcc/config/loongarch/loongarch.cc               |  2 ++
+ gcc/testsuite/gcc.target/loongarch/mov-zero-1.c | 15 +++++++++++++++
+ gcc/testsuite/gcc.target/loongarch/mov-zero-2.c | 15 +++++++++++++++
+ 3 files changed, 32 insertions(+)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/mov-zero-1.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/mov-zero-2.c
+
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 8a1dcc716..e2b07ab68 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -4762,6 +4762,8 @@ loongarch_output_move (rtx dest, rtx src)
+ 		      gcc_unreachable ();
+ 		    }
+ 		}
++	      if (ISA_HAS_LSX && src == CONST0_RTX (GET_MODE (src)))
++		return "vxor.v\t%w0,%w0,%w0";
+ 
+ 	      return dbl_p ? "movgr2fr.d\t%0,%z1" : "movgr2fr.w\t%0,%z1";
+ 	    }
+diff --git a/gcc/testsuite/gcc.target/loongarch/mov-zero-1.c b/gcc/testsuite/gcc.target/loongarch/mov-zero-1.c
+new file mode 100644
+index 000000000..4744f2f2f
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/mov-zero-1.c
+@@ -0,0 +1,15 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx" } */
++/* { dg-final { scan-assembler-times "vxor\\.v" 2 } } */
++
++double
++get_double_zero ()
++{
++  return 0;
++}
++
++float
++get_float_zero ()
++{
++  return 0;
++}
+diff --git a/gcc/testsuite/gcc.target/loongarch/mov-zero-2.c b/gcc/testsuite/gcc.target/loongarch/mov-zero-2.c
+new file mode 100644
+index 000000000..6cb48052d
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/mov-zero-2.c
+@@ -0,0 +1,15 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mno-lsx" } */
++/* { dg-final { scan-assembler-times "movgr2fr" 2 } } */
++
++double
++get_double_zero ()
++{
++  return 0;
++}
++
++float
++get_float_zero ()
++{
++  return 0;
++}
+-- 
+2.47.3
+

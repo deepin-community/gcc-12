@@ -1,0 +1,190 @@
+From 3c3295ea1c39cb69b1f8ae496a6692e048f807d4 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Thu, 13 Feb 2025 22:51:31 +0800
+Subject: [PATCH 48/59] LoongArch: Use normal RTL pattern instead of UNSPEC for
+ {x,}vsr{a,l}ri instructions
+
+Allowing (t + (1ul << imm >> 1)) >> imm to be recognized as a rounding
+shift operation.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lasx.md (UNSPEC_LASX_XVSRARI): Remove.
+	(UNSPEC_LASX_XVSRLRI): Remove.
+	(lasx_xvsrari_<lsxfmt>): Remove.
+	(lasx_xvsrlri_<lsxfmt>): Remove.
+	* config/loongarch/lsx.md (UNSPEC_LSX_VSRARI): Remove.
+	(UNSPEC_LSX_VSRLRI): Remove.
+	(lsx_vsrari_<lsxfmt>): Remove.
+	(lsx_vsrlri_<lsxfmt>): Remove.
+	* config/loongarch/simd.md (simd_<optab>_imm_round_<mode>): New
+	define_insn.
+	(<simd_isa>_<x>v<insn>ri_<simdfmt>): New define_expand.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/vect-shift-imm-round.c: New test.
+---
+ gcc/config/loongarch/lasx.md                  | 22 --------------
+ gcc/config/loongarch/lsx.md                   | 22 --------------
+ gcc/config/loongarch/simd.md                  | 29 +++++++++++++++++++
+ .../loongarch/vect-shift-imm-round.c          | 11 +++++++
+ 4 files changed, 40 insertions(+), 44 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/vect-shift-imm-round.c
+
+diff --git a/gcc/config/loongarch/lasx.md b/gcc/config/loongarch/lasx.md
+index 6b1a6d604..ddff02011 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -43,9 +43,7 @@
+   UNSPEC_LASX_XVSAT_U
+   UNSPEC_LASX_XVREPL128VEI
+   UNSPEC_LASX_XVSRAR
+-  UNSPEC_LASX_XVSRARI
+   UNSPEC_LASX_XVSRLR
+-  UNSPEC_LASX_XVSRLRI
+   UNSPEC_LASX_XVSHUF
+   UNSPEC_LASX_XVSHUF_B
+   UNSPEC_LASX_BRANCH
+@@ -2131,16 +2129,6 @@
+   [(set_attr "type" "simd_shift")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvsrari_<lasxfmt>"
+-  [(set (match_operand:ILASX 0 "register_operand" "=f")
+-	(unspec:ILASX [(match_operand:ILASX 1 "register_operand" "f")
+-		       (match_operand 2 "const_<bitimm256>_operand" "")]
+-		      UNSPEC_LASX_XVSRARI))]
+-  "ISA_HAS_LASX"
+-  "xvsrari.<lasxfmt>\t%u0,%u1,%2"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lasx_xvsrlr_<lasxfmt>"
+   [(set (match_operand:ILASX 0 "register_operand" "=f")
+ 	(unspec:ILASX [(match_operand:ILASX 1 "register_operand" "f")
+@@ -2151,16 +2139,6 @@
+   [(set_attr "type" "simd_shift")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lasx_xvsrlri_<lasxfmt>"
+-  [(set (match_operand:ILASX 0 "register_operand" "=f")
+-	(unspec:ILASX [(match_operand:ILASX 1 "register_operand" "f")
+-		       (match_operand 2 "const_<bitimm256>_operand" "")]
+-		      UNSPEC_LASX_XVSRLRI))]
+-  "ISA_HAS_LASX"
+-  "xvsrlri.<lasxfmt>\t%u0,%u1,%2"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lasx_xvssub_s_<lasxfmt>"
+   [(set (match_operand:ILASX 0 "register_operand" "=f")
+ 	(ss_minus:ILASX (match_operand:ILASX 1 "register_operand" "f")
+diff --git a/gcc/config/loongarch/lsx.md b/gcc/config/loongarch/lsx.md
+index bce3149d4..e79d20d37 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -44,9 +44,7 @@
+   UNSPEC_LSX_VSAT_S
+   UNSPEC_LSX_VSAT_U
+   UNSPEC_LSX_VSRAR
+-  UNSPEC_LSX_VSRARI
+   UNSPEC_LSX_VSRLR
+-  UNSPEC_LSX_VSRLRI
+   UNSPEC_LSX_VSHUF
+   UNSPEC_LSX_VEXTW_S
+   UNSPEC_LSX_VEXTW_U
+@@ -1884,16 +1882,6 @@
+   [(set_attr "type" "simd_shift")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vsrari_<lsxfmt>"
+-  [(set (match_operand:ILSX 0 "register_operand" "=f")
+-	(unspec:ILSX [(match_operand:ILSX 1 "register_operand" "f")
+-		      (match_operand 2 "const_<bitimm>_operand" "")]
+-		     UNSPEC_LSX_VSRARI))]
+-  "ISA_HAS_LSX"
+-  "vsrari.<lsxfmt>\t%w0,%w1,%2"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lsx_vsrlr_<lsxfmt>"
+   [(set (match_operand:ILSX 0 "register_operand" "=f")
+ 	(unspec:ILSX [(match_operand:ILSX 1 "register_operand" "f")
+@@ -1904,16 +1892,6 @@
+   [(set_attr "type" "simd_shift")
+    (set_attr "mode" "<MODE>")])
+ 
+-(define_insn "lsx_vsrlri_<lsxfmt>"
+-  [(set (match_operand:ILSX 0 "register_operand" "=f")
+-	(unspec:ILSX [(match_operand:ILSX 1 "register_operand" "f")
+-		      (match_operand 2 "const_<bitimm>_operand" "")]
+-		     UNSPEC_LSX_VSRLRI))]
+-  "ISA_HAS_LSX"
+-  "vsrlri.<lsxfmt>\t%w0,%w1,%2"
+-  [(set_attr "type" "simd_shift")
+-   (set_attr "mode" "<MODE>")])
+-
+ (define_insn "lsx_vssub_s_<lsxfmt>"
+   [(set (match_operand:ILSX 0 "register_operand" "=f")
+ 	(ss_minus:ILSX (match_operand:ILSX 1 "register_operand" "f")
+diff --git a/gcc/config/loongarch/simd.md b/gcc/config/loongarch/simd.md
+index ecba22b2d..64122480b 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -617,6 +617,35 @@
+   DONE;
+ })
+ 
++;; Integer shift right with rounding.
++(define_insn "simd_<optab>_imm_round_<mode>"
++  [(set (match_operand:IVEC 0 "register_operand" "=f")
++	(any_shiftrt:IVEC
++	  (plus:IVEC
++	    (match_operand:IVEC 1 "register_operand" "f")
++	    (match_operand:IVEC 2 "const_vector_same_val_operand" "Uuvx"))
++	  (match_operand:SI 3 "const_<bitimm>_operand" "I")))]
++  "(HOST_WIDE_INT_1U << UINTVAL (operands[3]) >> 1)
++   == UINTVAL (CONST_VECTOR_ELT (operands[2], 0))"
++  "<x>v<insn>ri.<simdfmt>\t%<wu>0,%<wu>1,%d3"
++  [(set_attr "type" "simd_shift")
++   (set_attr "mode" "<MODE>")])
++
++(define_expand "<simd_isa>_<x>v<insn>ri_<simdfmt>"
++  [(match_operand:IVEC 0 "register_operand" "=f")
++   (match_operand:IVEC 1 "register_operand" " f")
++   (match_operand 2 "const_<bitimm>_operand")
++   (any_shiftrt (const_int 0) (const_int 0))]
++  ""
++{
++  auto addend = HOST_WIDE_INT_1U << UINTVAL (operands[2]) >> 1;
++  rtx addend_v = loongarch_gen_const_int_vector (<MODE>mode, addend);
++
++  emit_insn (gen_simd_<optab>_imm_round_<mode> (operands[0], operands[1],
++						addend_v, operands[2]));
++  DONE;
++})
++
+ ; The LoongArch SX Instructions.
+ (include "lsx.md")
+ 
+diff --git a/gcc/testsuite/gcc.target/loongarch/vect-shift-imm-round.c b/gcc/testsuite/gcc.target/loongarch/vect-shift-imm-round.c
+new file mode 100644
+index 000000000..6f16566ba
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vect-shift-imm-round.c
+@@ -0,0 +1,11 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mlsx" } */
++/* { dg-final { scan-assembler "vsrari\\.w\t\\\$vr\[0-9\]+,\\\$vr\[0-9\]+,15" } } */
++
++int x __attribute__ ((vector_size (16)));
++
++void
++f (void)
++{
++  x = (x + (1 << 14)) >> 15;
++}
+-- 
+2.47.3
+

@@ -1,0 +1,45 @@
+From fb34795fe85d86d3c97d3a8f8177b93d65435eff Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 26 Nov 2024 16:04:24 +0800
+Subject: [PATCH 08/59] LoongArch: testsuite: Fix l{a}sx-andn-iorn.c.
+
+Add '-fdump-tree-optimized' to this testcases.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/lasx-andn-iorn.c:
+	Add '-fdump-tree-optimized'.
+	* gcc.target/loongarch/lsx-andn-iorn.c:
+	Likewise.
+---
+ gcc/testsuite/gcc.target/loongarch/lasx-andn-iorn.c | 2 +-
+ gcc/testsuite/gcc.target/loongarch/lsx-andn-iorn.c  | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/testsuite/gcc.target/loongarch/lasx-andn-iorn.c b/gcc/testsuite/gcc.target/loongarch/lasx-andn-iorn.c
+index 4aa5f19a6..86b04dbbb 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/lasx-andn-iorn.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/lasx-andn-iorn.c
+@@ -3,7 +3,7 @@
+ #include "./lsx-andn-iorn.c"
+ 
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -mlasx -ftree-vectorize" } */
++/* { dg-options "-O2 -mlasx -ftree-vectorize -fdump-tree-optimized" } */
+ 
+ /* We should produce a BIT_ANDC and BIT_IORC here.  */
+ 
+diff --git a/gcc/testsuite/gcc.target/loongarch/lsx-andn-iorn.c b/gcc/testsuite/gcc.target/loongarch/lsx-andn-iorn.c
+index 7bceccd37..14838ab8b 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/lsx-andn-iorn.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/lsx-andn-iorn.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -mlsx -ftree-vectorize" } */
++/* { dg-options "-O2 -mlsx -ftree-vectorize -fdump-tree-optimized" } */
+ 
+ #ifndef N
+ #define N 4
+-- 
+2.47.3
+
