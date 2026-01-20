@@ -1,3 +1,14 @@
+gcc-12 (12.3.0-17deepin17) unstable; urgency=medium
+  * LoongArch: common sync from upstream
+
+ -- Peng Fan <fanpeng@loongson.cn>  Mon, 24 Nov 2025 02:19:24 +0000
+
+gcc-12 (12.3.0-17deepin16) unstable; urgency=medium
+
+  * loong64 sw64 architecture enables PIE by default.
+
+ -- lichenggang <lichenggang@deepin.org>  Tue, 20 Jan 2026 16:36:44 +0800
+
 gcc-12 (12.3.0-17deepin15) unstable; urgency=medium
 
   * feat: add sw64 support.

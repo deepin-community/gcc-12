@@ -1,0 +1,112 @@
+From 52cb54f9cc6bedf7db15e2aca7e0a92e71e674be Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Fri, 7 Mar 2025 12:49:54 +0800
+Subject: [PATCH 50/59] LoongArch: Fix ICE when trying to recognize bitwise +
+ alsl.w pair [PR119127]
+
+When we call loongarch_reassoc_shift_bitwise for
+<optab>_alsl_reversesi_extend, the mask is in DImode but we are trying
+to operate it in SImode, causing an ICE.
+
+To fix the issue sign-extend the mask into the mode we want.  And also
+specially handle the case the mask is extended into -1 to avoid a
+miss-optimization.
+
+gcc/ChangeLog:
+
+	PR target/119127
+	* config/loongarch/loongarch.cc
+	(loongarch_reassoc_shift_bitwise): Sign extend mask to mode,
+	specially handle the case it's extended to -1.
+	* config/loongarch/loongarch.md
+	(loongarch_reassoc_shift_bitwise): Update the comment for the
+	special case.
+---
+ gcc/config/loongarch/loongarch.cc             | 22 +++++++++++++------
+ gcc/config/loongarch/loongarch.md             |  6 ++---
+ gcc/testsuite/gcc.target/loongarch/pr119127.c | 14 ++++++++++++
+ 3 files changed, 31 insertions(+), 11 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pr119127.c
+
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index c76f59d42..ecba3ebcb 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -4565,8 +4565,22 @@ loongarch_reassoc_shift_bitwise (bool is_and, rtx shamt, rtx mask,
+   if (ctz_hwi (INTVAL (mask)) < INTVAL (shamt))
+     return NULL_RTX;
+ 
++  /* When trying alsl.w, deliberately ignore the high bits.  */
++  mask = gen_int_mode (UINTVAL (mask), mode);
++
+   rtx new_mask = simplify_const_binary_operation (LSHIFTRT, mode, mask,
+ 						  shamt);
++
++  /* Do an arithmetic shift for checking ins_zero_bitmask_operand or -1:
++     ashiftrt (0xffffffff00000000, 2) is 0xffffffff60000000 which is an
++     ins_zero_bitmask_operand, but lshiftrt will produce
++     0x3fffffff60000000.  */
++  rtx new_mask_1 = simplify_const_binary_operation (ASHIFTRT, mode, mask,
++						    shamt);
++
++  if (is_and && const_m1_operand (new_mask_1, mode))
++    return new_mask_1;
++
+   if (const_uns_arith_operand (new_mask, mode))
+     return new_mask;
+ 
+@@ -4576,13 +4590,7 @@ loongarch_reassoc_shift_bitwise (bool is_and, rtx shamt, rtx mask,
+   if (low_bitmask_operand (new_mask, mode))
+     return new_mask;
+ 
+-  /* Do an arithmetic shift for checking ins_zero_bitmask_operand:
+-     ashiftrt (0xffffffff00000000, 2) is 0xffffffff60000000 which is an
+-     ins_zero_bitmask_operand, but lshiftrt will produce
+-     0x3fffffff60000000.  */
+-  new_mask = simplify_const_binary_operation (ASHIFTRT, mode, mask,
+-					      shamt);
+-  return ins_zero_bitmask_operand (new_mask, mode) ? new_mask : NULL_RTX;
++  return ins_zero_bitmask_operand (new_mask_1, mode) ? new_mask_1 : NULL_RTX;
+ }
+ 
+ /* Implement TARGET_CONSTANT_ALIGNMENT.  */
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index cd2336f11..dacbc5ba0 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -3210,10 +3210,8 @@
+       emit_insn (gen_<optab>di3 (operands[0], operands[1], operands[3]));
+     else
+       {
+-	/* Hmm would we really reach here?  If we reach here we'd have
+-	   a miss-optimization in the generic code (as it should have
+-	   optimized this to alslsi3_extend_subreg).  But let's be safe
+-	   than sorry.  */
++	/* We can end up here with things like:
++	   x:DI = sign_extend(a:SI + ((b:DI << 2) & 0xfffffffc)#0)  */
+ 	gcc_checking_assert (<is_and>);
+ 	emit_move_insn (operands[0], operands[1]);
+       }
+diff --git a/gcc/testsuite/gcc.target/loongarch/pr119127.c b/gcc/testsuite/gcc.target/loongarch/pr119127.c
+new file mode 100644
+index 000000000..4e253beb0
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr119127.c
+@@ -0,0 +1,14 @@
++/* PR target/119127: ICE caused by operating DImode const in SImode */
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d" } */
++
++int x;
++struct Type {
++  unsigned SubclassData : 24;
++} y;
++
++void
++test (void)
++{
++  x = y.SubclassData * 37;
++}
+-- 
+2.47.3
+

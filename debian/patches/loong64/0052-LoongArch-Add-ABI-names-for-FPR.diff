@@ -1,0 +1,90 @@
+From 432ffd145be3b207b68a35636488d8353df97e84 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 16 Mar 2025 14:19:53 +0800
+Subject: [PATCH 52/59] LoongArch: Add ABI names for FPR
+
+We already allow the ABI names for GPR in inline asm clobber list, so
+for consistency allow the ABI names for FPR as well.
+
+Reported-by: Yao Zi <ziyao@disroot.org>
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.h (ADDITIONAL_REGISTER_NAMES): Add
+	fa0-fa7, ft0-ft16, and fs0-fs7.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/regname-float-abi.c: New test.
+---
+ gcc/config/loongarch/loongarch.h              | 32 +++++++++++++++++++
+ .../gcc.target/loongarch/regname-float-abi.c  | 14 ++++++++
+ 2 files changed, 46 insertions(+)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/regname-float-abi.c
+
+diff --git a/gcc/config/loongarch/loongarch.h b/gcc/config/loongarch/loongarch.h
+index c93df7ad9..10b5a0b0f 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -942,6 +942,38 @@ typedef struct {
+   { "s6",	29 + GP_REG_FIRST },					\
+   { "s7",	30 + GP_REG_FIRST },					\
+   { "s8",	31 + GP_REG_FIRST },					\
++  { "fa0",	 0 + FP_REG_FIRST },					\
++  { "fa1",	 1 + FP_REG_FIRST },					\
++  { "fa2",	 2 + FP_REG_FIRST },					\
++  { "fa3",	 3 + FP_REG_FIRST },					\
++  { "fa4",	 4 + FP_REG_FIRST },					\
++  { "fa5",	 5 + FP_REG_FIRST },					\
++  { "fa6",	 6 + FP_REG_FIRST },					\
++  { "fa7",	 7 + FP_REG_FIRST },					\
++  { "ft0",	 8 + FP_REG_FIRST },					\
++  { "ft1",	 9 + FP_REG_FIRST },					\
++  { "ft2",	10 + FP_REG_FIRST },					\
++  { "ft3",	11 + FP_REG_FIRST },					\
++  { "ft4",	12 + FP_REG_FIRST },					\
++  { "ft5",	13 + FP_REG_FIRST },					\
++  { "ft6",	14 + FP_REG_FIRST },					\
++  { "ft7",	15 + FP_REG_FIRST },					\
++  { "ft8",	16 + FP_REG_FIRST },					\
++  { "ft9",	17 + FP_REG_FIRST },					\
++  { "ft10",	18 + FP_REG_FIRST },					\
++  { "ft11",	19 + FP_REG_FIRST },					\
++  { "ft12",	20 + FP_REG_FIRST },					\
++  { "ft13",	21 + FP_REG_FIRST },					\
++  { "ft14",	22 + FP_REG_FIRST },					\
++  { "ft15",	23 + FP_REG_FIRST },					\
++  { "fs0",	24 + FP_REG_FIRST },					\
++  { "fs1",	25 + FP_REG_FIRST },					\
++  { "fs2",	26 + FP_REG_FIRST },					\
++  { "fs3",	27 + FP_REG_FIRST },					\
++  { "fs4",	28 + FP_REG_FIRST },					\
++  { "fs5",	29 + FP_REG_FIRST },					\
++  { "fs6",	30 + FP_REG_FIRST },					\
++  { "fs7",	31 + FP_REG_FIRST },					\
+   { "v0",	 4 + GP_REG_FIRST },					\
+   { "v1",	 5 + GP_REG_FIRST },					\
+   { "vr0",	 0 + FP_REG_FIRST },					\
+diff --git a/gcc/testsuite/gcc.target/loongarch/regname-float-abi.c b/gcc/testsuite/gcc.target/loongarch/regname-float-abi.c
+new file mode 100644
+index 000000000..2224304fc
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/regname-float-abi.c
+@@ -0,0 +1,14 @@
++/* { dg-do compile } */
++/* { dg-additional-options "-Wno-pedantic -std=gnu90 -mfpu=64" } */
++
++register double fs0 asm("fs0"); /* { dg-note "conflicts with 'fs0'" } */
++register double f24 asm("$f24"); /* { dg-warning "register of 'f24' used for multiple global register variables" } */
++
++void
++test (void)
++{
++  asm("" ::: "fa0", "fa1", "fa2", "fa3", "fa4", "fa5", "fa6", "fa7",
++	     "ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7",
++	     "ft8", "ft9", "ft10", "ft11", "ft12", "ft13", "ft14", "ft15",
++	     "fs0", "fs1", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7");
++}
+-- 
+2.47.3
+

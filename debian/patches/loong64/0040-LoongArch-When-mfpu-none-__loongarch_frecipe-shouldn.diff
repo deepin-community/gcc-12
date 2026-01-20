@@ -1,0 +1,88 @@
+From f890f7bef589089caf12f3d0fc95d36b9be06531 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Wed, 12 Feb 2025 11:50:50 +0800
+Subject: [PATCH 40/59] LoongArch: When -mfpu=none, '__loongarch_frecipe'
+ shouldn't be defined [PR118843].
+
+	PR target/118843
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-c.cc
+	(loongarch_update_cpp_builtins): Fix macro definition issues.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/pr118843.c: New test.
+---
+ gcc/config/loongarch/loongarch-c.cc           | 32 +++++++++++--------
+ gcc/testsuite/gcc.target/loongarch/pr118843.c |  6 ++++
+ 2 files changed, 24 insertions(+), 14 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pr118843.c
+
+diff --git a/gcc/config/loongarch/loongarch-c.cc b/gcc/config/loongarch/loongarch-c.cc
+index f8b5d072e..781a573c9 100644
+--- a/src/gcc/config/loongarch/loongarch-c.cc
++++ b/src/gcc/config/loongarch/loongarch-c.cc
+@@ -129,9 +129,6 @@ loongarch_update_cpp_builtins (cpp_reader *pfile)
+   else
+     builtin_define ("__loongarch_frlen=0");
+ 
+-  loongarch_def_or_undef (TARGET_HARD_FLOAT && ISA_HAS_FRECIPE,
+-		  "__loongarch_frecipe", pfile);
+-
+   loongarch_def_or_undef (ISA_HAS_LSX, "__loongarch_simd", pfile);
+   loongarch_def_or_undef (ISA_HAS_LSX, "__loongarch_sx", pfile);
+   loongarch_def_or_undef (ISA_HAS_LASX, "__loongarch_asx", pfile);
+@@ -149,18 +146,25 @@ loongarch_update_cpp_builtins (cpp_reader *pfile)
+   int max_v_major = 1, max_v_minor = 0;
+  
+   for (int i = 0; i < N_EVO_FEATURES; i++)
+-    if (la_target.isa.evolution & la_evo_feature_masks[i])
+-      {
+-   builtin_define (la_evo_macro_name[i]);
+- 
+-   int major = la_evo_version_major[i],
+-       minor = la_evo_version_minor[i];
+- 
+-   max_v_major = major > max_v_major ? major : max_v_major;
+-   max_v_minor = major == max_v_major
+-     ? (minor > max_v_minor ? minor : max_v_minor): max_v_minor;
+-      }
++    {
++      builtin_undef (la_evo_macro_name[i]);
+  
++      if (la_target.isa.evolution & la_evo_feature_masks[i]
++	&& (la_evo_feature_masks[i] != OPTION_MASK_ISA_FRECIPE
++		|| TARGET_HARD_FLOAT))
++       {
++	 builtin_define (la_evo_macro_name[i]);
++
++	 max_v_major = major > max_v_major ? major : max_v_major;
++	 int major = la_evo_version_major[i],
++	 minor = la_evo_version_minor[i];
++
++	 max_v_major = major > max_v_major ? major : max_v_major;
++	 max_v_minor = major == max_v_major
++		? (minor > max_v_minor ? minor : max_v_minor) : max_v_minor;
++       }
++    }
++
+   /* Find the minimum ISA version required to run the target program.  */
+   builtin_undef ("__loongarch_version_major");
+   builtin_undef ("__loongarch_version_minor");
+diff --git a/gcc/testsuite/gcc.target/loongarch/pr118843.c b/gcc/testsuite/gcc.target/loongarch/pr118843.c
+new file mode 100644
+index 000000000..30372b8ff
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr118843.c
+@@ -0,0 +1,6 @@
++/* { dg-do preprocess } */
++/* { dg-options "-mfrecipe -mfpu=none" } */
++
++#ifdef __loongarch_frecipe
++#error __loongarch_frecipe should not be avaliable here
++#endif
+-- 
+2.47.3
+

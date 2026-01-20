@@ -1,0 +1,42 @@
+From a27f2b823b25e12473396822e3e01f577c453687 Mon Sep 17 00:00:00 2001
+From: zhaozhou <zhaozhou@loongson.cn>
+Date: Fri, 14 Nov 2025 11:09:13 +0800
+Subject: [PATCH 85/89] LoongArch: Fix operands[2] predicate of
+ lsx_vreplvei_mirror.
+
+UNSPEC_LSX_VREPLVEI_MIRROR describes the mirroring operation that copies
+the lower 64 bits of a 128-bit register to the upper 64 bits. So in any
+mode, the value range of op2 can only be 0 or 1 for the vreplvei.d insn.
+
+gcc/ChangeLog:
+
+	* config/loongarch/lsx.md: Fix predicate.
+---
+ gcc/config/loongarch/lsx.md | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/config/loongarch/lsx.md b/gcc/config/loongarch/lsx.md
+index b1bccccb5e5..0246f2c3aab 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -1920,11 +1920,15 @@
+   [(set_attr "type" "simd_splat")
+    (set_attr "mode" "<MODE>")])
+ 
++;; UNSPEC_LSX_VREPLVEI_MIRROR describes the mirror operation that copies
++;; the lower 64 bits of a 128-bit register to the upper 64 bits. It is only
++;; called when the high half-part is the same as the low.
++
+ (define_insn "lsx_vreplvei_mirror_<lsxfmt_f>"
+   [(set (match_operand:LSX 0 "register_operand" "=f")
+ 	(unspec: LSX [(match_operand:LSX 1 "register_operand" "f")
+-				(match_operand 2 "const_<indeximm>_operand" "")]
+-				UNSPEC_LSX_VREPLVEI_MIRROR))]
++		      (match_operand 2 "const_0_or_1_operand" "")]
++		      UNSPEC_LSX_VREPLVEI_MIRROR))]
+   "ISA_HAS_LSX"
+   "vreplvei.d\t%w0,%w1,%2"
+   [(set_attr "type" "simd_splat")
+-- 
+2.33.0
+

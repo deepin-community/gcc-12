@@ -1,0 +1,498 @@
+From 64c742decaecaed15a5be0f75f599268de909be4 Mon Sep 17 00:00:00 2001
+From: Lulu Cheng <chenglulu@loongson.cn>
+Date: Tue, 7 Jan 2025 12:00:12 +0800
+Subject: [PATCH 32/59] LoongArch: Implement target pragma.
+
+The target pragmas defined correspond to the target function attributes.
+
+This implementation is derived from AArch64.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch-protos.h
+	(loongarch_reset_previous_fndecl):  Add function declaration.
+	(loongarch_save_restore_target_globals): Likewise.
+	(loongarch_register_pragmas): Likewise.
+	* config/loongarch/loongarch-target-attr.cc
+	(loongarch_option_valid_attribute_p): Optimize the processing
+	of attributes.
+	(loongarch_pragma_target_parse): New functions.
+	(loongarch_register_pragmas): Likewise.
+	* config/loongarch/loongarch.cc
+	(loongarch_reset_previous_fndecl): New functions.
+	(loongarch_set_current_function): When the old_tree is the same
+	as the new_tree, the rules for using registers, etc.,
+	are set according to the option values to ensure that the
+	pragma can be processed correctly.
+	* config/loongarch/loongarch.h (REGISTER_TARGET_PRAGMAS):
+	Define macro.
+	* doc/extend.texi: Supplemental Documentation.
+
+gcc/testsuite/ChangeLog:
+
+	* gcc.target/loongarch/arch-func-attr-1.c: Add '#pragma'.
+	* gcc.target/loongarch/cmodel-func-attr-1.c: Likewise.
+	* gcc.target/loongarch/lasx-func-attr-1.c: Likewise.
+	* gcc.target/loongarch/lsx-func-attr-1.c: Likewise.
+	* gcc.target/loongarch/strict_align-func-attr-1.c: Likewise.
+	* gcc.target/loongarch/strict_align-func-attr-2.c: Likewise.
+	* gcc.target/loongarch/vector-func-attr-1.c: Likewise.
+	* gcc.target/loongarch/arch-pragma-attr-1.c: Likewise.
+	* gcc.target/loongarch/cmodel-pragma-attr-1.c: New test.
+	* gcc.target/loongarch/lasx-pragma-attr-1.c: New test.
+	* gcc.target/loongarch/lasx-pragma-attr-2.c: New test.
+	* gcc.target/loongarch/lsx-pragma-attr-1.c: New test.
+	* gcc.target/loongarch/lsx-pragma-attr-2.c: New test.
+	* gcc.target/loongarch/strict_align-pragma-attr-1.c: New test.
+	* gcc.target/loongarch/strict_align-pragma-attr-2.c: New test.
+	* gcc.target/loongarch/vector-pragma-attr-1.c: New test.
+	* gcc.target/loongarch/pragma-push-pop.c: New test.
+---
+ gcc/config/loongarch/loongarch-protos.h       |  3 +
+ gcc/config/loongarch/loongarch-target-attr.cc | 59 +++++++++++++++++++
+ gcc/config/loongarch/loongarch.cc             | 19 +++---
+ gcc/config/loongarch/loongarch.h              |  2 +
+ .../gcc.target/loongarch/arch-func-attr-1.c   |  6 +-
+ .../gcc.target/loongarch/arch-pragma-attr-1.c |  7 +++
+ .../gcc.target/loongarch/cmodel-func-attr-1.c |  4 ++
+ .../loongarch/cmodel-pragma-attr-1.c          |  7 +++
+ .../gcc.target/loongarch/lasx-func-attr-1.c   |  4 ++
+ .../gcc.target/loongarch/lasx-pragma-attr-1.c |  7 +++
+ .../gcc.target/loongarch/lasx-pragma-attr-2.c | 12 ++++
+ .../gcc.target/loongarch/lsx-func-attr-1.c    |  4 ++
+ .../gcc.target/loongarch/lsx-pragma-attr-1.c  |  7 +++
+ .../gcc.target/loongarch/lsx-pragma-attr-2.c  | 12 ++++
+ .../gcc.target/loongarch/pragma-push-pop.c    | 22 +++++++
+ .../loongarch/strict_align-func-attr-1.c      |  4 ++
+ .../loongarch/strict_align-func-attr-2.c      |  4 ++
+ .../loongarch/strict_align-pragma-attr-1.c    |  7 +++
+ .../loongarch/strict_align-pragma-attr-2.c    |  7 +++
+ .../gcc.target/loongarch/vector-func-attr-1.c |  4 ++
+ .../loongarch/vector-pragma-attr-1.c          |  7 +++
+ 21 files changed, 200 insertions(+), 8 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/arch-pragma-attr-1.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/cmodel-pragma-attr-1.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/lasx-pragma-attr-1.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/lasx-pragma-attr-2.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/lsx-pragma-attr-1.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/lsx-pragma-attr-2.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pragma-push-pop.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/strict_align-pragma-attr-1.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/strict_align-pragma-attr-2.c
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/vector-pragma-attr-1.c
+
+diff --git a/gcc/config/loongarch/loongarch-protos.h b/gcc/config/loongarch/loongarch-protos.h
+index 0096cd6e8..b76c9ce8c 100644
+--- a/src/gcc/config/loongarch/loongarch-protos.h
++++ b/src/gcc/config/loongarch/loongarch-protos.h
+@@ -216,4 +216,7 @@ extern bool loongarch_explicit_relocs_p (enum loongarch_symbol_type);
+ extern bool loongarch_symbol_extreme_p (enum loongarch_symbol_type);
+ extern bool loongarch_option_valid_attribute_p (tree, tree, tree, int);
+ extern void loongarch_option_override_internal (struct loongarch_target *, struct gcc_options *, struct gcc_options *);
++extern void loongarch_reset_previous_fndecl (void);
++extern void loongarch_save_restore_target_globals (tree new_tree);
++extern void loongarch_register_pragmas (void);
+ #endif /* ! GCC_LOONGARCH_PROTOS_H */
+diff --git a/gcc/config/loongarch/loongarch-target-attr.cc b/gcc/config/loongarch/loongarch-target-attr.cc
+index 6bb1e6b75..cee7031ca 100644
+--- a/src/gcc/config/loongarch/loongarch-target-attr.cc
++++ b/src/gcc/config/loongarch/loongarch-target-attr.cc
+@@ -349,6 +349,16 @@ loongarch_option_valid_attribute_p (tree fndecl, tree, tree args, int)
+   tree new_target, new_optimize;
+   tree existing_target = DECL_FUNCTION_SPECIFIC_TARGET (fndecl);
+ 
++  /* If what we're processing is the current pragma string then the
++     target option node is already stored in target_option_current_node
++     by loongarch_pragma_target_parse in loongarch-target-attr.cc.
++     Use that to avoid having to re-parse the string.  */
++  if (!existing_target && args == current_target_pragma)
++    {
++      DECL_FUNCTION_SPECIFIC_TARGET (fndecl) = target_option_current_node;
++      return true;
++    }
++
+   tree func_optimize = DECL_FUNCTION_SPECIFIC_OPTIMIZATION (fndecl);
+ 
+   old_optimize
+@@ -411,3 +421,52 @@ loongarch_option_valid_attribute_p (tree fndecl, tree, tree args, int)
+ 			     TREE_OPTIMIZATION (old_optimize));
+   return ret;
+ }
++
++/* Hook to validate the current #pragma GCC target and set the state, and
++   update the macros based on what was changed.  If ARGS is NULL, then
++   POP_TARGET is used to reset the options.  */
++
++static bool
++loongarch_pragma_target_parse (tree args, tree pop_target)
++{
++  /* If args is not NULL then process it and setup the target-specific
++     information that it specifies.  */
++  if (args)
++    {
++      if (!loongarch_process_target_attr (args, NULL))
++	return false;
++
++      loongarch_option_override_internal (&la_target,
++					  &global_options,
++					  &global_options_set);
++    }
++
++  /* args is NULL, restore to the state described in pop_target.  */
++  else
++    {
++      pop_target = pop_target ? pop_target : target_option_default_node;
++      cl_target_option_restore (&global_options, &global_options_set,
++				TREE_TARGET_OPTION (pop_target));
++    }
++
++  target_option_current_node
++    = build_target_option_node (&global_options, &global_options_set);
++
++  loongarch_reset_previous_fndecl ();
++
++  /* If we're popping or reseting make sure to update the globals so that
++     the optab availability predicates get recomputed.  */
++  if (pop_target)
++    loongarch_save_restore_target_globals (pop_target);
++
++  return true;
++}
++
++/* Implement REGISTER_TARGET_PRAGMAS.  */
++
++void
++loongarch_register_pragmas (void)
++{
++  /* Update pragma hook to allow parsing #pragma GCC target.  */
++  targetm.target_option.pragma_parse = loongarch_pragma_target_parse;
++}
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 2524f897e..16ffa340e 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -7741,11 +7741,17 @@ loongarch_option_override_internal (struct loongarch_target *target,
+ 
+ static GTY(()) tree loongarch_previous_fndecl;
+ 
++void
++loongarch_reset_previous_fndecl (void)
++{
++  loongarch_previous_fndecl = NULL;
++}
++
+ /* Restore or save the TREE_TARGET_GLOBALS from or to new_tree.
+    Used by loongarch_set_current_function to
+    make sure optab availability predicates are recomputed when necessary.  */
+ 
+-static void
++void
+ loongarch_save_restore_target_globals (tree new_tree)
+ {
+   if (TREE_TARGET_GLOBALS (new_tree))
+@@ -7798,13 +7804,12 @@ loongarch_set_current_function (tree fndecl)
+ 
+   loongarch_previous_fndecl = fndecl;
+ 
+-  if (new_tree == old_tree)
+-    return;
++  if (new_tree != old_tree)
++    /* According to the settings of the functions attribute and pragma,
++       the options is corrected.  */
++    cl_target_option_restore (&global_options, &global_options_set,
++			      TREE_TARGET_OPTION (new_tree));
+ 
+-  /* According to the settings of the functions attribute and pragma,
+-     the options is corrected.  */
+-  cl_target_option_restore (&global_options, &global_options_set,
+-			    TREE_TARGET_OPTION (new_tree));
+ 
+   /* After correcting the value of options, we need to update the
+      rules for using the hardware registers to ensure that the
+diff --git a/gcc/config/loongarch/loongarch.h b/gcc/config/loongarch/loongarch.h
+index a23dabde1..c93df7ad9 100644
+--- a/src/gcc/config/loongarch/loongarch.h
++++ b/src/gcc/config/loongarch/loongarch.h
+@@ -26,6 +26,8 @@ along with GCC; see the file COPYING3.  If not see
+ 
+ #define SWITCHABLE_TARGET 1
+ 
++#define REGISTER_TARGET_PRAGMAS() loongarch_register_pragmas ()
++
+ #define TARGET_SUPPORTS_WIDE_INT 1
+ 
+ /* Macros to silence warnings about numbers being signed in traditional
+diff --git a/gcc/testsuite/gcc.target/loongarch/arch-func-attr-1.c b/gcc/testsuite/gcc.target/loongarch/arch-func-attr-1.c
+index 98cc7e577..b8e51e6d9 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/arch-func-attr-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/arch-func-attr-1.c
+@@ -1,10 +1,14 @@
+ /* { dg-do compile } */
+-/* { dg-options "-O2 -march=loongarch64 -mno-lsx" } */
++/* { dg-options "-O2 -march=loongarch64 -mno-lsx -std=gnu11" } */
+ 
+ extern char a[64];
+ extern char b[64];
+ 
++#ifndef TEST_TARGET_PRAGMA
+ __attribute__ ((target ("arch=la64v1.1")))
++#else
++#pragma GCC target ("arch=la64v1.1")
++#endif
+ void
+ test (void)
+ {
+diff --git a/gcc/testsuite/gcc.target/loongarch/arch-pragma-attr-1.c b/gcc/testsuite/gcc.target/loongarch/arch-pragma-attr-1.c
+new file mode 100644
+index 000000000..bd918e709
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/arch-pragma-attr-1.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mno-lsx -std=gnu11" } */
++
++#define TEST_TARGET_PRAGMA 1
++#include "./arch-func-attr-1.c"
++
++/* { dg-final { scan-assembler "vld" } } */
+diff --git a/gcc/testsuite/gcc.target/loongarch/cmodel-func-attr-1.c b/gcc/testsuite/gcc.target/loongarch/cmodel-func-attr-1.c
+index 119cd0e16..9f44dc66b 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/cmodel-func-attr-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/cmodel-func-attr-1.c
+@@ -4,7 +4,11 @@
+ extern char a[8];
+ extern char b[8];
+ 
++#ifndef TEST_TARGET_PRAGMA
+ __attribute__ ((target ("cmodel=extreme")))
++#else
++#pragma GCC target ("cmodel=extreme")
++#endif
+ void
+ test (void)
+ {
+diff --git a/gcc/testsuite/gcc.target/loongarch/cmodel-pragma-attr-1.c b/gcc/testsuite/gcc.target/loongarch/cmodel-pragma-attr-1.c
+new file mode 100644
+index 000000000..b52289148
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/cmodel-pragma-attr-1.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mcmodel=normal -mexplicit-relocs=none" } */
++
++#define TEST_TARGET_PRAGMA 1
++#include "./cmodel-func-attr-1.c"
++
++/* { dg-final { scan-assembler "la.global\t\\\$r\[0-9\]+,\\\$r\[0-9\]+,a" } } */
+diff --git a/gcc/testsuite/gcc.target/loongarch/lasx-func-attr-1.c b/gcc/testsuite/gcc.target/loongarch/lasx-func-attr-1.c
+index 5dad9821f..720719e80 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/lasx-func-attr-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/lasx-func-attr-1.c
+@@ -4,7 +4,11 @@
+ typedef int v8i32 __attribute__ ((vector_size(32), aligned(32)));
+ extern v8i32 a, b, c;
+ 
++#ifndef TEST_TARGET_PRAGMA
+ __attribute__ ((target ("lasx")))
++#else
++#pragma GCC target ("lasx")
++#endif
+ void
+ test (void)
+ {
+diff --git a/gcc/testsuite/gcc.target/loongarch/lasx-pragma-attr-1.c b/gcc/testsuite/gcc.target/loongarch/lasx-pragma-attr-1.c
+new file mode 100644
+index 000000000..d5bc68f1c
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/lasx-pragma-attr-1.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mno-lsx" } */
++
++#define TEST_TARGET_PRAGMA 1
++#include "./lasx-func-attr-1.c"
++
++/* { dg-final { scan-assembler "xvadd.w" } } */
+diff --git a/gcc/testsuite/gcc.target/loongarch/lasx-pragma-attr-2.c b/gcc/testsuite/gcc.target/loongarch/lasx-pragma-attr-2.c
+new file mode 100644
+index 000000000..67e4f7179
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/lasx-pragma-attr-2.c
+@@ -0,0 +1,12 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx" } */
++
++typedef int v8i32 __attribute__ ((vector_size(32), aligned(32)));
++extern v8i32 a, b, c;
++
++#pragma GCC target ("no-lasx")
++void
++test (void)
++{
++  a = __builtin_lasx_xvadd_w (b, c); /* { dg-error "built-in function '__builtin_lasx_xvadd_w' is not enabled" } */
++}
+diff --git a/gcc/testsuite/gcc.target/loongarch/lsx-func-attr-1.c b/gcc/testsuite/gcc.target/loongarch/lsx-func-attr-1.c
+index 3e2c1dc33..3558898d3 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/lsx-func-attr-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/lsx-func-attr-1.c
+@@ -4,7 +4,11 @@
+ typedef int v4i32 __attribute__ ((vector_size(16), aligned(16)));
+ extern v4i32 a, b, c;
+ 
++#ifndef TEST_TARGET_PRAGMA
+ __attribute__ ((target ("lsx")))
++#else
++#pragma GCC target ("lsx")
++#endif
+ void
+ test (void)
+ {
+diff --git a/gcc/testsuite/gcc.target/loongarch/lsx-pragma-attr-1.c b/gcc/testsuite/gcc.target/loongarch/lsx-pragma-attr-1.c
+new file mode 100644
+index 000000000..c499f18fc
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/lsx-pragma-attr-1.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mno-lsx" } */
++
++#define TEST_TARGET_PRAGMA 1
++#include "./lsx-func-attr-1.c"
++
++/* { dg-final { scan-assembler "vadd.w" } } */
+diff --git a/gcc/testsuite/gcc.target/loongarch/lsx-pragma-attr-2.c b/gcc/testsuite/gcc.target/loongarch/lsx-pragma-attr-2.c
+new file mode 100644
+index 000000000..40314d026
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/lsx-pragma-attr-2.c
+@@ -0,0 +1,12 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx" } */
++
++typedef int v4i32 __attribute__ ((vector_size(16), aligned(16)));
++extern v4i32 a, b, c;
++
++#pragma GCC target ("no-lsx")
++void
++test (void)
++{
++  a = __builtin_lsx_vadd_w (b, c); /* { dg-error "built-in function '__builtin_lsx_vadd_w' is not enabled" } */
++}
+diff --git a/gcc/testsuite/gcc.target/loongarch/pragma-push-pop.c b/gcc/testsuite/gcc.target/loongarch/pragma-push-pop.c
+new file mode 100644
+index 000000000..a2bcdcb10
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pragma-push-pop.c
+@@ -0,0 +1,22 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlasx" } */
++/* { dg-final { scan-assembler-not "xvadd\\\.w" } } */
++/* { dg-final { scan-assembler "xvsll\\\.w" } } */
++
++#include <lasxintrin.h>
++
++extern v8i32 a, b, c;
++#pragma GCC push_options
++#pragma GCC target ("no-lasx")
++void
++test (void)
++{
++  a = b + c;
++}
++#pragma GCC pop_options
++
++void
++test1 (void)
++{
++   c = __builtin_lasx_xvsll_w (a, b);
++}
+diff --git a/gcc/testsuite/gcc.target/loongarch/strict_align-func-attr-1.c b/gcc/testsuite/gcc.target/loongarch/strict_align-func-attr-1.c
+index 04893746d..c1ed6515c 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/strict_align-func-attr-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/strict_align-func-attr-1.c
+@@ -3,7 +3,11 @@
+ extern char a[8];
+ extern char b[8];
+ 
++#ifndef TEST_TARGET_PRAGMA
+ __attribute__ ((target ("no-strict-align")))
++#else
++#pragma GCC target ("no-strict-align")
++#endif
+ void
+ test (void)
+ {
+diff --git a/gcc/testsuite/gcc.target/loongarch/strict_align-func-attr-2.c b/gcc/testsuite/gcc.target/loongarch/strict_align-func-attr-2.c
+index 0e81486cd..70bf81003 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/strict_align-func-attr-2.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/strict_align-func-attr-2.c
+@@ -3,7 +3,11 @@
+ extern char a[8];
+ extern char b[8];
+ 
++#ifndef TEST_TARGET_PRAGMA
+ __attribute__ ((target ("strict-align")))
++#else
++#pragma GCC target ("strict-align")
++#endif
+ void
+ test (void)
+ {
+diff --git a/gcc/testsuite/gcc.target/loongarch/strict_align-pragma-attr-1.c b/gcc/testsuite/gcc.target/loongarch/strict_align-pragma-attr-1.c
+new file mode 100644
+index 000000000..a95d0b972
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/strict_align-pragma-attr-1.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mstrict-align" } */
++
++#define TEST_TARGET_PRAGMA 1
++#include "./strict_align-func-attr-1.c"
++
++/* { dg-final { scan-assembler-not "ld.bu" } } */
+diff --git a/gcc/testsuite/gcc.target/loongarch/strict_align-pragma-attr-2.c b/gcc/testsuite/gcc.target/loongarch/strict_align-pragma-attr-2.c
+new file mode 100644
+index 000000000..93b76c59b
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/strict_align-pragma-attr-2.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mno-strict-align" } */
++
++#define TEST_TARGET_PRAGMA 1
++#include "./strict_align-func-attr-2.c"
++
++/* { dg-final { scan-assembler-not "ld.w" } } */
+diff --git a/gcc/testsuite/gcc.target/loongarch/vector-func-attr-1.c b/gcc/testsuite/gcc.target/loongarch/vector-func-attr-1.c
+index 655ca234b..4e00606b1 100644
+--- a/src/gcc/testsuite/gcc.target/loongarch/vector-func-attr-1.c
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector-func-attr-1.c
+@@ -4,7 +4,11 @@
+ typedef int v4i32 __attribute__ ((vector_size(16), aligned(16)));
+ extern v4i32 a, b, c;
+ 
++#ifndef TEST_TARGET_PRAGMA
+ __attribute__ ((target ("no-lasx")))
++#else
++#pragma GCC target ("no-lasx")
++#endif
+ void
+ test (void)
+ {
+diff --git a/gcc/testsuite/gcc.target/loongarch/vector-pragma-attr-1.c b/gcc/testsuite/gcc.target/loongarch/vector-pragma-attr-1.c
+new file mode 100644
+index 000000000..7bbb16901
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/vector-pragma-attr-1.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -mlsx" } */
++
++#define TEST_TARGET_PRAGMA 1
++#include "./vector-func-attr-1.c"
++
++/* { dg-final { scan-assembler "vadd.w" } } */
+-- 
+2.47.3
+

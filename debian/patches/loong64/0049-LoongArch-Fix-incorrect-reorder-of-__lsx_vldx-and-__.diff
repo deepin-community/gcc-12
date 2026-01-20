@@ -1,0 +1,260 @@
+From 2d1525d7a95018970bc181e0cceaa992d1f91311 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sun, 2 Mar 2025 19:02:50 +0800
+Subject: [PATCH 49/59] LoongArch: Fix incorrect reorder of __lsx_vldx and
+ __lasx_xvldx [PR119084]
+
+They could be incorrectly reordered with store instructions like st.b
+because the RTL expression does not have a memory_operand or a (mem)
+expression.  The incorrect reorder has been observed in openh264 LTO
+build.
+
+Expand them to a (mem) expression instead of unspec to fix the issue.
+Then we need to make loongarch_address_insns return 1 for
+ADDRESS_REG_REG because the constraint "R" expects this behavior, or
+the vldx instruction will be considered invalid by the register
+allocate pass and turned to add.d + vld.  Apply the ADDRESS_REG_REG
+penalty in loongarch_address_cost instead, loongarch_rtx_costs should
+also call loongarch_address_cost instead of loongarch_address_insns
+then.
+
+Closes: https://github.com/cisco/openh264/issues/3857
+
+gcc/ChangeLog:
+
+	PR target/119084
+	* config/loongarch/lasx.md (UNSPEC_LASX_XVLDX): Remove.
+	(lasx_xvldx): Remove.
+	* config/loongarch/lsx.md (UNSPEC_LSX_VLDX): Remove.
+	(lsx_vldx): Remove.
+	* config/loongarch/simd.md (QIVEC): New define_mode_iterator.
+	(<simd_isa>_<x>vldx): New define_expand.
+	* config/loongarch/loongarch.cc (loongarch_address_insns_1): New
+	static function with most logic factored out from ...
+	(loongarch_address_insns): ... here.  Call
+	loongarch_address_insns_1 with reg_reg_cost = 1.
+	(loongarch_address_cost): Call loongarch_address_insns_1 with
+	reg_reg_cost = la_addr_reg_reg_cost.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/119084
+	* gcc.target/loongarch/pr119084.c: New test.
+---
+ gcc/config/loongarch/lasx.md                  | 13 -----
+ gcc/config/loongarch/loongarch.cc             | 48 +++++++++++--------
+ gcc/config/loongarch/lsx.md                   | 13 -----
+ gcc/config/loongarch/simd.md                  |  9 ++++
+ gcc/testsuite/gcc.target/loongarch/pr119084.c | 24 ++++++++++
+ 5 files changed, 61 insertions(+), 46 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/pr119084.c
+
+diff --git a/gcc/config/loongarch/lasx.md b/gcc/config/loongarch/lasx.md
+index ddff02011..73ca7caaa 100644
+--- a/src/gcc/config/loongarch/lasx.md
++++ b/src/gcc/config/loongarch/lasx.md
+@@ -145,7 +145,6 @@
+   UNSPEC_LASX_XVSSRLRN
+   UNSPEC_LASX_XVEXTL_QU_DU
+   UNSPEC_LASX_XVLDI
+-  UNSPEC_LASX_XVLDX
+   UNSPEC_LASX_XVSTX
+   UNSPEC_LASX_VECINIT_MERGE
+   UNSPEC_LASX_VEC_SET_INTERNAL
+@@ -4605,18 +4604,6 @@
+   [(set_attr "type" "simd_load")
+    (set_attr "mode" "V4DI")])
+ 
+-(define_insn "lasx_xvldx"
+-  [(set (match_operand:V32QI 0 "register_operand" "=f")
+-	(unspec:V32QI [(match_operand:DI 1 "register_operand" "r")
+-		       (match_operand:DI 2 "reg_or_0_operand" "rJ")]
+-		      UNSPEC_LASX_XVLDX))]
+-  "ISA_HAS_LASX"
+-{
+-  return "xvldx\t%u0,%1,%z2";
+-}
+-  [(set_attr "type" "simd_load")
+-   (set_attr "mode" "V32QI")])
+-
+ (define_insn "lasx_xvstx"
+   [(set (mem:V32QI (plus:DI (match_operand:DI 1 "register_operand" "r")
+ 			    (match_operand:DI 2 "reg_or_0_operand" "rJ")))
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index 1f72f4922..c76f59d42 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -2353,14 +2353,9 @@ loongarch_index_address_p (rtx addr, machine_mode mode ATTRIBUTE_UNUSED)
+   return true;
+ }
+ 
+-/* Return the number of instructions needed to load or store a value
+-   of mode MODE at address X.  Return 0 if X isn't valid for MODE.
+-   Assume that multiword moves may need to be split into word moves
+-   if MIGHT_SPLIT_P, otherwise assume that a single load or store is
+-   enough.  */
+-
+-int
+-loongarch_address_insns (rtx x, machine_mode mode, bool might_split_p)
++static int
++loongarch_address_insns_1 (rtx x, machine_mode mode, bool might_split_p,
++			   int reg_reg_cost)
+ {
+   struct loongarch_address_info addr;
+   int factor;
+@@ -2395,7 +2390,7 @@ loongarch_address_insns (rtx x, machine_mode mode, bool might_split_p)
+ 	return factor;
+ 
+       case ADDRESS_REG_REG:
+-	return factor * la_addr_reg_reg_cost;
++	return factor * reg_reg_cost;
+ 
+       case ADDRESS_CONST_INT:
+ 	return lsx_p ? 0 : factor;
+@@ -2410,6 +2405,18 @@ loongarch_address_insns (rtx x, machine_mode mode, bool might_split_p)
+   return 0;
+ }
+ 
++/* Return the number of instructions needed to load or store a value
++   of mode MODE at address X.  Return 0 if X isn't valid for MODE.
++   Assume that multiword moves may need to be split into word moves
++   if MIGHT_SPLIT_P, otherwise assume that a single load or store is
++   enough.  */
++
++int
++loongarch_address_insns (rtx x, machine_mode mode, bool might_split_p)
++{
++  return loongarch_address_insns_1 (x, mode, might_split_p, 1);
++}
++
+ /* Return true if X fits within an unsigned field of BITS bits that is
+    shifted left SHIFT bits before being used.  */
+ 
+@@ -3736,6 +3743,17 @@ loongarch_set_reg_reg_cost (machine_mode mode)
+     }
+ }
+ 
++/* Implement TARGET_ADDRESS_COST.  */
++
++static int
++loongarch_address_cost (rtx addr, machine_mode mode,
++			addr_space_t as ATTRIBUTE_UNUSED,
++			bool speed ATTRIBUTE_UNUSED)
++{
++  return loongarch_address_insns_1 (addr, mode, false,
++				    la_addr_reg_reg_cost);
++}
++
+ /* Implement TARGET_RTX_COSTS.  */
+ 
+ static bool
+@@ -3804,7 +3822,7 @@ loongarch_rtx_costs (rtx x, machine_mode mode, int outer_code,
+ 	  *total = COSTS_N_INSNS (2);
+ 	  return true;
+ 	}
+-      cost = loongarch_address_insns (addr, mode, true);
++      cost = loongarch_address_cost (addr, mode, true, speed);
+       if (cost > 0)
+ 	{
+ 	  *total = COSTS_N_INSNS (cost + 1);
+@@ -4391,16 +4409,6 @@ loongarch_vector_costs::finish_cost (const vector_costs *scalar_costs)
+   vector_costs::finish_cost (scalar_costs);
+ }
+ 
+-/* Implement TARGET_ADDRESS_COST.  */
+-
+-static int
+-loongarch_address_cost (rtx addr, machine_mode mode,
+-			addr_space_t as ATTRIBUTE_UNUSED,
+-			bool speed ATTRIBUTE_UNUSED)
+-{
+-  return loongarch_address_insns (addr, mode, false);
+-}
+-
+ /* Implement TARGET_INSN_COST.  */
+ 
+ static int
+diff --git a/gcc/config/loongarch/lsx.md b/gcc/config/loongarch/lsx.md
+index e79d20d37..8cf7ad917 100644
+--- a/src/gcc/config/loongarch/lsx.md
++++ b/src/gcc/config/loongarch/lsx.md
+@@ -87,7 +87,6 @@
+   UNSPEC_LSX_VSSRLRN
+   UNSPEC_LSX_VLDI
+   UNSPEC_LSX_VSHUF_B
+-  UNSPEC_LSX_VLDX
+   UNSPEC_LSX_VSTX
+   UNSPEC_LSX_VEXTL_QU_DU
+   UNSPEC_LSX_VSETEQZ_V
+@@ -2920,18 +2919,6 @@
+   [(set_attr "type" "simd_shf")
+    (set_attr "mode" "V16QI")])
+ 
+-(define_insn "lsx_vldx"
+-  [(set (match_operand:V16QI 0 "register_operand" "=f")
+-	(unspec:V16QI [(match_operand:DI 1 "register_operand" "r")
+-		       (match_operand:DI 2 "reg_or_0_operand" "rJ")]
+-		      UNSPEC_LSX_VLDX))]
+-  "ISA_HAS_LSX"
+-{
+-  return "vldx\t%w0,%1,%z2";
+-}
+-  [(set_attr "type" "simd_load")
+-   (set_attr "mode" "V16QI")])
+-
+ (define_insn "lsx_vstx"
+   [(set (mem:V16QI (plus:DI (match_operand:DI 1 "register_operand" "r")
+ 			    (match_operand:DI 2 "reg_or_0_operand" "rJ")))
+diff --git a/gcc/config/loongarch/simd.md b/gcc/config/loongarch/simd.md
+index 64122480b..b49f1a7f4 100644
+--- a/src/gcc/config/loongarch/simd.md
++++ b/src/gcc/config/loongarch/simd.md
+@@ -181,6 +181,15 @@
+    (set_attr "mode" "<MODE>")])
+ 
+ 
++;; REG + REG load
++
++(define_mode_iterator QIVEC [(V16QI "ISA_HAS_LSX") (V32QI "ISA_HAS_LASX")])
++(define_expand "<simd_isa>_<x>vldx"
++  [(set (match_operand:QIVEC 0 "register_operand" "=f")
++	(mem:QIVEC (plus:DI (match_operand:DI 1 "register_operand")
++			    (match_operand:DI 2 "register_operand"))))]
++  "TARGET_64BIT")
++
+ ;;
+ ;; FP vector rounding instructions
+ ;;
+diff --git a/gcc/testsuite/gcc.target/loongarch/pr119084.c b/gcc/testsuite/gcc.target/loongarch/pr119084.c
+new file mode 100644
+index 000000000..b59433038
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/pr119084.c
+@@ -0,0 +1,24 @@
++/* { dg-do run } */
++/* { dg-options "-O2 -mlsx" } */
++/* { dg-require-effective-target loongarch_sx_hw } */
++
++typedef signed char V16QI __attribute__ ((vector_size (16)));
++static char x[128];
++
++__attribute__ ((noipa)) int
++noopt (int x)
++{
++  return x;
++}
++
++int
++main (void)
++{
++  int t = noopt (32);
++
++  x[32] = 1;
++
++  V16QI y = __builtin_lsx_vldx (x, t);
++  if (y[0] != 1)
++    __builtin_trap ();
++}
+-- 
+2.47.3
+

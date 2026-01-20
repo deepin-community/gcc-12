@@ -1,0 +1,98 @@
+From 6e7d16eae9308aa82f2863fba57b1cc525023986 Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Sat, 1 Mar 2025 11:46:46 +0800
+Subject: [PATCH] LoongArch: Remove unneeded "b 3f" instruction after LL-SC
+ loops
+
+This instruction is used to skip an redundant barrier if -mno-ld-seq-sa
+or the memory model requires a barrier on failure.  But with -mld-seq-sa
+and other memory models the barrier may be nonexisting at all, and we
+should remove the "b 3f" instruction as well.
+
+The implementation uses a new operand modifier "%T" to output a comment
+marker if the operand is a memory order for which the barrier won't be
+generated.  "%T", and also "%t", are not really used before and the code
+for them in loongarch_print_operand_reloc is just some MIPS legacy.
+
+gcc/ChangeLog:
+
+	* config/loongarch/loongarch.cc (loongarch_print_operand_reloc):
+	Make "%T" output a comment marker if the operand is a memory
+	order for which the barrier won't be generated; remove "%t".
+	* config/loongarch/sync.md (atomic_cas_value_strong<mode>): Add
+	%T before "b 3f".
+	(atomic_cas_value_cmp_and_7_<mode>): Likewise.
+---
+ gcc/config/loongarch/loongarch.cc | 19 ++++++++-----------
+ gcc/config/loongarch/sync.md      |  4 ++--
+ 2 files changed, 10 insertions(+), 13 deletions(-)
+
+diff --git a/gcc/config/loongarch/loongarch.cc b/gcc/config/loongarch/loongarch.cc
+index dddfea217..d5a724629 100644
+--- a/src/gcc/config/loongarch/loongarch.cc
++++ b/src/gcc/config/loongarch/loongarch.cc
+@@ -6233,9 +6233,7 @@ loongarch_print_operand_reloc (FILE *file, rtx op, bool hi64_part,
+    'Q'  Print R_LARCH_RELAX for TLS IE.
+    'r'  Print address 12-31bit relocation associated with OP.
+    'R'  Print address 32-51bit relocation associated with OP.
+-   'T'	Print 'f' for (eq:CC ...), 't' for (ne:CC ...),
+-	      'z' for (eq:?I ...), 'n' for (ne:?I ...).
+-   't'	Like 'T', but with the EQ/NE cases reversed
++   'T' Print a comment marker if %G outputs nothing.
+    'u' Print a LASX register.
+    'v' Print the insn size suffix b, h, w or d for vector modes V16QI, V8HI,
+          V4SI, V2SI, and w, d for vector modes V4SF, V2DF respectively.
+@@ -6313,6 +6311,13 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+         fputs ("dbar\t0x700", file);      
+       break;
+ 
++    case 'T':
++      if (!loongarch_cas_failure_memorder_needs_acquire (
++     memmodel_from_int (INTVAL (op)))
++   && ISA_HAS_LD_SEQ_SA)
++ fprintf (file, "%s", ASM_COMMENT_START);
++      break;
++
+     case 'h':
+       if (code == HIGH)
+ 	op = XEXP (op, 0);
+@@ -6391,14 +6396,6 @@ loongarch_print_operand (FILE *file, rtx op, int letter)
+ 				     false /* lo_reloc */);
+       break;
+ 
+-    case 't':
+-    case 'T':
+-      {
+-	int truth = (code == NE) == (letter == 'T');
+-	fputc ("zfnt"[truth * 2 + FCC_REG_P (REGNO (XEXP (op, 0)))], file);
+-      }
+-      break;
+-
+     case 'V':
+       if (CONST_VECTOR_P (op))
+ 	{
+diff --git a/gcc/config/loongarch/sync.md b/gcc/config/loongarch/sync.md
+index f19ad6af4..89a02eebf 100644
+--- a/src/gcc/config/loongarch/sync.md
++++ b/src/gcc/config/loongarch/sync.md
+@@ -264,7 +264,7 @@
+   output_asm_insn ("or%i3\t%5,$zero,%3", operands);
+   output_asm_insn ("sc.<size>\t%5,%1", operands);
+   output_asm_insn ("beqz\t%5,1b", operands);
+-  output_asm_insn ("b\t3f", operands);
++  output_asm_insn ("%T4b\t3f", operands);
+   output_asm_insn ("2:", operands);
+   output_asm_insn ("%G4", operands);
+   output_asm_insn ("3:", operands);
+@@ -408,7 +408,7 @@
+ 	 "or%i5\\t%7,%7,%5\\n\\t"
+ 	 "sc.<size>\\t%7,%1\\n\\t"
+ 	 "beq\\t$zero,%7,1b\\n\\t"
+-	 "b\\t3f\\n\\t"
++	 "%T6b\\t3f\\n\\t"
+ 	 "2:\\n\\t"
+ 	 "%G6\\n\\t"
+ 	 "3:\\n\\t";
+-- 
+2.51.0
+

@@ -1,0 +1,147 @@
+From e8562aed50bb881f9c0bbb8d8b5a1eca24e299dd Mon Sep 17 00:00:00 2001
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Mon, 10 Feb 2025 23:39:24 +0800
+Subject: [PATCH 43/59] LoongArch: Accept ADD, IOR or XOR when combining
+ objects with no bits in common [PR115478]
+
+Since r15-1120, multi-word shifts/rotates produces PLUS instead of IOR.
+It's generally a good thing (allowing to use our alsl instruction or
+similar instrunction on other architectures), but it's preventing us
+from using bytepick.  For example, if we shift a __int128 by 16 bits,
+the higher word can be produced via a single bytepick.d instruction with
+immediate 2, but we got:
+
+	srli.d	$r12,$r4,48
+	slli.d	$r5,$r5,16
+	slli.d	$r4,$r4,16
+	add.d	$r5,$r12,$r5
+	jr	$r1
+
+This wasn't work with GCC 14, but after r15-6490 it's supposed to work
+if IOR was used instead of PLUS.
+
+To fix this, add a code iterator to match IOR, XOR, and PLUS and use it
+instead of just IOR if we know the operands have no overlapping bits.
+
+gcc/ChangeLog:
+
+	PR target/115478
+	* config/loongarch/loongarch.md (any_or_plus): New
+	define_code_iterator.
+	(bstrins_<mode>_for_ior_mask): Use any_or_plus instead of ior.
+	(bytepick_w_<bytepick_imm>): Likewise.
+	(bytepick_d_<bytepick_imm>): Likewise.
+	(bytepick_d_<bytepick_imm>_rev): Likewise.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/115478
+	* gcc.target/loongarch/bytepick_shift_128.c: New test.
+---
+ gcc/config/loongarch/loongarch.md             | 46 +++++++++++++------
+ .../gcc.target/loongarch/bytepick_shift_128.c |  9 ++++
+ 2 files changed, 41 insertions(+), 14 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/loongarch/bytepick_shift_128.c
+
+diff --git a/gcc/config/loongarch/loongarch.md b/gcc/config/loongarch/loongarch.md
+index c86909ec7..bf476251c 100644
+--- a/src/gcc/config/loongarch/loongarch.md
++++ b/src/gcc/config/loongarch/loongarch.md
+@@ -491,6 +491,10 @@
+ 				   (xor "uns_arith_operand")])
+ (define_code_attr is_and [(and "true") (ior "false") (xor "false")])
+ 
++;; If we know the operands does not have overlapping bits, use this
++;; instead of just ior to cover more cases.
++(define_code_iterator any_or_plus [any_or plus])
++
+ ;; This code iterator allows unsigned and signed division to be generated
+ ;; from the same template.
+ (define_code_iterator any_div [div udiv mod umod])
+@@ -1597,10 +1601,11 @@
+ 
+ (define_insn_and_split "*bstrins_<mode>_for_ior_mask"
+   [(set (match_operand:GPR 0 "register_operand" "=r")
+-	(ior:GPR (and:GPR (match_operand:GPR 1 "register_operand" "r")
+-			  (match_operand:GPR 2 "const_int_operand" "i"))
+-		 (and:GPR (match_operand:GPR 3 "register_operand" "r")
+-			  (match_operand:GPR 4 "const_int_operand" "i"))))]
++	(any_or_plus:GPR
++	  (and:GPR (match_operand:GPR 1 "register_operand" "r")
++		   (match_operand:GPR 2 "const_int_operand" "i"))
++	  (and:GPR (match_operand:GPR 3 "register_operand" "r")
++		   (match_operand:GPR 4 "const_int_operand" "i"))))]
+   "loongarch_pre_reload_split ()
+    && loongarch_use_bstrins_for_ior_with_mask (<MODE>mode, operands)"
+   "#"
+@@ -4249,12 +4254,13 @@
+   }
+   [(set_attr "mode" "<ANYF:MODE>")])
+ 
+-(define_insn "bytepick_w_<bytepick_imm>"
++(define_insn "*bytepick_w_<bytepick_imm>"
+   [(set (match_operand:SI 0 "register_operand" "=r")
+-	(ior:SI (lshiftrt:SI (match_operand:SI 1 "register_operand" "r")
+-			     (const_int <bytepick_w_lshiftrt_amount>))
+-		(ashift:SI (match_operand:SI 2 "register_operand" "r")
+-			   (const_int bytepick_w_ashift_amount))))]
++       (any_or_plus:SI
++         (lshiftrt:SI (match_operand:SI 1 "register_operand" "r")
++                      (const_int <bytepick_w_lshiftrt_amount>))
++         (ashift:SI (match_operand:SI 2 "register_operand" "r")
++                    (const_int bytepick_w_ashift_amount))))]
+   ""
+   "bytepick.w\t%0,%1,%2,<bytepick_imm>"
+   [(set_attr "mode" "SI")])
+@@ -4292,16 +4298,28 @@
+   "bytepick.w\t%0,%2,%1,1"
+   [(set_attr "mode" "SI")])
+ 
+-(define_insn "bytepick_d_<bytepick_imm>"
++(define_insn "*bytepick_d_<bytepick_imm>"
+   [(set (match_operand:DI 0 "register_operand" "=r")
+-	(ior:DI (lshiftrt (match_operand:DI 1 "register_operand" "r")
+-			  (const_int <bytepick_d_lshiftrt_amount>))
+-		(ashift (match_operand:DI 2 "register_operand" "r")
+-			(const_int bytepick_d_ashift_amount))))]
++       (any_or_plus:DI
++         (lshiftrt (match_operand:DI 1 "register_operand" "r")
++                   (const_int <bytepick_d_lshiftrt_amount>))
++         (ashift (match_operand:DI 2 "register_operand" "r")
++                 (const_int bytepick_d_ashift_amount))))]
+   "TARGET_64BIT"
+   "bytepick.d\t%0,%1,%2,<bytepick_imm>"
+   [(set_attr "mode" "DI")])
+ 
++(define_insn "*bytepick_d_<bytepick_imm>_rev"
++  [(set (match_operand:DI 0 "register_operand" "=r")
++  (any_or_plus:DI
++    (ashift (match_operand:DI 1 "register_operand" "r")
++      (const_int bytepick_d_ashift_amount))
++    (lshiftrt (match_operand:DI 2 "register_operand" "r")
++        (const_int <bytepick_d_lshiftrt_amount>))))]
++  "TARGET_64BIT"
++  "bytepick.d\t%0,%2,%1,<bytepick_imm>"
++  [(set_attr "mode" "DI")])
++
+ (define_insn "bitrev_4b"
+   [(set (match_operand:SI 0 "register_operand" "=r")
+ 	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
+diff --git a/gcc/testsuite/gcc.target/loongarch/bytepick_shift_128.c b/gcc/testsuite/gcc.target/loongarch/bytepick_shift_128.c
+new file mode 100644
+index 000000000..d3a977219
+--- /dev/null
++++ b/src/gcc/testsuite/gcc.target/loongarch/bytepick_shift_128.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile } */
++/* { dg-options "-O2 -march=loongarch64 -mabi=lp64d" } */
++/* { dg-final { scan-assembler "bytepick\\.d" } } */
++
++__int128
++test (__int128 a)
++{
++  return a << 16;
++}
+-- 
+2.47.3
+
