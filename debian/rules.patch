@@ -658,7 +658,8 @@ debian_patches += \
     loong64/0086-LoongArch-Fix-ICE-when-explicit-relocs-is-none \
     loong64/0087-LoongArch-Fix-bug123521 \
     loong64/0088-LoongArch-Fix-bug117575 \
-    loong64/0089-LoongArch-Fix-bug123766
+    loong64/0089-LoongArch-Fix-bug123766 \
+    loong64/middle-end-extend-the-narrower-shift-amount-before-b
 
 # RISCV backport.
 debian_patches += riscv64-inline-subword-atomic

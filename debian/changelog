@@ -1,3 +1,8 @@
+gcc-12 (12.3.0-17deepin18) unstable; urgency=medium
+  * backport: extend the narrower shift amount before broadcasting it
+
+ -- Peng Fan <fanpeng@loongson.cn>  Tue, 23 Jun 2026 14:19:24 +0000
+
 gcc-12 (12.3.0-17deepin17) unstable; urgency=medium
   * LoongArch: common sync from upstream
 
