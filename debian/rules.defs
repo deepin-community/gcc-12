@@ -1384,7 +1384,7 @@ ifneq (,$(filter $(DEB_TARGET_ARCH),$(gomp_no_archs)))
 endif
 
 # itm --------------------
-itm_archs = alpha amd64 arm64 i386 x32 ppc64 ppc64el s390x sw64 sh4 sparc64
+itm_archs = alpha amd64 arm64 i386 x32 loong64 ppc64 ppc64el s390x sw64 sh4 sparc64
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(itm_archs)))
   with_itm := yes
 endif
