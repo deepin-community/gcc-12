@@ -1089,7 +1089,7 @@ endif
 # D ---------------------------
 d_no_cross := yes
 d_no_snap :=
-d_no_cpus := alpha arc ia64 loong64 m68k sh4 s390 sparc64
+d_no_cpus := alpha arc ia64 m68k sh4 s390 sparc64
 d_no_systems := gnu kfreebsd-gnu
 
 ifneq ($(single_package),yes)
@@ -1153,7 +1153,7 @@ ifeq ($(with_d),yes)
   phobos_archs += mips mips64 mipsel mips64el
   phobos_archs += mipsn32 mipsn32el
   phobos_archs += mipsr6 mipsr6el mipsn32r6 mipsn32r6el mips64r6 mips64r6el
-  phobos_archs += riscv64 s390x
+  phobos_archs += riscv64 s390x loong64
   phobos_archs += $(druntime_only_archs)
   #phobos_archs += kfreebsd-amd64 kfreebsd-i386
   ifneq (,$(filter $(DEB_TARGET_ARCH), $(phobos_archs)))
