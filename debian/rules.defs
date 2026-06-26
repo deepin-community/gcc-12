@@ -870,7 +870,7 @@ endif
 
 ifeq (,$(filter $(DEB_STAGE),stage1 stage2))
 # Ada --------------------
-ada_no_cpus	:= arc ia64 loong64 sh3 sh3eb sh4eb
+ada_no_cpus	:= arc ia64 sh3 sh3eb sh4eb
 ada_no_systems	:= 
 ada_no_cross	:= no
 ada_no_snap	:= no
@@ -879,9 +879,6 @@ ada_no_snap	:= no
 #    ada_no_snap := yes
 #  endif
 #endif
-ifneq (,$(filter $(DEB_HOST_ARCH),loong64))
-  ada_no_cross := yes
-endif
 
 ifeq ($(with_dev),yes)
   ifneq ($(separate_lang),yes)
