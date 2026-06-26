@@ -1413,7 +1413,7 @@ endif
 with_asan :=
 with_asan := $(call envfilt, asan, , , $(with_asan))
 asan_archs = amd64 armel armhf arm64 i386 loong64 powerpc ppc64 ppc64el \
-	riscv64 s390x sparc sparc64 x32
+	riscv64 s390x sparc sparc64 sw64 x32
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(asan_archs)))
   with_asan := yes
 endif
@@ -1421,7 +1421,7 @@ endif
 # lsan / sanitizer --------------------
 with_lsan :=
 with_lsan := $(call envfilt, lsan, , , $(with_lsan))
-lsan_archs = arm64 amd64 loong64 ppc64 ppc64el
+lsan_archs = arm64 amd64 loong64 ppc64 ppc64el sw64
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(lsan_archs)))
   with_lsan := yes
 endif
@@ -1446,7 +1446,7 @@ endif
 with_ubsan :=
 with_ubsan := $(call envfilt, ubsan, , , $(with_ubsan))
 ubsan_archs = amd64 armel armhf arm64 i386 loong64 powerpc ppc64 ppc64el x32 \
-	riscv64 s390x sparc sparc64
+	riscv64 s390x sparc sparc64 sw64
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(ubsan_archs)))
   with_ubsan := yes
 endif
