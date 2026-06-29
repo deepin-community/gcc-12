@@ -50013,13 +50013,14 @@ diff --git a/src/libsanitizer/configure.tgt b/src/libsanitizer/configure.tgt
 index 4bcc9043d..7ad358da3 100644
 --- a/src/libsanitizer/configure.tgt
 +++ b/src/libsanitizer/configure.tgt
-@@ -54,6 +54,10 @@ case "${target}" in
+@@ -54,6 +54,11 @@ case "${target}" in
  	;;
    arm*-*-linux*)
  	;;
 +  sw_64*-*-linux*)
 +       TSAN_SUPPORTED=yes
 +       LSAN_SUPPORTED=yes
++       TSAN_TARGET_DEPENDENT_OBJECTS=tsan_rtl_sw64.lo
 +        ;;
    mips*-*-linux*)
  	;;

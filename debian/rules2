@@ -166,17 +166,17 @@ endif
 ifneq (,$(filter $(build_type), build-cross cross-build-cross))
   CFLAGS	= -g -O2
   LDFLAGS	= -Wl,-z,relro
-  ifeq ($(DEB_TARGET_ARCH),alpha sw64)
+  ifneq (,$(filter $(DEB_TARGET_ARCH),alpha sw64))
     LDFLAGS += -Wl,--no-relax
   endif
 else
   BOOT_LDFLAGS	= -Wl,-z,relro
-  ifeq ($(DEB_TARGET_ARCH),alpha sw64)
+  ifneq (,$(filter $(DEB_TARGET_ARCH),alpha sw64))
     BOOT_LDFLAGS += -Wl,--no-relax
   endif
 endif
 LDFLAGS_FOR_TARGET = -Wl,-z,relro
-ifeq ($(DEB_TARGET_ARCH),alpha, sw64)
+ifneq (,$(filter $(DEB_TARGET_ARCH),alpha sw64))
   LDFLAGS := $(filter-out -Wl$(COMMA)--no-relax, $(LDFLAGS)) -Wl,--no-relax
 endif
 

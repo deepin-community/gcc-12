@@ -870,7 +870,7 @@ endif
 
 ifeq (,$(filter $(DEB_STAGE),stage1 stage2))
 # Ada --------------------
-ada_no_cpus	:= arc ia64 loong64 sh3 sh3eb sh4eb
+ada_no_cpus	:= arc ia64 sh3 sh3eb sh4eb
 ada_no_systems	:= 
 ada_no_cross	:= no
 ada_no_snap	:= no
@@ -879,9 +879,6 @@ ada_no_snap	:= no
 #    ada_no_snap := yes
 #  endif
 #endif
-ifneq (,$(filter $(DEB_HOST_ARCH),loong64))
-  ada_no_cross := yes
-endif
 
 ifeq ($(with_dev),yes)
   ifneq ($(separate_lang),yes)
@@ -1089,7 +1086,7 @@ endif
 # D ---------------------------
 d_no_cross := yes
 d_no_snap :=
-d_no_cpus := alpha arc ia64 loong64 m68k sh4 s390 sparc64
+d_no_cpus := alpha arc ia64 m68k sh4 s390 sparc64
 d_no_systems := gnu kfreebsd-gnu
 
 ifneq ($(single_package),yes)
@@ -1153,7 +1150,7 @@ ifeq ($(with_d),yes)
   phobos_archs += mips mips64 mipsel mips64el
   phobos_archs += mipsn32 mipsn32el
   phobos_archs += mipsr6 mipsr6el mipsn32r6 mipsn32r6el mips64r6 mips64r6el
-  phobos_archs += riscv64 s390x
+  phobos_archs += riscv64 s390x loong64
   phobos_archs += $(druntime_only_archs)
   #phobos_archs += kfreebsd-amd64 kfreebsd-i386
   ifneq (,$(filter $(DEB_TARGET_ARCH), $(phobos_archs)))
@@ -1384,7 +1381,7 @@ ifneq (,$(filter $(DEB_TARGET_ARCH),$(gomp_no_archs)))
 endif
 
 # itm --------------------
-itm_archs = alpha amd64 arm64 i386 x32 ppc64 ppc64el s390x sw64 sh4 sparc64
+itm_archs = alpha amd64 arm64 i386 x32 loong64 ppc64 ppc64el s390x sw64 sh4 sparc64
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(itm_archs)))
   with_itm := yes
 endif
@@ -1412,8 +1409,8 @@ endif
 # asan / sanitizer --------------------
 with_asan :=
 with_asan := $(call envfilt, asan, , , $(with_asan))
-asan_archs = amd64 armel armhf arm64 i386 powerpc ppc64 ppc64el \
-	riscv64 s390x sparc sparc64 x32
+asan_archs = amd64 armel armhf arm64 i386 loong64 powerpc ppc64 ppc64el \
+	riscv64 s390x sparc sparc64 sw64 x32
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(asan_archs)))
   with_asan := yes
 endif
@@ -1421,7 +1418,7 @@ endif
 # lsan / sanitizer --------------------
 with_lsan :=
 with_lsan := $(call envfilt, lsan, , , $(with_lsan))
-lsan_archs = arm64 amd64 ppc64 ppc64el
+lsan_archs = arm64 amd64 loong64 ppc64 ppc64el sw64
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(lsan_archs)))
   with_lsan := yes
 endif
@@ -1429,7 +1426,7 @@ endif
 # tsan / sanitizer --------------------
 with_tsan :=
 with_tsan := $(call envfilt, tsan, , , $(with_tsan))
-tsan_archs = arm64 amd64 ppc64 ppc64el
+tsan_archs = arm64 amd64 loong64 ppc64 ppc64el sw64
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(tsan_archs)))
   with_tsan := yes
 endif
@@ -1445,8 +1442,8 @@ endif
 # ubsan / sanitizer --------------------
 with_ubsan :=
 with_ubsan := $(call envfilt, ubsan, , , $(with_ubsan))
-ubsan_archs = amd64 armel armhf arm64 i386 powerpc ppc64 ppc64el x32 \
-	riscv64 s390x sparc sparc64
+ubsan_archs = amd64 armel armhf arm64 i386 loong64 powerpc ppc64 ppc64el x32 \
+	riscv64 s390x sparc sparc64 sw64
 ifneq (,$(filter $(DEB_TARGET_ARCH),$(ubsan_archs)))
   with_ubsan := yes
 endif
@@ -1490,7 +1487,7 @@ else ifeq ($(distribution),Ubuntu)
   endif
   pie_archs += riscv64
 else ifeq ($(distribution),Deepin)
-  pie_archs = amd64 arm64 i386 riscv64 loong64
+  pie_archs = amd64 arm64 i386 loong64 mips64el riscv64 sw64
 else ifeq ($(distribution),Uos)
   pie_archs = amd64 arm64 i386 loong64 mips64el riscv64 sw64
 endif

@@ -671,6 +671,8 @@ ifeq ($(DEB_TARGET_ARCH), sw64)
 		  sw64/0003-SW_64-Fix-a-FAIL-in-libgomp-caused-by-the-atomic_exc
 endif
 
+debian_patches += backport/x86-Increase-generic-tune-branch-misprediction-cost
+
 series_stamp = $(stampdir)/02-series-stamp
 series: $(series_stamp)
 $(series_stamp):
