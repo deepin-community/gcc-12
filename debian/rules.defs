@@ -1487,7 +1487,7 @@ else ifeq ($(distribution),Ubuntu)
   endif
   pie_archs += riscv64
 else ifeq ($(distribution),Deepin)
-  pie_archs = amd64 arm64 i386 riscv64 loong64
+  pie_archs = amd64 arm64 i386 loong64 mips64el riscv64 sw64
 else ifeq ($(distribution),Uos)
   pie_archs = amd64 arm64 i386 loong64 mips64el riscv64 sw64
 endif
