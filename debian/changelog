@@ -1,3 +1,18 @@
+gcc-12 (12.3.0-17deepin18) unstable; urgency=medium
+
+  * loong64 enhancements:
+    - Add loong64 to itm_archs for libitm support
+    - Enable libsanitizer (ASAN/UBSAN/LSAN/TSAN) on loong64
+    - Enable Ada (gnat) on loong64
+  * sw64 enhancements:
+    - Enable libsanitizer (ASAN/UBSAN/LSAN/TSAN) on sw64
+    - Remove erroneous !sw64 exclusion from gdb Build-Depends
+  * Align Deepin pie_archs with Uos for consistent PIE defaults
+  * Fix Makefile filter for multi-arch matching in --no-relax LDFLAGS
+  * Backport x86 generic branch misprediction cost increase
+
+ -- WangYuli <wangyl5933@chinaunicom.cn>  Mon, 29 Jun 2026 17:49:20 +0800
+
 gcc-12 (12.3.0-17deepin17) unstable; urgency=medium
   * LoongArch: common sync from upstream
 
