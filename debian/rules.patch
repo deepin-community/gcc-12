@@ -665,6 +665,9 @@ debian_patches += \
 debian_patches += riscv64-inline-subword-atomic
 debian_patches += riscv64-atomic-fix
 
+# Security fixes.
+debian_patches += CVE-2026-102010
+
 # sw64 support
 ifeq ($(DEB_TARGET_ARCH), sw64)
 	debian_patches += sw64/0001-feat-add-sw64-support \

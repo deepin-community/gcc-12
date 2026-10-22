@@ -1,3 +1,9 @@
+gcc-12 (12.3.0-17deepin19) unstable; urgency=high
+
+  * Fix use-after-free in pb_ds binary heap erase_if (CVE-2026-102010)
+
+ -- lichenggang <lichenggang@uniontech.com>  Thu, 22 Oct 2026 13:25:37 +0800
+
 gcc-12 (12.3.0-17deepin18) unstable; urgency=medium
   * backport: extend the narrower shift amount before broadcasting it
 
